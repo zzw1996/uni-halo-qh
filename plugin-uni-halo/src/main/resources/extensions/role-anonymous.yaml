@@ -1,0 +1,38 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-view-config
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 配置管理"
+    rbac.authorization.halo.run/display-name: "配置管理（UniHalo)"
+    rbac.authorization.halo.run/ui-permissions: |
+      ["plugin:plugin-uni-halo:config:view"]
+rules:
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/*" ,"plugins/getConfigs","plugins/getConfigs/*","plugins/getQRCodeImg","plugins/getQRCodeImg/*","plugins/getQRCodeInfo","plugins/getQRCodeInfo/*","plugins/getWxAppConfig"]
+    verbs: [ "get", "list" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "uni-halo/login", "plugins/plugin-uni-halo/login", "plugins/login" ]
+    verbs: [ "create" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/updateProfile", "plugins/plugin-uni-halo/updateProfile" ]
+    verbs: [ "update" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/sendHaloBindCode", "plugins/plugin-uni-halo/sendHaloBindCode",
+                 "plugins/bindHaloAccountByCode", "plugins/plugin-uni-halo/bindHaloAccountByCode",
+                 "plugins/createHaloAccount", "plugins/plugin-uni-halo/createHaloAccount",
+                 "plugins/unbindHaloAccount", "plugins/plugin-uni-halo/unbindHaloAccount" ]
+    verbs: [ "create" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/uploadWxAvatar", "plugins/plugin-uni-halo/uploadWxAvatar" ]
+    verbs: [ "create" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/userActivities", "plugins/plugin-uni-halo/userActivities",
+                 "plugins/plugin-uni-halo/userActivities/upvote/status" ]
+    verbs: [ "get", "list", "create", "delete" ]
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/points" ]
+    verbs: [ "get", "list", "create" ]

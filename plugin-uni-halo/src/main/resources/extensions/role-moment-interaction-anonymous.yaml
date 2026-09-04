@@ -1,0 +1,22 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-moment-interaction-anonymous
+  labels:
+    halo.run/role-template: "true"
+    halo.run/hidden: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 瞬间互动"
+    rbac.authorization.halo.run/display-name: "瞬间评论与点赞（匿名）"
+rules:
+  # 瞬间评论：GET 列表/详情、POST 创建、POST 回复（DELETE 由 WxCommentProxyFilter + Wechat-Session-Id 代理）
+  - apiGroups: [ "api.halo.run" ]
+    resources: [ "comments", "comments/reply" ]
+    verbs: [ "create", "get", "list" ]
+  # 瞬间点赞/踩：Counter tracker，group=moment.halo.run plural=moments
+  - nonResourceURLs:
+      - "/apis/api.halo.run/v1alpha1/trackers/upvote"
+      - "/apis/api.halo.run/v1alpha1/trackers/downvote"
+      - "/apis/api.halo.run/v1alpha1/trackers/*"
+    verbs: [ "create" ]

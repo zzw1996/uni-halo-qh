@@ -1,0 +1,16 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-role-console-manage
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-super-admin: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 配置管理"
+    rbac.authorization.halo.run/display-name: "小程序用户管理"
+    rbac.authorization.halo.run/ui-permissions: |
+      ["plugin:plugin-uni-halo:users:view"]
+rules:
+  - apiGroups: [ "console.api.uni.uhalo.pro" ]
+    resources: [ "wxUsers", "userActivities", "pointsRecords" ]
+    verbs: [ "get", "list" ]

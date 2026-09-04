@@ -1,0 +1,11 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: ExtensionDefinition
+metadata:
+  name: wx-comment-proxy-filter
+  labels:
+    auth.halo.run/extension-point-name: "additional-webfilter"
+spec:
+  className: pro.uhalo.uni.filter.WxCommentProxyFilter
+  extensionPointName: additional-webfilter
+  displayName: "WxCommentProxyFilter"
+  description: "代理微信小程序评论请求至 Halo 官方评论 API，并跳过验证码校验。"

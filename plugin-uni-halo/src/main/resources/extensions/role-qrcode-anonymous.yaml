@@ -1,0 +1,15 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-qrcode-extension
+  labels:
+    halo.run/role-template: "true"
+    halo.run/hidden: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 配置管理"
+    rbac.authorization.halo.run/display-name: "UniHalo 二维码扩展（匿名）"
+rules:
+  - apiGroups: [ "uni.uhalo.pro" ]
+    resources: [ "qrcodeinfos", "qrcodeinfos/*", "plugin-uni-halo/qrcodeinfos", "plugin-uni-halo/qrcodeinfos/*" ]
+    verbs: [ "get", "list", "create", "update", "patch" ]

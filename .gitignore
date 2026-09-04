@@ -1,0 +1,13 @@
+# 构建产物 / 本地工具目录（子项目各自 .gitignore 已覆盖大部分）
+node_modules/
+unpackage/
+package-lock.json
+.gradle/
+build/
+build-out/
+.tools/
+extensions/*.jar
+.workbuddy/
+
+# 打包工作区快照时临时移开的子仓库 .git
+.git.bak/

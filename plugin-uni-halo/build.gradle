@@ -1,0 +1,72 @@
+plugins {
+    id 'java'
+    id "com.github.node-gradle.node" version "7.0.2"
+    id "io.freefair.lombok" version "8.0.1"
+    id "run.halo.plugin.devtools" version "0.0.9"
+}
+
+group 'pro.uhalo.uni'
+sourceCompatibility = JavaVersion.VERSION_17
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://s01.oss.sonatype.org/content/repositories/releases' }
+    maven { url 'https://s01.oss.sonatype.org/content/repositories/snapshots/' }
+    maven { url 'https://repo.spring.io/milestone' }
+    maven { url 'https://maven.aliyun.com/repository/public' }
+}
+
+dependencies {
+    implementation platform('run.halo.tools.platform:plugin:2.20.11')
+    compileOnly 'run.halo.app:api'
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'redis.clients:jedis:5.2.0'
+
+    testImplementation 'run.halo.app:api'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
+node {
+    nodeProjectDir = file("${project.projectDir}/ui")
+    pnpmVersion = "8.6.12"
+}
+
+tasks.register('buildFrontend', PnpmTask) {
+    args = ['build']
+    dependsOn('installDepsForUI')
+    environment = ['CI': 'true']
+}
+
+tasks.register('installDepsForUI', PnpmTask) {
+    args = ['install']
+    environment = ['CI': 'true']
+}
+
+build {
+    // build frontend before build
+    tasks.named('compileJava').configure {
+        dependsOn('buildFrontend')
+    }
+}
+
+halo {
+    version = '2.17'
+    debug = true
+
+}
