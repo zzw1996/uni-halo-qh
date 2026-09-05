@@ -32,4 +32,7 @@ public class AdminPointsRecordItemDTO {
     private String contentTitle;
 
     private String createTime;
+
+    /** 可读时间（yyyy-MM-dd HH:mm:ss，Asia/Shanghai），优先展示此字段 */
+    private String createTimeText;
 }

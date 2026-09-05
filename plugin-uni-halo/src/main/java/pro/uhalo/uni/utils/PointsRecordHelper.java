@@ -3,6 +3,7 @@ package pro.uhalo.uni.utils;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.enums.PointsAction;
 import pro.uhalo.uni.scheme.PointsRecord;
+import pro.uhalo.uni.scheme.WxUser;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -14,8 +15,17 @@ public final class PointsRecordHelper {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter OFFSET_TIME_FMT = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final DateTimeFormatter LOCAL_TIME_FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private PointsRecordHelper() {
+    }
+
+    /**
+     * 格式化为本地可读时间（yyyy-MM-dd HH:mm:ss，Asia/Shanghai），null 安全。
+     */
+    public static String formatInstant(Instant instant) {
+        return instant == null ? null : instant.atZone(ZONE).format(LOCAL_TIME_FMT);
     }
 
     public static String resolveOpenid(PointsRecord record) {
@@ -58,6 +68,38 @@ public final class PointsRecordHelper {
         }
     }
 
+    /**
+     * 解析展示用用户名：昵称 → Halo 用户名 → 「微信用户-xxxxxx」（openid 后 6 位），
+     * 保证后台列表不出现无法区分的裸"微信用户"。
+     */
+    public static String resolveDisplayName(WxUser user, String openid) {
+        if (user != null && StringUtils.hasText(user.getNickname())) {
+            return user.getNickname().trim();
+        }
+        if (user != null && StringUtils.hasText(user.getHaloUserName())) {
+            return user.getHaloUserName().trim();
+        }
+        if (StringUtils.hasText(openid)) {
+            var normalized = openid.trim();
+            return "微信用户-" + normalized.substring(Math.max(0, normalized.length() - 6));
+        }
+        return null;
+    }
+
+    /**
+     * 关联内容兜底：文章标题/描述 → 引用名 → 动作标签（每日签到/虚拟支付充值等），不再出现空白。
+     */
+    public static String resolveContentTitleOrLabel(PointsRecord record) {
+        var title = resolveContentTitle(record);
+        if (StringUtils.hasText(title)) {
+            return title;
+        }
+        if (record == null || !StringUtils.hasText(record.getAction())) {
+            return "积分变动";
+        }
+        return PointsAction.labelOf(record.getAction());
+    }
+
     public static String resolveContentTitle(PointsRecord record) {
         if (record == null) {
             return null;
@@ -88,7 +130,7 @@ public final class PointsRecordHelper {
         return StringUtils.hasText(record.getDescription()) ? record.getDescription().trim() : null;
     }
 
-    public static String resolveCreateTime(PointsRecord record) {
+    public static Instant resolveCreateInstant(PointsRecord record) {
         if (record == null) {
             return null;
         }
@@ -96,6 +138,11 @@ public final class PointsRecordHelper {
         if (instant == null && record.getMetadata() != null) {
             instant = record.getMetadata().getCreationTimestamp();
         }
+        return instant;
+    }
+
+    public static String resolveCreateTime(PointsRecord record) {
+        var instant = resolveCreateInstant(record);
         return instant == null ? null : instant.atZone(ZONE).format(OFFSET_TIME_FMT);
     }
 }

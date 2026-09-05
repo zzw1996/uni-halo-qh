@@ -22,7 +22,7 @@
 					<view class="cover" v-if="result.spec.cover">
 						<image class="cover-img" mode="aspectFill" :src="calcUrl(result.spec.cover)" @click="handlePreview(0, [{ url: calcUrl(result.spec.cover) }])"></image>
 					</view>
-					<view class="count" :class="{ 'no-thumbnail': !result.spec.cover }">
+					<view v-if="calcShowArticleStats" class="count" :class="{ 'no-thumbnail': !result.spec.cover }">
 						<view class="count-item">
 							<text class="value">{{ result.stats.visit }}</text>
 							<text class="label">阅读</text>
@@ -549,11 +549,15 @@ export default {
 			_browsePointsInterval: null
 		};
 	},
-	computed: {
-		haloConfigs() {
-			return this.$tm.vx.getters().getConfigs;
-		},
-		postDetailConfig() {
+		computed: {
+			haloConfigs() {
+				return this.$tm.vx.getters().getConfigs;
+			},
+			// 应用设置：是否显示文章统计条
+			calcShowArticleStats() {
+				return this.globalAppSettings?.articleDetail?.showStats !== false;
+			},
+			postDetailConfig() {
 			return this.haloConfigs?.basicConfig?.postDetailConfig || { showComment: true };
 		},
 		wxLoginDialogTitle() {

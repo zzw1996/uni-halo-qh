@@ -6,11 +6,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.AdminPointsRecordItemDTO;
 import pro.uhalo.uni.dto.AdminPointsRecordListResponse;
+import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.dto.PointsActionRuleDTO;
 import pro.uhalo.uni.dto.PointsConfigDTO;
+import pro.uhalo.uni.dto.PointsDrawResponse;
+import pro.uhalo.uni.dto.PointsDrawRuleDTO;
 import pro.uhalo.uni.dto.PointsEarnRequest;
 import pro.uhalo.uni.dto.PointsEarnResponse;
 import pro.uhalo.uni.dto.PointsEarnStatusResponse;
+import pro.uhalo.uni.dto.PointsExchangeResponse;
 import pro.uhalo.uni.dto.PointsHistoryItemDTO;
 import pro.uhalo.uni.dto.PointsHistoryResponse;
 import pro.uhalo.uni.dto.PointsOverviewResponse;
@@ -21,15 +25,19 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.PointsEvidenceService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.PointsConfigHelper;
 import pro.uhalo.uni.utils.PointsRecordHelper;
+import pro.uhalo.uni.utils.RateLimiter;
 import pro.uhalo.uni.utils.WxUserIds;
 import pro.uhalo.uni.utils.WxUserLookup;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -54,10 +62,23 @@ public class PointsServiceImpl implements PointsService {
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 50;
     private static final int ADMIN_MAX_SIZE = 100;
+    private static final int EARN_RATE_LIMIT_PER_MINUTE = 20;
+    private static final int SIGN_IN_RATE_LIMIT_PER_MINUTE = 10;
+    private static final int MAX_REF_KEY_LENGTH = 150;
+    private static final String NEW_USER_ACTION = "new_user";
+    private static final String DRAW_ACTION = "draw";
+    private static final String DRAW_COST_ACTION = "draw_cost";
+    private static final String EXCHANGE_PUBLISH = "publish_ticket";
+    private static final String EXCHANGE_DASHBOARD = "dashboard_advanced";
+    private static final String EXCHANGE_PUBLISH_ACTION = "exchange_publish";
+    private static final String EXCHANGE_DASHBOARD_ACTION = "exchange_dashboard";
+    private static final SecureRandom PRIZE_RANDOM = new SecureRandom();
 
     private final PointsPersistence persistence;
     private final ReactiveSettingFetcher settingFetcher;
     private final WxUserService wxUserService;
+    private final PointsEvidenceService pointsEvidenceService;
+    private final RateLimiter rateLimiter;
 
     @Override
     public Mono<PointsOverviewResponse> getOverview(String openid) {
@@ -75,19 +96,27 @@ public class PointsServiceImpl implements PointsService {
     @Override
     public Mono<PointsEarnResponse> earn(String openid, PointsEarnRequest request) {
         return requireOpenid(openid)
-            .flatMap(id -> loadConfig()
-                .flatMap(config -> {
-                    ensureEnabled(config);
-                    var action = PointsAction.parseEarnAction(request.getAction());
-                    var refKey = resolveRefKey(request);
-                    if (!StringUtils.hasText(refKey)) {
-                        return Mono.error(new WxAuthException("articleName 或 refId 不能为空"));
-                    }
-                    var earnKey = buildDailyEarnKey(id, action.value(), refKey);
-                    return persistence.findRecordByEarnKey(earnKey)
-                        .flatMap(existing -> buildDuplicateEarnResponse(id))
-                        .switchIfEmpty(processEarn(id, config, action, request, refKey, earnKey));
-                }));
+            .flatMap(id -> {
+                ensureRateLimit(id, "earn", EARN_RATE_LIMIT_PER_MINUTE, "领取积分过于频繁，请稍后再试");
+                return loadConfig()
+                    .flatMap(config -> {
+                        ensureEnabled(config);
+                        var action = PointsAction.parseEarnAction(request.getAction());
+                        var refKey = resolveRefKey(request);
+                        if (!StringUtils.hasText(refKey)) {
+                            return Mono.error(new WxAuthException("articleName 或 refId 不能为空"));
+                        }
+                        validateRefKey(refKey);
+                        var earnKey = buildDailyEarnKey(id, action.value(), refKey);
+                        return persistence.findRecordByEarnKey(earnKey)
+                            .flatMap(existing -> buildDuplicateEarnResponse(id))
+                            .switchIfEmpty(Mono.defer(() -> requireEvidence(id, action.value(), refKey)
+                                .flatMap(ready -> ready
+                                    ? processEarn(id, config, action, request, refKey, earnKey)
+                                    : Mono.error(new WxAuthException(
+                                        PointsEvidenceService.missingEvidenceMessage(action.value()))))));
+                    });
+            });
     }
 
     @Override
@@ -101,6 +130,7 @@ public class PointsServiceImpl implements PointsService {
                         return Mono.error(new WxAuthException("articleName 不能为空"));
                     }
                     var refKey = articleName.trim();
+                    validateRefKey(refKey);
                     var rule = PointsConfigHelper.ruleFor(config, pointsAction.value());
                     var earnKey = buildDailyEarnKey(id, pointsAction.value(), refKey);
                     return persistence.findRecordByEarnKey(earnKey)
@@ -110,34 +140,363 @@ public class PointsServiceImpl implements PointsService {
                             .capped(true)
                             .message(alreadyEarnedStatusMessage(pointsAction.value()))
                             .build()))
-                        .switchIfEmpty(evaluateEarnAvailability(id, pointsAction.value(), rule));
+                        .switchIfEmpty(Mono.defer(() -> requireEvidence(id, pointsAction.value(), refKey)
+                            .flatMap(ready -> ready
+                                ? evaluateEarnAvailability(id, pointsAction.value(), rule)
+                                : Mono.just(PointsEarnStatusResponse.builder()
+                                    .earnedToday(false)
+                                    .earned(0)
+                                    .capped(false)
+                                    .message(PointsEvidenceService.missingEvidenceMessage(
+                                        pointsAction.value()))
+                                    .build()))));
                 }));
     }
 
     @Override
     public Mono<PointsEarnResponse> signIn(String openid) {
         return requireOpenid(openid)
+            .flatMap(id -> {
+                ensureRateLimit(id, "sign-in", SIGN_IN_RATE_LIMIT_PER_MINUTE, "签到过于频繁，请稍后再试");
+                return loadConfig()
+                    .flatMap(config -> {
+                        ensureEnabled(config);
+                        return getOrCreateAccount(id)
+                            .flatMap(account -> {
+                                var today = today();
+                                if (today.equals(account.getLastSignInDate())) {
+                                    return buildSignInStatus(account, id)
+                                        .flatMap(status -> sumTodayEarned(id)
+                                            .map(todayEarned -> PointsEarnResponse.builder()
+                                                .earned(0)
+                                                .balance(safeBalance(account))
+                                                .todayEarned(todayEarned)
+                                                .signedToday(true)
+                                                .message("今日已签到")
+                                                .signInStatus(status)
+                                                .build()));
+                                }
+                                return applySignIn(id, account, config, today);
+                            });
+                    });
+            });
+    }
+
+    @Override
+    public Mono<PointsEarnResponse> claimNewUserGift(String openid) {
+        return requireOpenid(openid)
             .flatMap(id -> loadConfig()
                 .flatMap(config -> {
                     ensureEnabled(config);
-                    return getOrCreateAccount(id)
-                        .flatMap(account -> {
-                            var today = today();
-                            if (today.equals(account.getLastSignInDate())) {
-                                return buildSignInStatus(account, id)
-                                    .flatMap(status -> sumTodayEarned(id)
-                                        .map(todayEarned -> PointsEarnResponse.builder()
-                                            .earned(0)
-                                            .balance(safeBalance(account))
-                                            .todayEarned(todayEarned)
-                                            .signedToday(true)
-                                            .message("今日已签到")
-                                            .signInStatus(status)
-                                            .build()));
-                            }
-                            return applySignIn(id, account, config, today);
-                        });
+                    var giftRule = config.getRules() == null ? null : config.getRules().getNewUserGift();
+                    if (giftRule == null || giftRule.getPoints() <= 0) {
+                        return Mono.just(PointsEarnResponse.builder()
+                            .earned(0)
+                            .message("新人礼未开启")
+                            .build());
+                    }
+                    var earnKey = buildEarnKey(id, NEW_USER_ACTION, "gift");
+                    return persistence.findRecordByEarnKey(earnKey)
+                        .flatMap(existing -> Mono.just(PointsEarnResponse.builder()
+                            .earned(0)
+                            .balance(existing.getBalance())
+                            .message("新人礼已领取")
+                            .build()))
+                        .switchIfEmpty(Mono.defer(() -> grantNewUserGift(id, giftRule.getPoints(), earnKey)));
                 }));
+    }
+
+    private Mono<PointsEarnResponse> grantNewUserGift(String openid, int points, String earnKey) {
+        return persistence.getOrCreateAccount(openid)
+            .flatMap(account -> resolveWxUserId(openid, account)
+                .flatMap(wxUserId -> {
+                    var newBalance = safeBalance(account) + points;
+                    account.setBalance(newBalance);
+                    if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                        account.setWxUserId(wxUserId);
+                    }
+                    var record = persistence.newRecord(openid, NEW_USER_ACTION, points, newBalance,
+                        "新用户见面礼", "新人礼", earnKey, wxUserId);
+                    return persistence.saveAccount(account)
+                        .then(persistence.appendRecord(record))
+                        .thenReturn(PointsEarnResponse.builder()
+                            .earned(points)
+                            .balance(newBalance)
+                            .message("+" + points + " 积分")
+                            .build());
+                }))
+            .onErrorResume(ex -> {
+                // 并发领取时唯一流水创建失败视为已领取
+                if (isDuplicateRecordError(ex)) {
+                    return persistence.findRecordByEarnKey(earnKey)
+                        .flatMap(existing -> Mono.just(PointsEarnResponse.builder()
+                            .earned(0)
+                            .balance(existing.getBalance())
+                            .message("新人礼已领取")
+                            .build()));
+                }
+                return Mono.error(ex);
+            });
+    }
+
+    @Override
+    public Mono<PointsDrawResponse> drawStatus(String openid) {
+        return requireOpenid(openid)
+            .flatMap(id -> loadConfig()
+                .flatMap(config -> {
+                    ensureEnabled(config);
+                    var rule = config.getRules() == null ? null : config.getRules().getDraw();
+                    var cost = rule == null ? 10 : rule.getCost();
+                    var earnKey = buildDailyEarnKey(id, DRAW_ACTION, "daily");
+                    return persistence.findRecordByEarnKey(earnKey)
+                        .flatMap(existing -> buildAlreadyDrawnResponse(id))
+                        .switchIfEmpty(persistence.getOrCreateAccount(id)
+                            .map(account -> PointsDrawResponse.builder()
+                                .earned(0)
+                                .cost(cost)
+                                .balance(safeBalance(account))
+                                .alreadyDrawn(false)
+                                .message("今日可翻牌")
+                                .build()));
+                }));
+    }
+
+    // ========== 积分兑换（发布券 / 数据看板高级版） ==========
+
+    @Override
+    public Mono<PointsExchangeResponse> exchange(String openid, String item) {
+        if (!StringUtils.hasText(item)) {
+            return Mono.error(new WxAuthException("item 不能为空"));
+        }
+        return requireOpenid(openid)
+            .flatMap(id -> {
+                ensureRateLimit(id, "exchange", 30, "兑换过于频繁，请稍后再试");
+                return loadConfig().flatMap(config -> {
+                    ensureEnabled(config);
+                    var rule = resolveExchangeRule(config, item);
+                    if (rule == null || rule.points() <= 0) {
+                        return Mono.error(new WxAuthException("该兑换项未配置"));
+                    }
+                    var action = exchangeActionOf(item);
+                    return persistence.listRecordsByOpenid(id)
+                        .map(records -> countRecordsToday(records, action, today()))
+                        .flatMap(todayCount -> {
+                            if (rule.dailyMax() > 0 && todayCount >= rule.dailyMax()) {
+                                return Mono.error(new WxAuthException("今日兑换次数已达上限"));
+                            }
+                            return persistence.getOrCreateAccount(id)
+                                .flatMap(account -> {
+                                    if (safeBalance(account) < rule.points()) {
+                                        return Mono.error(new WxAuthException("积分不足，需要 " + rule.points() + " 积分"));
+                                    }
+                                    var newBalance = safeBalance(account) - rule.points();
+                                    account.setBalance(newBalance);
+                                    if (EXCHANGE_PUBLISH.equals(item)) {
+                                        account.setPublishTickets(safeTickets(account) + 1);
+                                    }
+                                    var earnKey = buildEarnKey(id, action, today() + "-" + (todayCount + 1));
+                                    var record = persistence.newRecord(id, action, -rule.points(), newBalance,
+                                        rule.description(), rule.description(), earnKey, account.getWxUserId());
+                                    return persistence.saveAccount(account)
+                                        .then(persistence.appendRecord(record))
+                                        .thenReturn(PointsExchangeResponse.builder()
+                                            .item(item)
+                                            .points(rule.points())
+                                            .balance(newBalance)
+                                            .publishTickets(account.getPublishTickets())
+                                            .message("兑换成功：" + rule.description())
+                                            .build());
+                                });
+                        });
+                });
+            });
+    }
+
+    @Override
+    public Mono<PointsExchangeResponse> exchangeStatus(String openid) {
+        return requireOpenid(openid)
+            .flatMap(id -> loadConfig()
+                .flatMap(config -> {
+                    ensureEnabled(config);
+                    var publishRule = resolveExchangeRule(config, EXCHANGE_PUBLISH);
+                    return persistence.getOrCreateAccount(id)
+                        .flatMap(account -> persistence.listRecordsByOpenid(id)
+                            .map(records -> {
+                                var today = today();
+                                var publishCount = countRecordsToday(records, EXCHANGE_PUBLISH_ACTION, today);
+                                var dashboardCount = countRecordsToday(records, EXCHANGE_DASHBOARD_ACTION, today);
+                                return PointsExchangeResponse.builder()
+                                    .balance(safeBalance(account))
+                                    .publishTickets(safeTickets(account))
+                                    .freeQuota(publishRule == null ? 3 : publishRule.freeCount())
+                                    .remaining(publishRule == null
+                                        ? 5
+                                        : Math.max(0, publishRule.dailyMax() - publishCount))
+                                    .dashboardUnlockedToday(dashboardCount > 0)
+                                    .message("兑换中心状态")
+                                    .build();
+                            }));
+                }));
+    }
+
+    @Override
+    public Mono<PointsExchangeResponse> spendPublishTicket(String openid) {
+        return requireOpenid(openid)
+            .flatMap(id -> persistence.getOrCreateAccount(id)
+                .flatMap(account -> {
+                    if (safeTickets(account) <= 0) {
+                        return Mono.error(new WxAuthException("发布券不足"));
+                    }
+                    account.setPublishTickets(safeTickets(account) - 1);
+                    return persistence.saveAccount(account)
+                        .thenReturn(PointsExchangeResponse.builder()
+                            .item(EXCHANGE_PUBLISH)
+                            .balance(safeBalance(account))
+                            .publishTickets(account.getPublishTickets())
+                            .message("已使用 1 张发布券")
+                            .build());
+                }));
+    }
+
+    private record ExchangeRule(int points, int dailyMax, int freeCount, String description) {
+    }
+
+    private static ExchangeRule resolveExchangeRule(PointsConfigDTO config, String item) {
+        var rules = config == null ? null : config.getRules();
+        if (rules == null || rules.getExchange() == null) {
+            return null;
+        }
+        if (EXCHANGE_PUBLISH.equals(item)) {
+            var rule = rules.getExchange().getPublishTicket();
+            return new ExchangeRule(rule.getPoints(), rule.getDailyMaxCount(), rule.getFreeCount(),
+                "瞬间发布券");
+        }
+        if (EXCHANGE_DASHBOARD.equals(item)) {
+            var rule = rules.getExchange().getDashboardAdvanced();
+            return new ExchangeRule(rule.getPoints(), rule.getDailyMaxCount(), rule.getFreeCount(),
+                "数据看板高级版");
+        }
+        return null;
+    }
+
+    private static String exchangeActionOf(String item) {
+        return EXCHANGE_PUBLISH.equals(item) ? EXCHANGE_PUBLISH_ACTION : EXCHANGE_DASHBOARD_ACTION;
+    }
+
+    private static int countRecordsToday(List<PointsRecord> records, String action, String date) {
+        if (records == null || records.isEmpty()) {
+            return 0;
+        }
+        var count = 0;
+        for (var record : records) {
+            if (record == null || !action.equals(record.getAction())) {
+                continue;
+            }
+            if (isSameDay(record.getCreateTime(), date)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int safeTickets(UserPoints account) {
+        return account.getPublishTickets() == null ? 0 : Math.max(0, account.getPublishTickets());
+    }
+
+    @Override
+    public Mono<PointsDrawResponse> draw(String openid) {
+        return requireOpenid(openid)
+            .flatMap(id -> {
+                ensureRateLimit(id, "draw", 20, "翻牌过于频繁，请稍后再试");
+                return loadConfig()
+                    .flatMap(config -> {
+                        ensureEnabled(config);
+                        var rule = config.getRules() == null ? null : config.getRules().getDraw();
+                        if (rule == null || rule.getCost() <= 0 || rule.getPrizes().isEmpty()) {
+                            return Mono.error(new WxAuthException("翻牌抽奖未配置"));
+                        }
+                        var earnKey = buildDailyEarnKey(id, DRAW_ACTION, "daily");
+                        return persistence.findRecordByEarnKey(earnKey)
+                            .flatMap(existing -> buildAlreadyDrawnResponse(id))
+                            .switchIfEmpty(Mono.defer(() -> processDraw(id, rule, earnKey)));
+                    });
+            });
+    }
+
+    private Mono<PointsDrawResponse> buildAlreadyDrawnResponse(String openid) {
+        return persistence.getOrCreateAccount(openid)
+            .map(account -> PointsDrawResponse.builder()
+                .earned(0)
+                .cost(0)
+                .balance(safeBalance(account))
+                .alreadyDrawn(true)
+                .message("今日已翻牌，明天再来吧")
+                .build());
+    }
+
+    private Mono<PointsDrawResponse> processDraw(String openid, PointsDrawRuleDTO rule, String earnKey) {
+        var prize = pickPrize(rule.getPrizes());
+        var drawCostKey = buildEarnKey(openid, DRAW_COST_ACTION, today());
+        return persistence.getOrCreateAccount(openid)
+            .flatMap(account -> {
+                var balance = safeBalance(account);
+                if (balance < rule.getCost()) {
+                    return Mono.error(new WxAuthException("积分不足，需要 " + rule.getCost() + " 积分"));
+                }
+                var newBalance = balance - rule.getCost() + prize;
+                return resolveWxUserId(openid, account)
+                    .flatMap(wxUserId -> {
+                        account.setBalance(newBalance);
+                        if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                            account.setWxUserId(wxUserId);
+                        }
+                        var prizeRecord = persistence.newRecord(openid, DRAW_ACTION, prize, newBalance,
+                            "翻牌中奖 +" + prize, "每日翻牌", earnKey, wxUserId);
+                        var costRecord = persistence.newRecord(openid, DRAW_COST_ACTION, -rule.getCost(),
+                            newBalance, "翻牌消耗 -" + rule.getCost(), "每日翻牌", drawCostKey, wxUserId);
+                        return persistence.appendRecord(prizeRecord)
+                            .then(persistence.appendRecord(costRecord))
+                            .then(persistence.saveAccount(account))
+                            .thenReturn(PointsDrawResponse.builder()
+                                .earned(prize)
+                                .cost(rule.getCost())
+                                .balance(newBalance)
+                                .alreadyDrawn(false)
+                                .message("中奖 +" + prize + " 积分")
+                                .build());
+                    });
+            });
+    }
+
+    /** 按权重随机挑选奖品（返回中奖积分数） */
+    static int pickPrize(List<DrawPrizeDTO> prizes) {
+        if (prizes == null || prizes.isEmpty()) {
+            return 0;
+        }
+        var total = prizes.stream().mapToInt(DrawPrizeDTO::getWeight).sum();
+        if (total <= 0) {
+            return prizes.get(0).getPoints();
+        }
+        var bound = PRIZE_RANDOM.nextInt(total);
+        var cursor = 0;
+        for (var prize : prizes) {
+            cursor += prize.getWeight();
+            if (bound < cursor) {
+                return prize.getPoints();
+            }
+        }
+        return prizes.get(prizes.size() - 1).getPoints();
+    }
+
+    private static boolean isDuplicateRecordError(Throwable ex) {
+        var message = ex == null ? null : ex.getMessage();
+        if (message == null || message.isEmpty()) {
+            return false;
+        }
+        var normalized = message.toLowerCase();
+        return normalized.contains("already exists")
+            || normalized.contains("duplicate")
+            || normalized.contains("已存在");
     }
 
     @Override
@@ -191,16 +550,18 @@ public class PointsServiceImpl implements PointsService {
         return AdminPointsRecordItemDTO.builder()
             .id(record.getMetadata() != null ? record.getMetadata().getName() : null)
             .wxOpenid(PointsRecordHelper.resolveOpenid(record))
-            .nickname(wxUser != null ? wxUser.getNickname() : null)
+            .nickname(PointsRecordHelper.resolveDisplayName(wxUser,
+                PointsRecordHelper.resolveOpenid(record)))
             .haloUserName(wxUser != null ? wxUser.getHaloUserName() : null)
             .action(action)
             .actionLabel(PointsAction.labelOf(action))
             .points(record.getPoints() == null ? 0 : record.getPoints())
-            .balance(record.getBalance())
+            .balance(record.getBalance() == null ? 0L : record.getBalance())
             .description(PointsRecordHelper.resolveDetailText(record))
-            .contentTitle(PointsRecordHelper.resolveContentTitle(record))
+            .contentTitle(PointsRecordHelper.resolveContentTitleOrLabel(record))
             .refName(record.getRefName())
             .createTime(PointsRecordHelper.resolveCreateTime(record))
+            .createTimeText(PointsRecordHelper.formatInstant(PointsRecordHelper.resolveCreateInstant(record)))
             .build();
     }
 
@@ -504,6 +865,7 @@ public class PointsServiceImpl implements PointsService {
             .description(record.getDescription())
             .refName(record.getRefName())
             .createTime(record.getCreateTime() == null ? null : formatCreateTime(record.getCreateTime()))
+            .createTimeText(PointsRecordHelper.formatInstant(record.getCreateTime()))
             .build();
     }
 
@@ -535,6 +897,29 @@ public class PointsServiceImpl implements PointsService {
             return Mono.error(new WxAuthException("缺少 Wechat-Session-Id"));
         }
         return Mono.just(openid.trim());
+    }
+
+    private Mono<Boolean> requireEvidence(String openid, String action, String refKey) {
+        return pointsEvidenceService.evidenceReady(openid, action, refKey);
+    }
+
+    private void ensureRateLimit(String openid, String scene, int limit, String message) {
+        if (!rateLimiter.tryAcquire(openid + ":" + scene, limit, Duration.ofMinutes(1))) {
+            throw new WxAuthException(message);
+        }
+    }
+
+    private static void validateRefKey(String refKey) {
+        var normalized = refKey.trim();
+        if (normalized.length() > MAX_REF_KEY_LENGTH) {
+            throw new WxAuthException("articleName 参数过长");
+        }
+        for (var i = 0; i < normalized.length(); i++) {
+            var ch = normalized.charAt(i);
+            if (Character.isWhitespace(ch) || Character.isISOControl(ch)) {
+                throw new WxAuthException("articleName 参数不合法");
+            }
+        }
     }
 
     private Mono<String> resolveWxUserId(String openid, UserPoints account) {

@@ -13,10 +13,21 @@ export const checkPlatform = (name) => {
 // 默认的应用设置
 export const _DefaultAppSettings = {
 	showStartPage: false, // 是否每次启动都显示启动页
-	isAvatarRadius: false, // 评论头像是否圆形
 	banner: {
 		useDot: true,
 		dotPosition: 'right'
+	},
+	// 文章卡片
+	articleCard: {
+		showCover: true, // 是否显示文章封面
+	},
+	// 文章详情
+	articleDetail: {
+		showStats: true, // 是否显示文章统计条（阅读/喜欢/评论/字数）
+	},
+	// 悬浮返回顶部按钮
+	flotbutton: {
+		show: true, // 是否显示全局悬浮按钮（如返回顶部）
 	},
 	// 布局配置
 	layout: {
@@ -40,13 +51,7 @@ export const _DefaultAppSettings = {
 		use: false, // 是否启用
 		type: 'leftBottom' // 弹幕位置（rightToLeft leftBottom）
 	},
-	gallery: {
-		// 是否使用瀑布流
-		useWaterfull: true
-	},
 	links: {
-		// 是否使用简约模式
-		useSimple: false,
 		useGroup: false,
 	},
 	about: {

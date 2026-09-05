@@ -3,6 +3,7 @@ package pro.uhalo.uni;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import pro.uhalo.uni.scheme.PointsRecord;
+import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.QRCodeInfo;
 import pro.uhalo.uni.scheme.UserActivity;
 import pro.uhalo.uni.scheme.UserPoints;
@@ -88,6 +89,22 @@ public class UniHaloPlugin extends BasePlugin {
             log.info("【UniHalo】PointsRecord scheme 注册成功");
         });
 
+        schemeManager.register(PayOrder.class, indexSpecs -> {
+            indexSpecs.add(new IndexSpec()
+                .setName("outTradeNo")
+                .setIndexFunc(simpleAttribute(PayOrder.class, PayOrder::getOutTradeNo)));
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOrderId")
+                .setIndexFunc(simpleAttribute(PayOrder.class, PayOrder::getWxOrderId)));
+            indexSpecs.add(new IndexSpec()
+                .setName("openid")
+                .setIndexFunc(simpleAttribute(PayOrder.class, PayOrder::getOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("status")
+                .setIndexFunc(simpleAttribute(PayOrder.class, PayOrder::getStatus)));
+            log.info("【UniHalo】PayOrder scheme 注册成功");
+        });
+
         log.info("【UniHalo】插件启动成功！");
     }
 
@@ -99,6 +116,7 @@ public class UniHaloPlugin extends BasePlugin {
         schemeManager.unregister(schemeManager.get(UserActivity.class));
         schemeManager.unregister(schemeManager.get(UserPoints.class));
         schemeManager.unregister(schemeManager.get(PointsRecord.class));
+        schemeManager.unregister(schemeManager.get(PayOrder.class));
 
         log.info("【UniHalo】插件停止！");
     }

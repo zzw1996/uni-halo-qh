@@ -154,6 +154,37 @@ spec:
               language: html
               height: 200px
               help: 免责声明页面内容，不填写的话使用默认模板，支持 html 语法。
+        - $formkit: group
+          name: notifyConfig
+          label: 活动公告弹窗
+          value:
+            enabled: false
+            title: ""
+            content: ""
+            url: ""
+          help: 开启后首页启动时弹出一次公告（每天最多弹一次）；可用于活动预告、新功能上线通知。
+          children:
+            - $formkit: switch
+              name: enabled
+              label: 开启公告弹窗
+              value: false
+              onValue: true
+              offValue: false
+            - $formkit: text
+              name: title
+              label: 公告标题
+              value: ""
+              validation: required
+            - $formkit: textarea
+              name: content
+              label: 公告内容
+              value: ""
+              help: 支持 Markdown 语法。
+            - $formkit: text
+              name: url
+              label: 跳转链接（可选）
+              value: ""
+              help: 填写后弹窗底部显示「点击跳转内容链接」按钮（以网页形式打开）。
     - group: redisConfig
       label: 验证码 Redis 配置
       formSchema:
@@ -1201,3 +1232,122 @@ spec:
                       value: 5
                       min: 1
                       validation: required
+        - $formkit: group
+          name: newUserGift
+          label: 新用户见面礼
+          value:
+            points: 100
+          help: 新用户首次登录自动到账的积分（每个用户永久限领一次）；填 0 表示关闭新人礼。
+          children:
+            - $formkit: number
+              name: points
+              label: 见面礼积分
+              value: 100
+              min: 0
+              validation: required
+        - $formkit: group
+          name: draw
+          label: 每日翻牌抽奖
+          value:
+            cost: 10
+            prizes:
+              - points: 2
+                weight: 35
+              - points: 5
+                weight: 30
+              - points: 10
+                weight: 15
+              - points: 20
+                weight: 10
+              - points: 50
+                weight: 7
+              - points: 100
+                weight: 3
+          help: 用户每天可抽一次，先扣「每次消耗积分」再中奖；奖池按权重随机。
+          children:
+            - $formkit: number
+              name: cost
+              label: 每次消耗积分
+              value: 10
+              min: 0
+              validation: required
+            - $formkit: repeater
+              name: prizes
+              label: 奖池（中奖积分 + 权重）
+              children:
+                - $formkit: number
+                  name: points
+                  label: 中奖积分
+                  value: 2
+                  min: 1
+                  validation: required
+                - $formkit: number
+                  name: weight
+                  label: 权重
+                  value: 10
+                  min: 1
+                  validation: required
+    - group: payConfig
+      label: 虚拟支付
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 开启虚拟支付（积分充值）
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后，小程序积分页展示充值入口，用户通过微信虚拟支付购买积分道具。仅支持道具直购（mode=short_series_goods）。
+        - $formkit: text
+          name: offerId
+          label: OfferID（虚拟支付商户号）
+          value: ""
+          help: 微信 MP 后台 → 虚拟支付 → 基本配置 中查看；开通虚拟支付后自动生成。
+        - $formkit: text
+          name: appKey
+          label: 现网 AppKey
+          value: ""
+          help: 微信 MP 后台 → 虚拟支付 → 基本配置 → 现网 AppKey（env=0 正式环境使用）。沙箱 AppKey 无需配置。
+        - $formkit: number
+          name: env
+          label: 支付环境
+          value: 0
+          min: 0
+          max: 1
+          help: 0-正式环境（现网，推荐）；1-沙箱环境。
+        - $formkit: repeater
+          name: goods
+          label: 积分道具
+          value:
+            - goodsId: ""
+              name: ""
+              price: 100
+              points: 100
+          help: 需与微信 MP 后台【虚拟支付 → 道具管理】创建并发布的道具保持一致（goodsId 即道具 ID）。
+          children:
+            - $formkit: text
+              name: goodsId
+              label: 道具 ID（productId）
+              value: ""
+              validation: required
+            - $formkit: text
+              name: name
+              label: 商品名称
+              value: ""
+              validation: required
+            - $formkit: number
+              name: price
+              label: 道具单价（分）
+              value: 100
+              min: 1
+              validation: required
+              help: 单位为分，且需与微信后台道具价格完全一致（例如 1 元填 100）。
+            - $formkit: number
+              name: points
+              label: 到账积分
+              value: 100
+              min: 1
+              validation: required
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 flex items-center mb-1 cursor-pointer"
+          innerHTML: "发货推送 URL：在微信 MP 后台【虚拟支付 → 基本配置 → 基础配置 → 发货推送配置】填写：{站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/pay/notify（站点地址需与小程序请求域名一致并支持 HTTPS）"

@@ -67,6 +67,11 @@ export const DefaultAppConfigs = {
 		fallbackOnApiError: true,
 		minBrowseDuration: 5,
 		rules: {}
+	},
+	/** 虚拟支付配置（enabled / goods 由插件后台 getConfigs 下发） */
+	payConfig: {
+		enabled: false,
+		goods: []
 	}
 }
 

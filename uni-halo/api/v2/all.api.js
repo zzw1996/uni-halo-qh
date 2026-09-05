@@ -1273,10 +1273,135 @@ export default {
 	},
 
 	/**
+	 * 新用户见面礼（永久一次，幂等）
+	 * POST /points/new-user-gift
+	 */
+	claimNewUserGift: async () => {
+		return requestPointsApi({ apiKey: 'newUserGift', method: 'POST', data: {} });
+	},
+
+	/**
+	 * 每日翻牌抽奖（每天一次）
+	 * POST /points/draw
+	 */
+	claimPointsDraw: async () => {
+		return requestPointsApi({ apiKey: 'draw', method: 'POST', data: {} });
+	},
+
+	/**
+	 * 积分兑换：扣除积分发放权益
+	 * POST /points/exchange
+	 */
+	exchangePointsItem: async (item) => {
+		return requestPointsApi({
+			apiKey: 'exchange',
+			method: 'POST',
+			data: { item: String(item || '') }
+		});
+	},
+
+	/**
+	 * 兑换中心余额/配额
+	 * GET /points/exchange/balance
+	 */
+	getExchangeBalance: async () => {
+		return requestPointsApi({ apiKey: 'exchangeBalance', method: 'GET' });
+	},
+
+	/**
+	 * 消耗 1 张发布券
+	 * POST /points/exchange/spend
+	 */
+	spendPublishTicket: async () => {
+		return requestPointsApi({ apiKey: 'exchangeSpend', method: 'POST', data: {} });
+	},
+
+	/**
+	 * 今日翻牌状态（不消耗积分）
+	 * GET /points/draw/status
+	 */
+	getPointsDrawStatus: async () => {
+		return requestPointsApi({ apiKey: 'drawStatus', method: 'GET' });
+	},
+
+	/**
 	 * 积分明细
 	 * GET /points/history?page=0&size=10
 	 */
 	getPointsHistory: async (params = {}) => {
 		return requestPointsApi({ apiKey: 'history', method: 'GET', params: params || {} });
+	},
+
+	/**
+	 * 热榜（按浏览量 Top N）
+	 * GET /rank/articles?limit=10
+	 */
+	getRankArticles: async (limit = 10) => {
+		return directRequest({
+			url: `${buildUniHaloUrl('/rank/articles')}?limit=${limit || 10}`,
+			method: 'GET'
+		});
+	},
+
+	// ==================== 虚拟支付（积分充值） ====================
+
+	/**
+	 * 虚拟支付公开配置（商品列表）
+	 * GET /pay/config
+	 */
+	getVirtualPayConfig: async () => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/pay/config'),
+			method: 'GET',
+			header: {
+				'Wechat-Session-Id': openid
+			}
+		});
+	},
+
+	/**
+	 * 下单：服务器生成 signData/paySig/signature（mode=short_series_goods 道具直购）
+	 * POST /pay/order
+	 */
+	createPayOrder: async (goodsId) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/pay/order'),
+			method: 'POST',
+			data: {
+				goodsId: String(goodsId || '')
+			},
+			header: {
+				'Wechat-Session-Id': openid
+			}
+		});
+	},
+
+	/**
+	 * 查询本地订单状态（pending 时服务端会顺带调 query_order 兜底）
+	 * POST /pay/query
+	 */
+	queryPayOrder: async (outTradeNo) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/pay/query'),
+			method: 'POST',
+			data: {
+				outTradeNo: String(outTradeNo || '')
+			},
+			header: {
+				'Wechat-Session-Id': openid
+			}
+		});
 	},
 }

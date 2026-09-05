@@ -79,6 +79,36 @@ public class PointsEndpoint implements CustomEndpoint {
                     .operationId("PointsSignIn")
                     .description("Daily sign-in to earn points.")
                     .tag(apiTag))
+            .POST(basePath + "/points/new-user-gift", pointsController::newUserGift,
+                builder -> builder
+                    .operationId("ClaimNewUserGift")
+                    .description("Claim one-time new-user gift points (idempotent).")
+                    .tag(apiTag))
+            .POST(basePath + "/points/draw", pointsController::draw,
+                builder -> builder
+                    .operationId("DrawLuckyPoints")
+                    .description("Daily weighted draw with points cost, once per day.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/draw/status", pointsController::drawStatus,
+                builder -> builder
+                    .operationId("GetDrawStatus")
+                    .description("Check today's draw status without consuming anything.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/exchange", pointsController::exchange,
+                builder -> builder
+                    .operationId("ExchangePointsItem")
+                    .description("Exchange points for publish ticket / dashboard advanced.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/exchange/balance", pointsController::exchangeStatus,
+                builder -> builder
+                    .operationId("GetExchangeBalance")
+                    .description("Get exchange center balance and today's quota.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/exchange/spend", pointsController::spendPublishTicket,
+                builder -> builder
+                    .operationId("SpendPublishTicket")
+                    .description("Spend one publish ticket.")
+                    .tag(apiTag))
             .build();
     }
 }

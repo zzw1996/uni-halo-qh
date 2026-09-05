@@ -1,0 +1,14 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-pay
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 虚拟支付"
+    rbac.authorization.halo.run/display-name: "虚拟支付接口（UniHalo）"
+rules:
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/pay" ]
+    verbs: [ "get", "list", "create" ]

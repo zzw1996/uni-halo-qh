@@ -38,6 +38,7 @@ import pro.uhalo.uni.services.UpvoteTrackerService;
 import pro.uhalo.uni.services.UserActivityService;
 
 import pro.uhalo.uni.services.WxUserService;
+import pro.uhalo.uni.utils.PointsRecordHelper;
 import pro.uhalo.uni.utils.WxUserLookup;
 
 import reactor.core.publisher.Mono;
@@ -57,9 +58,7 @@ import run.halo.app.extension.router.selector.FieldSelector;
 import java.time.Instant;
 
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 
@@ -144,7 +143,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
                         }))));
 
-        }).map(this::toItemDto);
+        }).map(activity -> toItemDto(activity, List.of()));
 
     }
 
@@ -244,9 +243,11 @@ public class UserActivityServiceImpl implements UserActivityService {
 
             .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
 
-            .flatMap(wxUser -> listByOpenid(wxUser.getOpenid(), query.type())
-
-                .map(activities -> toPageResponse(activities, query.page(), query.size()))));
+            .flatMap(wxUser -> Mono.zip(
+                listByOpenid(wxUser.getOpenid(), query.type()),
+                pointsPersistence.listRecordsByOpenid(wxUser.getOpenid()))
+                .map(tuple -> toPageResponse(tuple.getT1(), tuple.getT2(),
+                    query.page(), query.size()))));
 
     }
 
@@ -292,7 +293,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
                 var userLookup = tuple.getT2();
 
-                var pointsByEarnKey = buildPointsByEarnKey(tuple.getT3());
+                var records = tuple.getT3();
 
                 var filtered = activities.stream()
 
@@ -302,7 +303,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
                     .toList();
 
-                return toAdminPageResponse(filtered, userLookup, pointsByEarnKey, query.page(), query.size());
+                return toAdminPageResponse(filtered, userLookup, records, query.page(), query.size());
 
             }));
 
@@ -522,7 +523,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
     private AdminUserActivityListResponse toAdminPageResponse(List<UserActivity> activities,
 
-        WxUserLookup userLookup, Map<String, Integer> pointsByEarnKey, int page, int size) {
+        WxUserLookup userLookup, List<PointsRecord> records, int page, int size) {
 
         var sorted = activities.stream()
 
@@ -540,7 +541,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
         var items = sorted.subList(from, to).stream()
 
-            .map(activity -> toAdminItemDto(activity, userLookup, pointsByEarnKey))
+            .map(activity -> toAdminItemDto(activity, userLookup, records))
 
             .toList();
 
@@ -564,7 +565,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
     private AdminUserActivityItemDTO toAdminItemDto(UserActivity activity, WxUserLookup userLookup,
 
-        Map<String, Integer> pointsByEarnKey) {
+        List<PointsRecord> records) {
 
         var wxUser = userLookup.resolve(activity.getWxOpenid(), activity.getWxUserId());
 
@@ -582,7 +583,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
             .wxOpenid(activity.getWxOpenid())
 
-            .nickname(wxUser != null ? wxUser.getNickname() : null)
+            .nickname(PointsRecordHelper.resolveDisplayName(wxUser, activity.getWxOpenid()))
 
             .haloUserName(wxUser != null ? wxUser.getHaloUserName() : null)
 
@@ -604,7 +605,9 @@ public class UserActivityServiceImpl implements UserActivityService {
 
             .recordTime(activity.getRecordTime())
 
-            .pointsEarned(resolveActivityPoints(activity, pointsByEarnKey))
+            .recordTimeText(PointsRecordHelper.formatInstant(resolveActivityTime(activity)))
+
+            .pointsEarned(resolveActivityPoints(activity, records))
 
             .build();
 
@@ -612,31 +615,18 @@ public class UserActivityServiceImpl implements UserActivityService {
 
 
 
-    private static Map<String, Integer> buildPointsByEarnKey(List<PointsRecord> records) {
+    /**
+     * 行为记录对应的领取积分数量：先按「同日精确匹配」earnKey，
+     * 匹配失败回退为该用户该行为该文章最近一次领分流水（时间被刷新/跨天领取也能正确显示）。
+     * 从未领取过返回 null（前端展示为空/未获得），避免误显示 0。
+     */
+    static Integer resolveActivityPoints(UserActivity activity, List<PointsRecord> records) {
 
-        var map = new HashMap<String, Integer>();
+        if (records == null || records.isEmpty()
 
-        for (var record : records) {
+            || activity == null
 
-            if (StringUtils.hasText(record.getEarnKey()) && record.getPoints() != null) {
-
-                map.put(record.getEarnKey(), record.getPoints());
-
-            }
-
-        }
-
-        return map;
-
-    }
-
-
-
-    private static Integer resolveActivityPoints(UserActivity activity,
-
-        Map<String, Integer> pointsByEarnKey) {
-
-        if (!StringUtils.hasText(activity.getWxOpenid())
+            || !StringUtils.hasText(activity.getWxOpenid())
 
             || !StringUtils.hasText(activity.getType())
 
@@ -645,6 +635,8 @@ public class UserActivityServiceImpl implements UserActivityService {
             return null;
 
         }
+
+        var openid = activity.getWxOpenid().trim();
 
         var type = activity.getType().trim().toLowerCase();
 
@@ -658,25 +650,57 @@ public class UserActivityServiceImpl implements UserActivityService {
 
         }
 
-        var recordTime = activity.getRecordTime();
+        var articleName = activity.getArticleName().trim();
 
-        if (recordTime == null && activity.getMetadata() != null) {
+        var recordTime = resolveActivityTime(activity);
 
-            recordTime = activity.getMetadata().getCreationTimestamp();
-
-        }
-
+        // 1) 同日精确匹配：行为发生/刷新当天领取的积分
         var earnKey = PointsServiceImpl.buildDailyEarnKey(
 
-            activity.getWxOpenid().trim(),
-
-            type,
-
-            activity.getArticleName().trim(),
+            openid, type, articleName,
 
             PointsServiceImpl.recordDate(recordTime));
 
-        return pointsByEarnKey.getOrDefault(earnKey, 0);
+        for (var record : records) {
+
+            if (earnKey.equals(record.getEarnKey())) {
+
+                return record.getPoints();
+
+            }
+
+        }
+
+        // 2) 回退：该用户该行为该文章最近一次领分流水
+        return records.stream()
+
+            .filter(record -> openid.equals(record.getWxOpenid())
+
+                && type.equals(record.getAction())
+
+                && StringUtils.hasText(record.getRefName())
+
+                && articleName.equals(record.getRefName().trim()))
+
+            .max(Comparator.comparing(PointsRecord::getCreateTime,
+
+                Comparator.nullsLast(Comparator.naturalOrder())))
+
+            .map(PointsRecord::getPoints)
+
+            .orElse(null);
+
+    }
+
+    private static Instant resolveActivityTime(UserActivity activity) {
+
+        if (activity.getRecordTime() != null) {
+
+            return activity.getRecordTime();
+
+        }
+
+        return activity.getMetadata() == null ? null : activity.getMetadata().getCreationTimestamp();
 
     }
 
@@ -834,7 +858,8 @@ public class UserActivityServiceImpl implements UserActivityService {
 
 
 
-    private UserActivityListResponse toPageResponse(List<UserActivity> activities, int page, int size) {
+    private UserActivityListResponse toPageResponse(List<UserActivity> activities,
+        List<PointsRecord> records, int page, int size) {
 
         var sorted = activities.stream()
 
@@ -850,7 +875,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
         var to = Math.min(from + size, total);
 
-        var items = sorted.subList(from, to).stream().map(this::toItemDto).toList();
+        var items = sorted.subList(from, to).stream().map(activity -> toItemDto(activity, records)).toList();
 
         return UserActivityListResponse.builder()
 
@@ -870,7 +895,7 @@ public class UserActivityServiceImpl implements UserActivityService {
 
 
 
-    private UserActivityItemDTO toItemDto(UserActivity activity) {
+    private UserActivityItemDTO toItemDto(UserActivity activity, List<PointsRecord> records) {
 
         var contentType = activity.getContentType();
 
@@ -899,6 +924,10 @@ public class UserActivityServiceImpl implements UserActivityService {
             .visit(activity.getVisit() != null ? activity.getVisit() : 0)
 
             .recordTime(activity.getRecordTime())
+
+            .recordTimeText(PointsRecordHelper.formatInstant(resolveActivityTime(activity)))
+
+            .pointsEarned(resolveActivityPoints(activity, records))
 
             .build();
 

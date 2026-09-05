@@ -53,30 +53,47 @@
 
 		<!-- ========== 2.5 积分签到 ========== -->
 		<view v-if="calcPointsEnabled" class="section-card points-card">
-			<view class="points-card-head">
-				<view class="points-card-title-wrap">
-					<text class="points-card-title">我的积分</text>
-					<text class="points-card-balance">{{ calcPointsBalance }}</text>
+				<view class="points-card-head">
+					<view class="points-card-title-wrap">
+						<text class="points-card-title">我的积分</text>
+						<text class="points-card-balance">{{ calcPointsBalance }}</text>
+					</view>
+					<view class="points-card-links">
+						<view v-if="calcPayEnabled" class="points-recharge-link" @click="fnToPointsRecharge">
+							<text>积分充值</text>
+						</view>
+						<view class="points-card-link" @click="fnToPointsHistory">
+							<text>明细</text>
+							<tm-icons name="icon-angle-right" :size="20" color="#909399"></tm-icons>
+						</view>
+					</view>
 				</view>
-				<view class="points-card-link" @click="fnToPointsHistory">
-					<text>明细</text>
-					<tm-icons name="icon-angle-right" :size="20" color="#909399"></tm-icons>
+				<view class="points-sign-row">
+					<view class="points-sign-info">
+						<text class="points-sign-days">已连续签到 {{ calcConsecutiveDays }} 天</text>
+						<text class="points-sign-tip">{{ calcSignInTip }}</text>
+					</view>
+					<tm-button
+						size="m"
+						:theme="calcSignInButtonTheme"
+						:shadow="calcSignInButtonShadow"
+						:loading="signInLoading"
+						:disabled="calcSignInButtonDisabled"
+						@click="fnHandleSignIn"
+					>{{ calcSignInButtonText }}</tm-button>
 				</view>
-			</view>
-			<view class="points-sign-row">
-				<view class="points-sign-info">
-					<text class="points-sign-days">已连续签到 {{ calcConsecutiveDays }} 天</text>
-					<text class="points-sign-tip">{{ calcSignInTip }}</text>
+				<view class="points-draw-row">
+					<view class="points-draw-info">
+						<text class="points-draw-title">每日翻牌</text>
+						<text class="points-draw-tip">每天一次，消耗积分翻奖，最高 100 分</text>
+					</view>
+					<tm-button
+						size="m"
+						theme="orange"
+						:loading="drawChecking"
+						@click="fnOpenPointsDraw"
+					>翻牌抽奖</tm-button>
 				</view>
-				<tm-button
-					size="m"
-					:theme="calcSignInButtonTheme"
-					:shadow="calcSignInButtonShadow"
-					:loading="signInLoading"
-					:disabled="calcSignInButtonDisabled"
-					@click="fnHandleSignIn"
-				>{{ calcSignInButtonText }}</tm-button>
-			</view>
 			<view v-if="calcWeekRecords.length" class="points-week-row">
 				<view
 					v-for="(signed, idx) in calcWeekRecords"
@@ -94,50 +111,13 @@
 		<view class="section-card">
 			<view class="sc-title">我的服务</view>
 			<tm-grid
-				:list="serviceList"
+				:list="mergedServiceList"
 				:grid="4"
 				:height="140"
 				:icon-size="48"
 				font-color="grey-darken-3"
 				@change="fnOnServiceClick"
 			></tm-grid>
-		</view>
-
-		<!-- ========== 4. 站点功能 ========== -->
-		<view class="section-card">
-			<view class="sc-title">站点功能</view>
-			<view class="func-grid">
-				<view
-					v-for="(item, index) in siteFunctionList"
-					:key="item.key || index"
-					class="func-grid-item"
-				>
-					<button
-						v-if="item.openType"
-						class="func-grid-btn"
-						:open-type="item.openType"
-					>
-						<view class="func-grid-cell">
-							<view class="func-grid-icon-wrap">
-								<tm-icons :name="item.icon" :size="48" :color="item.color"></tm-icons>
-							</view>
-							<text class="func-grid-text">{{ item.text }}</text>
-						</view>
-					</button>
-					<view
-						v-else
-						class="func-grid-cell"
-						hover-class="func-grid-cell--active"
-						:data-index="index"
-						@click="fnOnSiteFunctionClick(index)"
-					>
-						<view class="func-grid-icon-wrap">
-							<tm-icons :name="item.icon" :size="48" :color="item.color"></tm-icons>
-						</view>
-						<text class="func-grid-text">{{ item.text }}</text>
-					</view>
-				</view>
-			</view>
 		</view>
 
 		<!-- ========== 5. 版权 ========== -->
@@ -260,6 +240,12 @@
 			</view>
 		</view>
 		<points-toast></points-toast>
+		<points-draw
+			:show.sync="pointsDrawShow"
+			:cost="drawCost"
+			:max-prize="drawMaxPrize"
+			@drawn="fnOnDrawDrawn"
+		></points-draw>
 	</view>
 </template>
 
@@ -272,7 +258,7 @@
 	} from '@/utils/auth.js';
 	import { getProfileModifyState, performSaveWxProfile } from '@/utils/wxLogin.js';
 	import { shouldPromptHaloBind, shouldShowHaloBindBoundInfo, isHaloBindFeatureEnabled, performUnbindHaloAccount } from '@/utils/haloUser.js';
-	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay } from '@/utils/points.js';
+	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay, isDrawDoneToday, fetchPointsDrawStatus } from '@/utils/points.js';
 	// #ifdef APP-PLUS
 	import CheckAppUpdate from '@/uni_modules/uni-upgrade-center-app/utils/check-update';
 	// #endif
@@ -289,6 +275,7 @@
 	import tmInput from '@/tm-vuetify/components/tm-input/tm-input.vue';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import PointsToast from '@/components/points-toast/points-toast.vue';
+	import PointsDraw from '@/components/points-draw/points-draw.vue';
 
 	export default {
 		components: {
@@ -299,8 +286,9 @@
 			tmInput,
 			wxLoginDialog,
 			PointsToast,
+			PointsDraw,
 		},
-		data() {
+			data() {
 			const sys = uni.getSystemInfoSync();
 			return {
 				statusBarHeight: sys.statusBarHeight || 20,
@@ -311,6 +299,8 @@
 				profileDialogShow: false,
 				profileSaving: false,
 				haloUnbinding: false,
+				payApiEnabled: false,
+				payProbeTime: 0,
 				profileForm: {
 					nickname: '',
 					avatarUrl: '',
@@ -327,6 +317,10 @@
 				pointsTodayEarned: 0,
 				signInStatus: null,
 				signInLoading: false,
+				pointsDrawShow: false,
+				drawChecking: false,
+				drawCost: 10,
+				drawMaxPrize: 100,
 				pointsApiReady: null,
 				pointsLocalMode: false,
 				navList: [],
@@ -397,6 +391,10 @@
 				const pointsConfig = this.haloConfigs?.pointsConfig;
 				return resolvePointsEnabled(pointsConfig)
 					&& pointsConfig?.showInProfile !== false;
+			},
+			calcPayEnabled() {
+				// 后端开关为唯一真相：配置（getConfigs）或实时探测 /pay/config 任一返回开启即显示
+				return this.haloConfigs?.payConfig?.enabled === true || this.payApiEnabled;
 			},
 			calcPointsBalance() {
 				if (!this.isLoggedIn) return '-';
@@ -501,21 +499,22 @@
 						requireLogin: nav.requireLogin,
 					}));
 			},
+			// 我的服务 + 站点功能合并为一个区域
+			mergedServiceList() {
+				return [...this.serviceList, ...this.siteFunctionList];
+			},
 			serviceList() {
-				const firstService = this.calcIsShowComment ? {
-					text: '我的评论',
-					icon: 'haloicon-pinglun',
-					color: 'light-blue',
-					path: '/pagesA/user-activities/user-activities?type=comment',
-					requireLogin: true
-				} : {
-					text: '搜索文章',
-					icon: 'icon-search',
-					color: 'cyan',
-					path: '/pagesA/articles/articles',
-					requireLogin: false
-				};
-				const list = [firstService, {
+				const list = [];
+				if (this.calcIsShowComment) {
+					list.push({
+						text: '我的评论',
+						icon: 'haloicon-pinglun',
+						color: 'light-blue',
+						path: '/pagesA/user-activities/user-activities?type=comment',
+						requireLogin: true
+					});
+				}
+				list.push({
 					text: '我的浏览',
 					icon: 'haloicon-rizhi1',
 					color: 'green',
@@ -526,14 +525,20 @@
 					icon: 'halocoloricon-attent',
 					color: 'orange',
 					path: '/pagesA/user-activities/user-activities?type=upvote',
-					requireLogin: true
-				}];
+						requireLogin: true
+					});
 				if (this.calcPointsEnabled) {
 					list.push({
 						text: '积分明细',
 						icon: 'haloicon-rizhishenji',
 						color: 'purple',
 						path: '/pagesA/points-history/points-history',
+						requireLogin: true
+					}, {
+						text: '积分兑换',
+						icon: 'haloicon-tianxie',
+						color: 'orange',
+						path: '/pagesA/points-exchange/points-exchange',
 						requireLogin: true
 					});
 				}
@@ -570,6 +575,7 @@
 		onShow() {
 			this.fnSyncPointsApiStateFromCache();
 			this.fnCheckLoginStatus();
+			this.fnProbePayEnabled();
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
@@ -604,24 +610,11 @@
 
 			fnOnServiceClick(e) {
 				const item = e.data;
+				if (!item) return;
 				if (item.action === 'settings') {
 					this.fnToSettings();
 					return;
 				}
-				if (item.requireLogin && !this.fnEnsureLogin()) return;
-				if (item.path) {
-					this.fnOnNav({ type: 'page', path: item.path, requireLogin: item.requireLogin });
-				}
-			},
-
-			fnOnSiteFunctionClick(arg) {
-				let idx = arg;
-				if (arg && typeof arg === 'object' && arg.currentTarget) {
-					idx = arg.currentTarget.dataset.index;
-				}
-				if (idx == null || idx === '') return;
-				const item = this.siteFunctionList[Number(idx)];
-				if (!item) return;
 				if (item.requireLogin && !this.fnEnsureLogin()) return;
 				this.fnOnNav({
 					type: item.type,
@@ -712,6 +705,30 @@
 				uni.navigateTo({ url: '/pagesA/points-history/points-history' });
 			},
 
+			/**
+			 * 实时探测后端虚拟支付开关（/pay/config），绕过 getConfigs 缓存/未保存问题。
+			 * 后端开关未开启或插件为旧版时静默保持隐藏。
+			 */
+			async fnProbePayEnabled() {
+				if (!this.calcPointsEnabled || !this.isLoggedIn) return;
+				// 限频：60 秒内最多探测一次
+				const now = Date.now();
+				if (now - this.payProbeTime < 60000) return;
+				this.payProbeTime = now;
+				try {
+					const res = await this.$httpApi.v2.getVirtualPayConfig();
+					const body = res?.data || res || {};
+					this.payApiEnabled = body.enabled === true;
+				} catch (err) {
+					this.payApiEnabled = false;
+				}
+			},
+
+			fnToPointsRecharge() {
+				if (!this.fnEnsureLogin()) return;
+				uni.navigateTo({ url: '/pagesA/points-recharge/points-recharge' });
+			},
+
 			async fnHandleSignIn() {
 				if (!this.fnEnsureLogin()) return;
 				if (this.calcSignInButtonDisabled) return;
@@ -734,6 +751,45 @@
 					localMode: result.localMode
 				});
 				await this.fnRefreshPointsOverview({ silent: true });
+			},
+
+			// 点击「翻牌抽奖」按钮时即判断今日状态：已翻则直接拦截提示，不打开弹窗
+			async fnOpenPointsDraw() {
+				if (!this.fnEnsureLogin()) return;
+				if (isDrawDoneToday()) {
+					uni.showToast({ title: '今日已翻牌，明天再来吧', icon: 'none' });
+					return;
+				}
+				this.drawChecking = true;
+				try {
+					const status = await fetchPointsDrawStatus(this.$httpApi.v2);
+					if (status.ok) {
+						if (status.alreadyDrawn) {
+							uni.showToast({ title: '今日已翻牌，明天再来吧', icon: 'none' });
+							return;
+						}
+						if (status.cost) {
+							this.drawCost = status.cost;
+						}
+					}
+				} catch (err) {
+					// 状态接口异常（旧版插件）时静默放行，翻牌接口仍兜底
+				} finally {
+					this.drawChecking = false;
+				}
+				const draw = this.haloConfigs?.pointsConfig?.rules?.draw || {};
+				this.drawCost = Number(draw.cost ?? 10) || 10;
+				const prizes = Array.isArray(draw.prizes) ? draw.prizes : [];
+				this.drawMaxPrize = prizes.length
+					? Math.max(...prizes.map((p) => Number(p.points) || 0))
+					: 100;
+				this.pointsDrawShow = true;
+			},
+
+			fnOnDrawDrawn(payload) {
+				if (payload?.balance != null && this.isLoggedIn) {
+					this.fnOnPointsUpdated({ balance: payload.balance });
+				}
 			},
 
 			fnHandleUserCard() {
@@ -1266,6 +1322,21 @@
 		color: #ff9800;
 	}
 
+	.points-card-links {
+		display: flex;
+		align-items: center;
+		gap: 20rpx;
+	}
+
+	.points-recharge-link {
+		padding: 6rpx 20rpx;
+		border-radius: 999rpx;
+		background: #fff7e6;
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #ff9800;
+	}
+
 	.points-card-link {
 		display: flex;
 		align-items: center;
@@ -1281,6 +1352,34 @@
 		gap: 20rpx;
 		padding: 20rpx 0 8rpx;
 		border-top: 1rpx solid #f0f0f0;
+	}
+
+	.points-draw-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 20rpx;
+		padding: 16rpx 0 8rpx;
+		border-top: 1rpx solid #f0f0f0;
+	}
+
+	.points-draw-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.points-draw-title {
+		display: block;
+		font-size: 26rpx;
+		font-weight: 600;
+		color: $text2;
+	}
+
+	.points-draw-tip {
+		display: block;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: $text3;
 	}
 
 	.points-sign-info {

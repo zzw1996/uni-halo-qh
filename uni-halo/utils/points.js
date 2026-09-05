@@ -24,6 +24,12 @@ export const POINTS_ACTION_LABELS = {
 	comment: '发表评论',
 	upvote: '点赞文章',
 	sign_in: '每日签到',
+	recharge: '虚拟支付充值',
+	new_user: '新人见面礼',
+	draw: '翻牌中奖',
+	draw_cost: '翻牌消耗',
+	exchange_publish: '积分兑换·发布券',
+	exchange_dashboard: '积分兑换·数据看板',
 	admin_adjust: '系统调整'
 };
 
@@ -108,7 +114,13 @@ export const resolvePointsApiPaths = (configs) => {
 		earn: custom.earn || '/points/earn',
 		signIn: custom.signIn || '/points/sign-in',
 		history: custom.history || '/points/history',
-		earnStatus: custom.earnStatus || '/points/earn/status'
+		earnStatus: custom.earnStatus || '/points/earn/status',
+		newUserGift: custom.newUserGift || '/points/new-user-gift',
+		draw: custom.draw || '/points/draw',
+		drawStatus: custom.drawStatus || '/points/draw/status',
+		exchange: custom.exchange || '/points/exchange',
+		exchangeBalance: custom.exchangeBalance || '/points/exchange/balance',
+		exchangeSpend: custom.exchangeSpend || '/points/exchange/spend'
 	};
 };
 
@@ -117,7 +129,13 @@ const POINTS_API_FALLBACKS = {
 	earn: ['/points/earn', '/pointsEarn', '/earnPoints'],
 	signIn: ['/points/sign-in', '/points/signIn', '/pointsSignIn', '/dailySignIn'],
 	history: ['/points/history', '/getPointsHistory', '/pointsHistory'],
-	earnStatus: ['/points/earn/status', '/getPointsEarnStatus', '/pointsEarnStatus']
+	earnStatus: ['/points/earn/status', '/getPointsEarnStatus', '/pointsEarnStatus'],
+	newUserGift: ['/points/new-user-gift', '/claimNewUserGift'],
+	draw: ['/points/draw', '/drawLuckyPoints'],
+	drawStatus: ['/points/draw/status', '/getPointsDrawStatus'],
+	exchange: ['/points/exchange', '/exchangePointsItem'],
+	exchangeBalance: ['/points/exchange/balance', '/getExchangeBalance'],
+	exchangeSpend: ['/points/exchange/spend', '/spendPublishTicket']
 };
 
 export const getPointsApiPathCandidates = (key, configs) => {
@@ -163,7 +181,24 @@ export const syncPointsAfterLogin = async (httpApi) => {
 	}
 	resetPointsSession();
 	const api = httpApi?.v2 || httpApi;
+	await claimNewUserGiftQuiet(api);
 	return fetchPointsOverview(api);
+};
+
+/** 新人见面礼：静默领取（幂等），领到后提示并刷新余额 */
+const claimNewUserGiftQuiet = async (api) => {
+	if (!api?.claimNewUserGift) return;
+	try {
+		const res = await api.claimNewUserGift();
+		const data = parseDirectApiBody(res);
+		const earned = Number(data?.earned || 0) || 0;
+		if (earned > 0) {
+			showPointsToast(earned, `新人见面礼 +${earned} 积分`);
+			emitPointsUpdated({ balance: data.balance });
+		}
+	} catch (err) {
+		// 新人礼未开启/接口未部署时静默忽略
+	}
 };
 
 const applyOverviewPayload = (data, mode) => {
@@ -313,8 +348,185 @@ export const tryEarnPointsByAction = async (httpApi, action, payload = {}) => {
 	}
 };
 
-export const performPointsSignIn = async (httpApi) => {
+/**
+ * 查询今日翻牌状态（不消耗积分）
+ */
+export const fetchPointsDrawStatus = async (httpApi) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!api?.getPointsDrawStatus) {
+		return { ok: false };
+	}
+	try {
+		const res = await api.getPointsDrawStatus();
+		const data = parseDirectApiBody(res);
+		if (data?.error) {
+			return { ok: false, reason: data.error };
+		}
+		if (data.alreadyDrawn === true) {
+			markDrawDoneToday();
+		}
+		return {
+			ok: true,
+			alreadyDrawn: data.alreadyDrawn === true,
+			cost: Number(data.cost || 0) || 0,
+			balance: data.balance != null ? Number(data.balance) : null,
+			message: data.message || ''
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+const DRAW_TODAY_KEY = 'points.draw.today';
+
+/** 本地判断今日是否已翻牌（提前提示用，服务端为最终权威） */
+export const isDrawDoneToday = () => {
+	try {
+		const saved = uni.getStorageSync(DRAW_TODAY_KEY);
+		const now = new Date();
+		const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+		return saved === today;
+	} catch (e) {
+		return false;
+	}
+};
+
+const markDrawDoneToday = () => {
+	try {
+		const now = new Date();
+		uni.setStorageSync(DRAW_TODAY_KEY, `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`);
+	} catch (e) {
+		// 忽略存储异常
+	}
+};
+
+/**
+ * 兑换中心：查询余额/发布券/每日配额
+ */
+export const fetchExchangeBalance = async (httpApi) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!api?.getExchangeBalance) {
+		return { ok: false };
+	}
+	try {
+		const res = await api.getExchangeBalance();
+		const data = parseDirectApiBody(res);
+		if (data?.error) {
+			return { ok: false, reason: data.error };
+		}
+		return {
+			ok: true,
+			balance: data.balance != null ? Number(data.balance) : null,
+			publishTickets: Number(data.publishTickets || 0) || 0,
+			freeQuota: Number(data.freeQuota ?? 3) || 0,
+			remaining: data.remaining != null ? Number(data.remaining) : null,
+			dashboardUnlockedToday: data.dashboardUnlockedToday === true
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+/**
+ * 积分兑换：item = publish_ticket | dashboard_advanced
+ */
+export const exchangePointsItem = async (httpApi, item) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!api?.exchangePointsItem) {
+		return { ok: false, reason: '兑换接口未就绪，请先更新插件' };
+	}
+	try {
+		const res = await api.exchangePointsItem(item);
+		const data = parseDirectApiBody(res);
+		if (data?.error) {
+			return { ok: false, reason: data.error };
+		}
+		return {
+			ok: true,
+			item,
+			balance: data.balance != null ? Number(data.balance) : null,
+			publishTickets: Number(data.publishTickets || 0) || 0,
+			message: data.message || '兑换成功'
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+/**
+ * 消耗 1 张发布券（瞬间发布超免费配额时）
+ */
+export const spendPublishTicket = async (httpApi) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!api?.spendPublishTicket) {
+		return { ok: false, reason: '兑换接口未就绪，请先更新插件' };
+	}
+	try {
+		const res = await api.spendPublishTicket();
+		const data = parseDirectApiBody(res);
+		if (data?.error) {
+			return { ok: false, reason: data.error };
+		}
+		return {
+			ok: true,
+			publishTickets: Number(data.publishTickets || 0) || 0
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+/**
+ * 每日翻牌抽奖：后端按天幂等，返回中奖积分/消耗/余额
+ * @returns {{ok:boolean, alreadyDrawn?:boolean, earned?:number, cost?:number, balance?:number, reason?:string}}
+ */
+export const performPointsDraw = async (httpApi) => {
 	if (!checkHasWxLogin()) {
+		return { ok: false, reason: '请先登录' };
+	}
+	if (!isPointsEnabled()) {
+		return { ok: false, reason: '积分功能未开启' };
+	}
+	const api = httpApi?.v2 || httpApi;
+	if (!api?.claimPointsDraw) {
+		return { ok: false, reason: '翻牌接口未就绪，请先更新插件' };
+	}
+	try {
+		const res = await api.claimPointsDraw();
+		const data = parseDirectApiBody(res);
+		if (data?.error && !data?.earned) {
+			return { ok: false, reason: data.error };
+		}
+		const earned = Number(data?.earned || 0) || 0;
+		const cost = Number(data?.cost || 0) || 0;
+		if (data?.alreadyDrawn) {
+			markDrawDoneToday();
+			return {
+				ok: true,
+				alreadyDrawn: true,
+				earned: 0,
+				balance: data?.balance != null ? Number(data.balance) : null,
+				reason: data?.message || '今日已翻牌，明天再来吧'
+			};
+		}
+		if (data?.balance != null) {
+			emitPointsUpdated({ balance: Number(data.balance) });
+		}
+		markDrawDoneToday();
+		showPointsToast(earned, data?.message || `中奖 +${earned} 积分`);
+		return {
+			ok: true,
+			alreadyDrawn: false,
+			earned,
+			cost,
+			balance: data?.balance != null ? Number(data.balance) : null
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+export const performPointsSignIn = async (httpApi) => {	if (!checkHasWxLogin()) {
 		return { ok: false, reason: '请先登录' };
 	}
 	if (!isPointsEnabled()) {
@@ -391,7 +603,7 @@ export const formatPointsHistoryItem = (item) => {
 	const action = item.action || item.type || '';
 	const points = Number(item.points ?? item.amount ?? 0) || 0;
 	return {
-		id: item.id || `${action}-${item.createTime || Date.now()}`,
+		id: item.id || `${action}-${item.createTimeText || item.createTime || Date.now()}`,
 		action,
 		actionLabel: item.actionLabel || POINTS_ACTION_LABELS[action] || '积分变动',
 		points,
@@ -399,6 +611,7 @@ export const formatPointsHistoryItem = (item) => {
 		balance: item.balance != null ? Number(item.balance) : null,
 		description: item.description || item.refTitle || item.title || '',
 		refName: item.refName || item.articleName || '',
+		createTimeText: item.createTimeText || '',
 		createTime: item.createTime || item.recordTime || ''
 	};
 };

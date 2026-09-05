@@ -2,7 +2,7 @@
 	<view v-if="comment" class="comment-item flex flex-col mt-30 pt-24"
 		:class="{ 'child-comment-item': isChild, 'no-solid': !useSolid, classItem }">
 		<view class="comment-item_user flex">
-			<image class="user-avatar" :class="{ 'is-radius': globalAppSettings.isAvatarRadius }"
+			<image class="user-avatar"
 				:src="displayAvatar" mode="aspectFill"
 				@error="fnOnImageError"></image>
 			<view class="user-info pl-14">

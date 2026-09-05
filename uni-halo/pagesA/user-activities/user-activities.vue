@@ -11,9 +11,15 @@
 			</view>
 			<block v-else>
 				<block v-for="(article, index) in dataList" :key="article.metadata.name + index">
-					<tm-translate animation-name="fadeUp" :wait="calcAniWait(index)">
-						<article-card :article="article" @on-click="fnToArticleDetail"></article-card>
-					</tm-translate>
+					<view class="activity-wrap">
+						<tm-translate animation-name="fadeUp" :wait="calcAniWait(index)">
+							<article-card :article="article" @on-click="fnToArticleDetail"></article-card>
+						</tm-translate>
+						<view class="activity-meta">
+							<text v-if="article._pointsEarned != null" class="activity-points">获得 {{ article._pointsEarned }} 积分</text>
+							<text v-if="article._recordTimeText" class="activity-time">{{ article._recordTimeText }}</text>
+						</view>
+					</view>
 				</block>
 				<view class="load-text">{{ loadMoreText }}</view>
 			</block>
@@ -117,6 +123,12 @@
 					} else {
 						this.dataList = items;
 					}
+					// 兜底排序：行为时间倒序（前端防御，不依赖后端顺序）
+					this.dataList.sort((a, b) => {
+						const ta = String(a._recordTime || a._recordTimeText || '');
+						const tb = String(b._recordTime || b._recordTimeText || '');
+						return tb.localeCompare(ta);
+					});
 					const total = body.total != null ? body.total : this.dataList.length;
 					this.fnSetPageTitle(`${this.pageTitle}（${total}）`);
 					this.loadMoreText = this.hasNext ? '上拉加载更多' : '没有更多了';
@@ -164,6 +176,26 @@
 
 .empty {
 	padding-top: 120rpx;
+}
+
+.activity-wrap {
+	margin-bottom: 16rpx;
+}
+
+.activity-meta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12rpx 28rpx 0;
+}
+
+.activity-meta text {
+	font-size: 22rpx;
+	color: #909399;
+}
+
+.activity-points {
+	color: #ff9800;
 }
 
 .load-text {

@@ -169,7 +169,8 @@
 			fnBack() {
 				uni.navigateBack({
 					fail: () => {
-						uni.switchTab({ url: '/pages/tabbar/moments/moments' });
+						// 瞬间页已从底部导航移除时，回退到首页
+						uni.switchTab({ url: '/pages/tabbar/home/home' });
 					}
 				});
 			},
@@ -237,6 +238,58 @@
 				}
 				return uploaded;
 			},
+			fnPublishCountKey() {
+				const now = new Date();
+				return `moment.published.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+			},
+			fnGetMomentPublishedCount() {
+				return Number(uni.getStorageSync(this.fnPublishCountKey()) || 0);
+			},
+			fnMarkMomentPublished() {
+				uni.setStorageSync(this.fnPublishCountKey(), this.fnGetMomentPublishedCount() + 1);
+			},
+			async fnEnsurePublishQuota() {
+				const api = this.$httpApi?.v2;
+				if (!api?.getExchangeBalance) {
+					return { ok: true };
+				}
+				try {
+					const res = await api.getExchangeBalance();
+					const body = res?.data || res || {};
+					if (body?.error || body?.freeQuota == null) {
+						return { ok: true };
+					}
+					const freeQuota = Number(body.freeQuota) || 0;
+					const used = this.fnGetMomentPublishedCount();
+					if (used < freeQuota) {
+						return { ok: true };
+					}
+					const tickets = Number(body.publishTickets || 0);
+					if (tickets > 0) {
+						const spendRes = await api.spendPublishTicket();
+						const spendBody = spendRes?.data || spendRes || {};
+						if (spendBody?.error) {
+							uni.showToast({ icon: 'none', title: spendBody.error });
+							return { ok: false };
+						}
+						return { ok: true };
+					}
+					uni.showModal({
+						title: '发布次数用完啦',
+						content: `今日免费 ${freeQuota} 条已用完，去「积分兑换」领取发布券后继续发布？`,
+						confirmText: '去兑换',
+						success: (r) => {
+							if (r.confirm) {
+								uni.navigateTo({ url: '/pagesA/points-exchange/points-exchange' });
+							}
+						}
+					});
+					return { ok: false };
+				} catch (e) {
+					// 配额接口异常时不阻塞发布
+					return { ok: true };
+				}
+			},
 			fnBuildMomentPayload(rawText, imageUrls) {
 				return buildMomentCreatePayload({
 					rawText,
@@ -253,6 +306,11 @@
 					uni.showToast({ icon: 'none', title: '请输入文字或选择图片' });
 					return;
 				}
+				// 发布配额检查：每日免费免费条数，超出消耗发布券（插件 1.0.71+ 提供接口）
+				const quota = await this.fnEnsurePublishQuota();
+				if (!quota.ok) {
+					return;
+				}
 				this.submitting = true;
 				uni.showLoading({ mask: true, title: '发布中...' });
 				try {
@@ -265,6 +323,7 @@
 					}
 					const payload = this.fnBuildMomentPayload(raw, imageUrls);
 					await this.$httpApi.v2.createMoment(payload);
+					this.fnMarkMomentPublished();
 					uni.showToast({ icon: 'success', title: '发表成功' });
 					const app = getApp();
 					if (app?.globalData) {

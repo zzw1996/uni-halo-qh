@@ -29,7 +29,7 @@
 					<view class="history-main">
 						<text class="history-title">{{ item.actionLabel }}</text>
 						<text v-if="item.description" class="history-desc">{{ item.description }}</text>
-						<text class="history-time">{{ item.createTime | formatTime }}</text>
+						<text class="history-time">{{ item.createTimeText || (item.createTime | formatTime) }}</text>
 					</view>
 					<view class="history-side">
 						<text class="history-points" :class="item.points >= 0 ? 'is-plus' : 'is-minus'">
@@ -137,6 +137,12 @@
 					} else {
 						this.dataList = items;
 					}
+					// 兜底排序：时间倒序（前端防御，不依赖后端顺序）
+					this.dataList.sort((a, b) => {
+						const ta = String(a.createTimeText || a.createTime || '');
+						const tb = String(b.createTimeText || b.createTime || '');
+						return tb.localeCompare(ta);
+					});
 					this.loadMoreText = this.hasNext ? '上拉加载更多' : '没有更多了';
 					this.loading = 'success';
 				} catch (err) {

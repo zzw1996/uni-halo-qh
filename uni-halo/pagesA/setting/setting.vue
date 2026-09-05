@@ -45,17 +45,7 @@
 					<text class="text-grey text-size-xs px-10  ml-12">一些常用的功能性设置</text>
 				</view>
 				<view class="sheet-content">
-					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m">图库瀑布流模式</text>
-						<tm-switch v-model="appSettings.gallery.useWaterfull" color="light-blue"
-							:text="['是', '否']"></tm-switch>
-					</view>
-					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m">友链简洁模式</text>
-						<tm-switch v-model="appSettings.links.useSimple" color="light-blue"
-							:text="['是', '否']"></tm-switch>
-					</view>
-					<!-- 	<view class="mx-32 mt-24 mb-0 border-b-1 pb-24 flex-between">
+						<!-- 	<view class="mx-32 mt-24 mb-0 border-b-1 pb-24 flex-between">
 						<text class="text-size-m">启用评论弹幕</text>
 						<tm-switch v-model="appSettings.barrage.use" color="light-blue" :text="['是', '否']"></tm-switch>
 					</view>
@@ -78,10 +68,20 @@
 							right-icon="icon-angle-right"
 						></tm-input>
 					</tm-pickers> -->
-					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m">是否圆形头像</text>
-						<tm-switch v-model="appSettings.isAvatarRadius" color="light-blue"
-							:text="['是', '否']"></tm-switch>
+				<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
+						<text class="text-size-m">显示文章封面</text>
+						<tm-switch v-model="appSettings.articleCard.showCover" color="light-blue"
+							:text="['显示', '隐藏']"></tm-switch>
+					</view>
+					<view class="mx-32 my-24 border-b-1 pb-24 flex-between">
+						<text class="text-size-m">显示文章详情统计</text>
+						<tm-switch v-model="appSettings.articleDetail.showStats" color="light-blue"
+							:text="['显示', '隐藏']"></tm-switch>
+					</view>
+					<view class="mx-32 my-24 border-b-1 pb-24 flex-between">
+						<text class="text-size-m">全局悬浮按钮</text>
+						<tm-switch v-model="appSettings.flotbutton.show" color="light-blue"
+							:text="['显示', '隐藏']"></tm-switch>
 					</view>
 					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
 						<text class="text-size-m ">轮播图指示器</text>

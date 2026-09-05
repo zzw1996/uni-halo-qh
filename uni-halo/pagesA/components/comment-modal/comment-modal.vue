@@ -9,7 +9,7 @@
             <view class="comment-modal__author">
                 <image
                     class="comment-modal__avatar"
-                    :class="{ 'is-radius': globalAppSettings.isAvatarRadius }"
+
                     :src="$utils.checkAvatarUrl(authorInfo.avatar, false)"
                     mode="aspectFill"
                 ></image>

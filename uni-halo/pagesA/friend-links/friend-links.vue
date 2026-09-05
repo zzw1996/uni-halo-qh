@@ -21,7 +21,7 @@
 					<block v-for="(link, index) in dataList" :key="index">
 						<tm-translate animation-name="fadeUp" :wait="calcAniWait(index)">
 							<!-- 色彩版本 -->
-							<view v-if="!globalAppSettings.links.useSimple" class="info flex pt-24 pb-24 pl-12 pr-12"
+							<view class="info flex pt-24 pb-24 pl-12 pr-12"
 								:class="{ 'border-b-1': index !== dataList.length - 1 }" @click="fnOnLinkEvent(link)">
 								<view class="link-logo">
 									<cache-image class="link-logo_img" radius="12rpx" :url="link.spec.logo"
@@ -37,28 +37,9 @@
 									</view>
 									<view class="poup-tag mt-6" style="font-size: 28rpx;">
 										站点地址：{{ link.spec.url }}
-										<!-- <tm-tags color="bg-gradient-amber-accent" :shadow="0" size="s" model="fill">
-                                        URL：{{ link.spec.url }}
-                                    </tm-tags>
-                                    <tm-tags color=" bg-gradient-light-blue-lighten" :shadow="0" size="s" model="fill">
-                                        {{ link.spec.groupName || '暂未分组' }}
-                                    </tm-tags> -->
 									</view>
 									<view class="link-card_desc text-overflow mt-4" style="font-size: 28rpx;">
 										博客简介：{{ link.spec.description || '这个博主很懒，没写简介~' }}
-									</view>
-								</view>
-							</view>
-							<!-- 简洁版本 -->
-							<view v-else class="link-card flex ml-24 mr-24 pt-24 pb-24" @click="fnOnLinkEvent(link)">
-								<image class="logo shadow-6" :src="link.spec.logo" mode="aspectFill"></image>
-								<view class="info pl-24">
-									<view class="name text-size-g">{{ link.spec.displayName }}</view>
-									<view class="desc mt-12 text-size-s text-grey-darken-1">{{ link.spec.description }}
-									</view>
-									<view v-if="false" class="link mt-12 text-size-m text-grey-darken-1">
-										<text class="iconfont icon-link mr-6 text-size-s"></text>
-										{{ link.spec.url }}
 									</view>
 								</view>
 							</view>

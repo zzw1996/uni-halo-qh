@@ -1,6 +1,6 @@
 <!-- 悬浮按钮 -->
 <template>
-	<view class="nobody fulled"
+	<view v-if="calcShowByAppSetting" class="nobody fulled"
 		:class="[absolute?'fulled':'',fixed?'d-inline-block':'',absolute&&position=='bottom'?'flex-end-center height100':'']">
 		<view  
 			:class="[absolute?'fulled':'',absolute?'relative':'',absolute&&position=='top'?'flex-center':'',absolute&&position=='bottom'?'flex-end-center height100':'',fixed?'d-inline-block':'']">
@@ -181,6 +181,18 @@
 			}
 		},
 		computed: {
+			// 应用设置 flotbutton.show=false 时隐藏悬浮按钮（带 label 的按钮如「申请」不受影响）
+			calcShowByAppSetting() {
+				if (this.label) {
+					return true;
+				}
+				try {
+					const settings = uni.$tm.vx.getters().getSettings;
+					return !settings || settings?.flotbutton?.show !== false;
+				} catch (e) {
+					return true;
+				}
+			},
 			offsets: {
 				get: function() {
 					return this.offset;

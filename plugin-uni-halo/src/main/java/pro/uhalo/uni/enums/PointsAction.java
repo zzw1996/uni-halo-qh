@@ -46,6 +46,12 @@ public enum PointsAction {
             case "comment" -> "发表评论";
             case "upvote" -> "点赞文章";
             case "sign_in" -> "每日签到";
+            case "recharge" -> "虚拟支付充值";
+            case "new_user" -> "新人见面礼";
+            case "draw" -> "翻牌中奖";
+            case "draw_cost" -> "翻牌消耗";
+            case "exchange_publish" -> "积分兑换·发布券";
+            case "exchange_dashboard" -> "积分兑换·数据看板";
             case "admin_adjust" -> "系统调整";
             default -> "积分变动";
         };

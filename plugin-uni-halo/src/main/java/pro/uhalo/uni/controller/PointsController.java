@@ -9,6 +9,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import pro.uhalo.uni.constants.Constants;
+import pro.uhalo.uni.dto.ExchangeRequest;
 import pro.uhalo.uni.dto.PointsEarnRequest;
 import pro.uhalo.uni.dto.PointsEarnStatusResponse;
 import pro.uhalo.uni.exception.WxAuthException;
@@ -47,6 +48,38 @@ public class PointsController {
 
     public Mono<ServerResponse> signIn(ServerRequest request) {
         return withOpenid(request, openid -> pointsService.signIn(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> newUserGift(ServerRequest request) {
+        return withOpenid(request, openid -> pointsService.claimNewUserGift(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> draw(ServerRequest request) {
+        return withOpenid(request, openid -> pointsService.draw(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> drawStatus(ServerRequest request) {
+        return withOpenid(request, openid -> pointsService.drawStatus(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> exchange(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, ExchangeRequest.class))
+            .flatMap(body -> pointsService.exchange(openid, body.getItem()))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> exchangeStatus(ServerRequest request) {
+        return withOpenid(request, openid -> pointsService.exchangeStatus(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> spendPublishTicket(ServerRequest request) {
+        return withOpenid(request, openid -> pointsService.spendPublishTicket(openid)
             .flatMap(this::jsonOk));
     }
 

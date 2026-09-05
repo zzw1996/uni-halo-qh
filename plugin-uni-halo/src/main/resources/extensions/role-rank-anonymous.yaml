@@ -1,0 +1,14 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-rank
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 热榜"
+    rbac.authorization.halo.run/display-name: "热榜接口（UniHalo）"
+rules:
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/rank" ]
+    verbs: [ "get", "list" ]

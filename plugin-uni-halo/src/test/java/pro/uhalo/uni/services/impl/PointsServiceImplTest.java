@@ -10,12 +10,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import pro.uhalo.uni.dto.PointsEarnRequest;
+import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.PointsEvidenceService;
 import pro.uhalo.uni.services.WxUserService;
+import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -33,7 +36,9 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,6 +58,12 @@ class PointsServiceImplTest {
     @Mock
     private WxUserService wxUserService;
 
+    @Mock
+    private PointsEvidenceService pointsEvidenceService;
+
+    @Mock
+    private RateLimiter rateLimiter;
+
     @InjectMocks
     private PointsServiceImpl pointsService;
 
@@ -69,8 +80,9 @@ class PointsServiceImplTest {
         var metadata = new Metadata();
         metadata.setName(PointsPersistence.accountResourceName("openid-123"));
         userPoints.setMetadata(metadata);
+        lenient().when(rateLimiter.tryAcquire(any(), anyInt(), any())).thenReturn(true);
+        lenient().when(pointsEvidenceService.evidenceReady(any(), any(), any())).thenReturn(Mono.just(true));
     }
-
     @Test
     void earnShouldRejectWhenPointsDisabled() throws Exception {
         when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(
@@ -231,7 +243,8 @@ class PointsServiceImplTest {
         var client = org.mockito.Mockito.mock(ReactiveExtensionClient.class);
         var wxUserService = org.mockito.Mockito.mock(WxUserService.class);
         var persistence = new PointsPersistence(client, wxUserService);
-        var service = new PointsServiceImpl(persistence, settingFetcher, wxUserService);
+        var service = new PointsServiceImpl(persistence, settingFetcher, wxUserService,
+            new PointsEvidenceServiceImpl(client), new RateLimiter());
 
         var earnKey = PointsServiceImpl.buildDailyEarnKey("openid-123", "browse", "post-1");
         var existing = new PointsRecord();
@@ -271,6 +284,110 @@ class PointsServiceImplTest {
         var records = PointsServiceImpl.buildWeekRecords(Set.of(yesterday, today), today);
         assertThat(records).hasSize(7);
         assertThat(records.get(6)).isTrue();
+    }
+
+    @Test
+    void drawShouldDeductCostAndCreditPrize() throws Exception {
+        stubDrawConfig(10);
+        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenReturn(Mono.just(userPoints));
+
+        StepVerifier.create(pointsService.draw("openid-123"))
+            .consumeNextWith(res -> {
+                assertThat(res.getEarned()).isEqualTo(50);
+                assertThat(res.getCost()).isEqualTo(10);
+                assertThat(res.getBalance()).isEqualTo(60L);
+                assertThat(res.isAlreadyDrawn()).isFalse();
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void drawShouldRejectWhenBalanceInsufficient() throws Exception {
+        stubDrawConfig(30);
+        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+
+        StepVerifier.create(pointsService.draw("openid-123"))
+            .expectErrorSatisfies(ex -> assertThat(ex)
+                .isInstanceOf(WxAuthException.class)
+                .hasMessageContaining("积分不足"))
+            .verify();
+        verify(persistence, never()).appendRecord(any());
+    }
+
+    @Test
+    void newUserGiftShouldBeIdempotent() throws Exception {
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree("""
+            {"enabled":true,"rules":{"newUserGift":{"points":100}}}
+            """)));
+        var existing = new PointsRecord();
+        existing.setPoints(100);
+        existing.setBalance(120L);
+        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.just(existing));
+
+        StepVerifier.create(pointsService.claimNewUserGift("openid-123"))
+            .consumeNextWith(res -> {
+                assertThat(res.getEarned()).isZero();
+                assertThat(res.getBalance()).isEqualTo(120L);
+                assertThat(res.getMessage()).contains("已领取");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void pickPrizeShouldOnlyReturnConfiguredPoints() {
+        var prizes = List.of(
+            DrawPrizeDTO.builder().points(2).weight(1).build(),
+            DrawPrizeDTO.builder().points(100).weight(1).build());
+        for (int i = 0; i < 200; i++) {
+            assertThat(PointsServiceImpl.pickPrize(prizes)).isIn(2, 100);
+        }
+        assertThat(PointsServiceImpl.pickPrize(List.of())).isZero();
+        assertThat(PointsServiceImpl.pickPrize(null)).isZero();
+    }
+
+    @Test
+    void exchangeShouldDeductPointsAndGrantTicket() throws Exception {
+        userPoints.setBalance(100L);
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
+            "{\"enabled\":true,\"rules\":{\"exchange\":{\"publishTicket\":"
+                + "{\"points\":50,\"dailyMaxCount\":5,\"freeCount\":3}}}}")));
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenReturn(Mono.just(userPoints));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "publish_ticket"))
+            .consumeNextWith(res -> {
+                assertThat(res.getPoints()).isEqualTo(50);
+                assertThat(res.getBalance()).isEqualTo(50L);
+                assertThat(res.getPublishTickets()).isEqualTo(1);
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void exchangeShouldRejectWhenInsufficientPoints() throws Exception {
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
+            "{\"enabled\":true,\"rules\":{\"exchange\":{\"publishTicket\":"
+                + "{\"points\":50,\"dailyMaxCount\":5,\"freeCount\":3}}}}")));
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "publish_ticket"))
+            .expectErrorSatisfies(ex -> assertThat(ex)
+                .isInstanceOf(WxAuthException.class)
+                .hasMessageContaining("积分不足"))
+            .verify();
+    }
+
+    private void stubDrawConfig(int cost) throws Exception {
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
+            "{\"enabled\":true,\"rules\":{\"draw\":{\"cost\":" + cost
+                + ",\"prizes\":[{\"points\":50,\"weight\":1}]}}}")));
     }
 
     private PointsRecord signInRecord(String date) {

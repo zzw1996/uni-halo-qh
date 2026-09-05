@@ -51,4 +51,38 @@ class PointsRecordHelperTest {
 
         assertThat(PointsRecordHelper.resolveCreateTime(record)).contains("2026-07-06");
     }
+
+    @Test
+    void displayNameShouldPreferNicknameThenHaloUserThenOpenidSuffix() {
+        var user = new WxUser();
+        user.setHaloUserName("halo-mo");
+        user.setOpenid("oAbCdEf123456789");
+        assertThat(PointsRecordHelper.resolveDisplayName(null, "oAbCdEf123456789"))
+            .isEqualTo("微信用户-456789");
+        assertThat(PointsRecordHelper.resolveDisplayName(user, "oAbCdEf123456789"))
+            .isEqualTo("halo-mo");
+        user.setNickname("小莫");
+        assertThat(PointsRecordHelper.resolveDisplayName(user, "oAbCdEf123456789"))
+            .isEqualTo("小莫");
+    }
+
+    @Test
+    void contentTitleShouldFallbackToActionLabel() {
+        var record = new PointsRecord();
+        record.setAction("sign_in");
+        assertThat(PointsRecordHelper.resolveContentTitleOrLabel(record)).isEqualTo("每日签到");
+        record.setAction("recharge");
+        record.setDescription("积分道具 x1");
+        assertThat(PointsRecordHelper.resolveContentTitleOrLabel(record)).isEqualTo("积分道具 x1");
+        var empty = new PointsRecord();
+        empty.setAction("unknown_action");
+        assertThat(PointsRecordHelper.resolveContentTitleOrLabel(empty)).isEqualTo("积分变动");
+    }
+
+    @Test
+    void formatInstantShouldReturnReadableText() {
+        var instant = Instant.parse("2026-09-04T05:06:07Z");
+        assertThat(PointsRecordHelper.formatInstant(instant)).isEqualTo("2026-09-04 13:06:07");
+        assertThat(PointsRecordHelper.formatInstant(null)).isNull();
+    }
 }

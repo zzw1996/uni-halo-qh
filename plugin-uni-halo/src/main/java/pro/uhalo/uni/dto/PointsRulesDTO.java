@@ -29,4 +29,17 @@ public class PointsRulesDTO {
             ConsecutiveBonusDTO.builder().days(7).bonus(20).build()
         ))
         .build();
+
+    /** 新用户见面礼：points=0 表示关闭 */
+    @Builder.Default
+    private PointsActionRuleDTO newUserGift = PointsActionRuleDTO.builder()
+        .points(100).dailyMaxCount(1).dailyMaxPoints(100).build();
+
+    /** 每日翻牌抽奖 */
+    @Builder.Default
+    private PointsDrawRuleDTO draw = PointsDrawRuleDTO.builder().build();
+
+    /** 积分兑换（发布券 / 数据看板高级版） */
+    @Builder.Default
+    private PointsExchangeRulesDTO exchange = PointsExchangeRulesDTO.builder().build();
 }

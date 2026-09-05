@@ -2,6 +2,18 @@
 	<view class="app-page flex flex-col pa-24" :class="[uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId" :error-text="uniHaloPluginAvailableError" />
 		<template v-else>
+			<!-- 高级版卡片 -->
+			<view class="advanced-card">
+				<view class="advanced-head">
+					<text class="advanced-title">数据看板高级版</text>
+					<tm-tags v-if="advancedUnlocked" color="bg-gradient-light-blue-accent" :shadow="0" size="s" model="fill">今日已解锁</tm-tags>
+				</view>
+				<text class="advanced-tip">{{ advancedUnlocked ? '30 日趋势与数据摘要导出已解锁，当天有效' : '解锁当日高级功能：30 日趋势与数据摘要导出（30 积分/次，每日 1 次）' }}</text>
+				<view class="advanced-actions">
+					<tm-button v-if="!advancedUnlocked" size="m" theme="primary" :loading="unlocking" @click="fnUnlockAdvanced">解锁高级版</tm-button>
+					<tm-button v-else size="m" theme="primary" @click="fnCopyStatisticalSummary">复制今日摘要</tm-button>
+				</view>
+			</view>
 			<!-- 加载区域 -->
 			<view v-if="loading == 'loading'" class="loading-wrap pa-24">
 				<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -133,6 +145,7 @@
 
 <script>
 import dataStatisticsApi from '@/api/v2/plugin.data-statistics.js';
+import { exchangePointsItem } from '@/utils/points.js';
 import { NeedPluginIds, NeedPlugins, checkNeedPluginAvailable } from '@/utils/plugin.js';
 import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
@@ -160,6 +173,8 @@ export default {
 	data() {
 		return {
 			loading: 'loading',
+			advancedUnlocked: false,
+			unlocking: false,
 			statistics: null,
 			tagChart: {
 				id: 'tagChart',
@@ -368,6 +383,7 @@ export default {
 		this.setPluginError('阿偶，检测到当前插件没有安装或者启用，无法使用功能哦，请联系管理员');
 		if (!(await this.checkPluginAvailable())) return;
 		this.fnGetData();
+		this.fnInitAdvanced();
 	},
 	onPullDownRefresh() {
 		if (!this.uniHaloPluginAvailable) {
@@ -378,6 +394,59 @@ export default {
 		this.fnGetData();
 	},
 	methods: {
+		async fnInitAdvanced() {
+			const now = new Date();
+			const key = `dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+			if (uni.getStorageSync(key) === '1') {
+				this.advancedUnlocked = true;
+				return;
+			}
+			try {
+				const api = this.$httpApi?.v2;
+				if (api?.getExchangeBalance) {
+					const res = await api.getExchangeBalance();
+					const body = res?.data || res || {};
+					if (body?.dashboardUnlockedToday === true) {
+						this.advancedUnlocked = true;
+						uni.setStorageSync(key, '1');
+					}
+				}
+			} catch (e) {
+				// 兑换接口未部署时忽略
+			}
+		},
+		async fnUnlockAdvanced() {
+			if (this.unlocking) return;
+			this.unlocking = true;
+			try {
+				const result = await exchangePointsItem(this.$httpApi.v2, 'dashboard_advanced');
+				if (!result.ok) {
+					uni.showToast({ icon: 'none', title: result.reason || '解锁失败' });
+					return;
+				}
+				this.advancedUnlocked = true;
+				const now = new Date();
+				uni.setStorageSync(`dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`, '1');
+				uni.showToast({ icon: 'success', title: '已解锁今日高级版' });
+			} finally {
+				this.unlocking = false;
+			}
+		},
+		fnCopyStatisticalSummary() {
+			const s = this.statistics || {};
+			const top = (s.top10Articles || []).slice(0, 3).map((item) => item.name).filter(Boolean);
+			const tags = (s.tags || []).slice(0, 5).map((item) => item.name || '').filter(Boolean);
+			const now = new Date();
+			const text = [
+				`数据看板摘要（${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}）`,
+				`热门 TOP3：${top.join('、') || '暂无'}`,
+				`热门标签：${tags.join('、') || '暂无'}`
+			].join('\n');
+			uni.setClipboardData({
+				data: text,
+				success: () => uni.showToast({ icon: 'none', title: '已复制摘要' })
+			});
+		},
 		fnGetData() {
 			uni.showLoading({
 				mask: true,
@@ -547,3 +616,35 @@ export default {
 	height: 320rpx;
 }
 </style>
+
+	.advanced-card {
+		margin-bottom: 24rpx;
+		padding: 24rpx 28rpx;
+		border-radius: 16rpx;
+		background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
+		border: 1rpx solid #b9dcff;
+	}
+
+	.advanced-head {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.advanced-title {
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #303133;
+	}
+
+	.advanced-tip {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #909399;
+	}
+
+	.advanced-actions {
+		margin-top: 16rpx;
+	}

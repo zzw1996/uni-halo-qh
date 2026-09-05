@@ -58,7 +58,11 @@ export function mapActivityItemToArticle(item) {
 		},
 		stats: {
 			visit: Number(item.visit ?? item.visitCount ?? 0) || 0
-		}
+		},
+		// 行为记录附加信息：积分数量（无领取记录时为 null）、可读时间、排序用原始时间
+		_pointsEarned: item.pointsEarned != null ? Number(item.pointsEarned) : null,
+		_recordTimeText: item.recordTimeText || '',
+		_recordTime: item.recordTime || item.createTime || ''
 	};
 }
 

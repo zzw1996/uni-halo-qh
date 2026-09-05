@@ -30,4 +30,10 @@ public class UserActivityItemDTO {
     private Integer visit;
 
     private Instant recordTime;
+
+    /** 可读时间（yyyy-MM-dd HH:mm:ss，Asia/Shanghai） */
+    private String recordTimeText;
+
+    /** 该行为对应领取的积分数量；无对应领分流水时为 null */
+    private Integer pointsEarned;
 }

@@ -33,22 +33,75 @@
 				</view>
 			</view>
 
-			<!-- 金刚区 :v-if="navList.filter(x=>x.show).length>=4" -->
-			<view v-if="calcIsShowQuickNavigationEnabled && !!navList.filter(x=>x.show).length"
-				class="nav-box mt-16 mb-24 pl-24 pr-24 uh-py-12">
-				<view class="page-item_title text-weight-b ">快捷导航</view>
-				<view class="nav-list flex uh-mt-12">
-					<template v-for="(item,index) in navList">
-						<view v-if="item.show" class="nav-item" :key="index" @click="fnClickNav(item)">
-							<view class="nav-item-icon">
-								<tm-icons :name="item.icon" :size="48" :color="item.iconColor"></tm-icons>
-							</view>
-							<view class="nav-item-text">
-								{{item.title}}
-							</view>
-						</view>
-					</template>
+			<!-- 每日一句 + 热榜 -->
+			<view class="daily-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
+				<view class="daily-quote uh-py-12">
+				<view class="daily-quote-head flex flex-between">
+					<text class="page-item_title text-weight-b">每日一句</text>
+					<view class="daily-quote-head-right">
+						<text class="daily-toolbox-link" @click="fnToToolbox">工具箱</text>
+						<text class="daily-quote-date">{{ todayQuoteDate }}</text>
+					</view>
 				</view>
+					<text class="daily-quote-text">{{ todayQuote.text }}</text>
+					<view class="daily-quote-foot flex flex-between">
+						<text class="daily-quote-author">—— {{ todayQuote.author }}</text>
+						<view class="daily-quote-actions">
+							<text class="daily-quote-copy" @click="fnCopyTodayQuote">复制</text>
+							<text class="daily-quote-share" @click="fnShareDailyQuote">分享</text>
+						</view>
+					</view>
+				</view>
+				<view v-if="rankList.length" class="daily-rank">
+					<view class="daily-rank-head flex flex-between">
+						<text class="page-item_title text-weight-b">热榜</text>
+						<text class="daily-rank-tip">按浏览量排序</text>
+					</view>
+					<view
+						v-for="(item, index) in rankList"
+						:key="item.name"
+						class="daily-rank-item flex flex-between"
+						@click="fnToRankArticle(item)"
+					>
+						<view class="daily-rank-main flex">
+							<text class="daily-rank-no" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</text>
+							<text class="daily-rank-title">{{ item.title || item.name }}</text>
+						</view>
+						<text class="daily-rank-visit">{{ item.visit }} 阅读</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 倒数日 -->
+			<view class="countdown-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
+				<view class="countdown-head flex flex-between">
+					<text class="page-item_title text-weight-b">倒数日</text>
+					<view class="countdown-add-btn" @click="fnToggleCountdownForm">
+						<text>{{ countdownShowForm ? '收起' : '＋ 新增' }}</text>
+					</view>
+				</view>
+				<view v-if="countdownShowForm" class="countdown-form">
+					<input class="countdown-input" v-model="countdownForm.name" placeholder="名称，如：恋爱纪念日" maxlength="20" />
+					<picker mode="date" :value="countdownForm.date" @change="fnOnCountdownDateChange">
+						<view class="countdown-input countdown-date">{{ countdownForm.date || '选择日期' }}</view>
+					</picker>
+					<view class="countdown-add-btn countdown-add-btn-solid" @click="fnAddCountdown">
+						<text>添加</text>
+					</view>
+				</view>
+				<view v-if="countdownList.length" class="countdown-list">
+					<view v-for="(item, index) in countdownList" :key="index" class="countdown-item flex flex-between">
+						<view class="countdown-main">
+							<text class="countdown-name">{{ item.name }}</text>
+							<text class="countdown-date-text">{{ item.date }}</text>
+						</view>
+						<text class="countdown-days" :class="{ 'is-today': item.days === 0 }">
+							{{ item.days === 0 ? '就是今天！' : (item.days > 0 ? `还有 ${item.days} 天` : `已过 ${-item.days} 天`) }}
+						</text>
+						<text class="countdown-del" @click="fnRemoveCountdown(index)">删除</text>
+					</view>
+				</view>
+				<view v-else class="countdown-empty">还没有倒数日，点右上角「＋ 新增」添加一个吧</view>
 			</view>
 
 			<!-- 精品分类 -->
@@ -123,6 +176,7 @@
 
 	import eSwiper from '@/components/e-swiper/e-swiper.vue';
 	import NotifyDialog from "@/components/notify-dialog/notify-dialog.vue";
+	import { getTodayQuote } from '@/utils/dailyQuotes.js';
 	import qs from 'qs'
 	import {
 		checkHasWxLogin,
@@ -141,11 +195,20 @@
 			eSwiper,
 			NotifyDialog
 		},
-		data() {
-			return {
-				loading: 'loading',
-				queryParams: {
-					size: 5,
+			data() {
+				return {
+					loading: 'loading',
+					todayQuote: { text: '', author: '' },
+					todayQuoteDate: '',
+					rankList: [],
+					countdownList: [],
+					countdownShowForm: false,
+					countdownForm: {
+						name: '',
+						date: ''
+					},
+					queryParams: {
+						size: 5,
 					page: 1,
 					sort: ['spec.pinned,desc', 'spec.publishTime,desc']
 				},
@@ -161,9 +224,7 @@
 					show: false,
 					data: {}
 				},
-				navList: [],
-				wxUserInfo: null
-			};
+				wxUserInfo: null			};
 		},
 		computed: {
 			haloConfigs() {
@@ -203,11 +264,6 @@
 			calcAuditModeEnabled() {
 				return !!this.haloConfigs?.auditConfig?.auditModeEnabled
 			},
-			calcIsShowQuickNavigationEnabled() {
-				console.log('this.haloConfigs?.pageConfig?.homeConfig', this.haloConfigs?.pageConfig?.homeConfig, !!this
-					.haloConfigs?.pageConfig?.homeConfig?.useQuickNavigation)
-				return !!this.haloConfigs?.pageConfig?.homeConfig?.useQuickNavigation
-			},
 			calcIsShowCategory() {
 				if (this.calcAuditModeEnabled && this.categoryList.length !== 0) {
 					return false
@@ -239,7 +295,7 @@
 			haloConfigs: {
 				handler(val) {
 					if (!val) return;
-					this.fnGetNavList();
+					this.fnInitNotify();
 				},
 				deep: true,
 				immediate: true,
@@ -247,6 +303,7 @@
 		},
 		onLoad() {
 			this.fnSetPageTitle();
+			this.fnInitDaily();
 		},
 		created() {
 			this.fnSyncWxUser();
@@ -524,6 +581,121 @@
 					animationType: 'slide-in-right'
 				});
 			},
+			fnInitDaily() {
+				const quote = getTodayQuote();
+				this.todayQuote = quote || { text: '', author: '' };
+				const now = new Date();
+				this.todayQuoteDate = `${now.getMonth() + 1}月${now.getDate()}日`;
+				this.fnLoadRank();
+				this.fnInitNotify();
+				this.fnLoadCountdowns();
+			},
+
+			fnLoadCountdowns() {
+				const raw = uni.getStorageSync('toolbox.countdowns');
+				const list = Array.isArray(raw) ? raw : [];
+				this.countdownList = list.map((item) => ({
+					...item,
+					days: this.fnCalcDays(item.date)
+				}));
+			},
+			fnSaveCountdowns() {
+				uni.setStorageSync('toolbox.countdowns', this.countdownList.map((item) => ({
+					name: item.name,
+					date: item.date
+				})));
+			},
+			fnCalcDays(dateStr) {
+				if (!dateStr) return 0;
+				const target = new Date(dateStr);
+				if (isNaN(target.getTime())) return 0;
+				target.setHours(0, 0, 0, 0);
+				const now = new Date();
+				now.setHours(0, 0, 0, 0);
+				return Math.round((target.getTime() - now.getTime()) / 86400000);
+			},
+			fnOnCountdownDateChange(e) {
+				this.countdownForm.date = e.detail.value;
+			},
+			fnToggleCountdownForm() {
+				this.countdownShowForm = !this.countdownShowForm;
+			},
+			fnAddCountdown() {
+				const name = (this.countdownForm.name || '').trim();
+				if (!name || !this.countdownForm.date) {
+					uni.showToast({ title: '请填写名称和日期', icon: 'none' });
+					return;
+				}
+				this.countdownList.unshift({
+					name,
+					date: this.countdownForm.date,
+					days: this.fnCalcDays(this.countdownForm.date)
+				});
+				this.fnSaveCountdowns();
+				this.countdownForm = { name: '', date: '' };
+				this.countdownShowForm = false;
+				uni.showToast({ title: '已添加', icon: 'success' });
+			},
+			fnRemoveCountdown(index) {
+				this.countdownList.splice(index, 1);
+				this.fnSaveCountdowns();
+			},
+
+			/**
+			 * 活动公告弹窗：后端插件「基本配置 → 活动公告弹窗」开关控制，
+			 * 每天最多弹一次（按标题 + 日期去重）。
+			 */
+			fnInitNotify() {
+				const cfg = this.haloConfigs?.basicConfig?.notifyConfig || {};
+				if (cfg?.enabled !== true || !cfg?.title) return;
+				const key = `notify_shown:${cfg.title}`;
+				const today = new Date().toDateString();
+				if (uni.getStorageSync(key) === today) return;
+				this.notify.data = {
+					title: cfg.title,
+					content: cfg.content || '',
+					url: cfg.url || ''
+				};
+				this.notify.show = true;
+				uni.setStorageSync(key, today);
+			},
+
+			async fnLoadRank() {
+				try {
+					const res = await this.$httpApi.v2.getRankArticles(3);
+					const body = res?.data || res || {};
+					const items = (body.items || []).filter((item) => item && item.name);
+					this.rankList = items.slice(0, 3);
+				} catch (err) {
+					// 热榜接口未部署（旧插件）时静默隐藏热榜块
+					this.rankList = [];
+				}
+			},
+
+			fnCopyTodayQuote() {
+				const text = this.todayQuote.text
+					? `每日一句：${this.todayQuote.text}${this.todayQuote.author ? ` —— ${this.todayQuote.author}` : ''}`
+					: '';
+				if (!text) return;
+				uni.setClipboardData({
+					data: text,
+					success: () => uni.showToast({ title: '已复制', icon: 'none' })
+				});
+			},
+
+			fnShareDailyQuote() {
+				this.fnCopyTodayQuote();
+				uni.showToast({ title: '已复制，快去分享给朋友吧', icon: 'none' });
+			},
+
+			fnToRankArticle(item) {
+				if (!item?.name) return;
+				uni.navigateTo({
+					url: '/pagesA/article-detail/article-detail?name=' + encodeURIComponent(item.name),
+					animationType: 'slide-in-right'
+				});
+			},
+
 			// 快捷导航页面跳转
 			fnToNavPage(item) {
 				switch (item.type) {
@@ -581,54 +753,12 @@
 					url: '/pages/tabbar/about/about'
 				})
 			},
-			fnClickNav(data) {
+			fnToToolbox() {
 				uni.navigateTo({
-					url: data.path
+					url: '/pagesA/toolbox/toolbox',
+					animationType: 'slide-in-right'
 				});
 			},
-			fnGetNavList() {
-				this.navList = [{
-					key: 'archives',
-					title: this.calcAuditModeEnabled ? '内容归档' : '文章归档',
-					icon: 'halocoloricon-classify',
-					iconColor: 'red',
-					path: '/pagesA/archives/archives',
-					type: 'page',
-					show: true
-				}, {
-					key: 'vote',
-					title: '投票中心',
-					icon: 'halocoloricon-edit',
-					iconColor: 'orange',
-					path: '/pagesA/votes/votes',
-					type: 'page',
-					show: !this.calcAuditModeEnabled && !!this.calcVotePluginEnabled,
-				}, {
-					key: 'friend-links',
-					title: '友情链接',
-					icon: 'haloicon-links',
-					iconColor: 'blue',
-					path: '/pagesA/friend-links/friend-links',
-					type: 'page',
-					show: !!this.calcLinksPluginEnabled,
-				}, {
-					key: 'love',
-					title: '恋爱日记',
-					icon: 'halocoloricon-attent',
-					iconColor: 'red',
-					path: '/pagesA/love/love',
-					type: 'page',
-					show: !!this.haloConfigs?.loveConfig?.loveEnabled
-				}, {
-					key: 'contact-blogger',
-					title: '联系博主',
-					icon: 'icon-paper-plane',
-					iconColor: 'orange',
-					path: '/pagesA/contact/contact',
-					type: 'page',
-					show: !!this.haloConfigs?.authorConfig?.social?.enabled
-				}]
-			}
 		}
 	};
 </script>
@@ -755,8 +885,223 @@
 		}
 	}
 
-	.nav-box {
-		background-color: #ffff;
+	.daily-block {
+		overflow: hidden;
+	}
+
+	.countdown-block {
+		overflow: hidden;
+		padding: 20rpx 24rpx;
+	}
+
+	.countdown-head {
+		align-items: center;
+	}
+
+	.countdown-add-btn {
+		padding: 8rpx 20rpx;
+		border-radius: 999rpx;
+		background: #f0f8ff;
+		font-size: 24rpx;
+		color: #03a9f4;
+
+		&.countdown-add-btn-solid {
+			background: #03a9f4;
+			color: #fff;
+		}
+	}
+
+	.countdown-form {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		margin-top: 16rpx;
+	}
+
+	.countdown-input {
+		flex: 1;
+		min-width: 0;
+		height: 68rpx;
+		line-height: 68rpx;
+		padding: 0 16rpx;
+		background: #f5f6fa;
+		border-radius: 10rpx;
+		font-size: 24rpx;
+		color: #303133;
+	}
+
+	.countdown-date {
+		text-align: center;
+	}
+
+	.countdown-list {
+		margin-top: 8rpx;
+	}
+
+	.countdown-item {
+		align-items: center;
+		padding: 14rpx 0;
+		border-bottom: 1rpx solid #f5f6fa;
+	}
+
+	.countdown-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.countdown-name {
+		display: block;
+		font-size: 26rpx;
+		color: #303133;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.countdown-date-text {
+		display: block;
+		margin-top: 2rpx;
+		font-size: 20rpx;
+		color: #c0c4cc;
+	}
+
+	.countdown-days {
+		flex-shrink: 0;
+		margin: 0 16rpx;
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #ff9800;
+
+		&.is-today {
+			color: #e53935;
+		}
+	}
+
+	.countdown-del {
+		flex-shrink: 0;
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.countdown-empty {
+		padding: 16rpx 0 4rpx;
+		font-size: 22rpx;
+		color: #c0c4cc;
+	}
+
+	.daily-quote {
+		padding: 20rpx 24rpx;
+		border-bottom: 1rpx solid #f0f0f0;
+	}
+
+	.daily-quote-head {
+		align-items: center;
+	}
+
+	.daily-quote-date {
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.daily-quote-head-right {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+	}
+
+	.daily-toolbox-link {
+		padding: 4rpx 16rpx;
+		border-radius: 999rpx;
+		background: #f0f8ff;
+		font-size: 22rpx;
+		color: #03a9f4;
+	}
+
+	.daily-quote-text {
+		display: block;
+		margin-top: 12rpx;
+		font-size: 28rpx;
+		line-height: 1.6;
+		color: #303133;
+	}
+
+	.daily-quote-foot {
+		align-items: center;
+		margin-top: 12rpx;
+	}
+
+	.daily-quote-author {
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.daily-quote-actions {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+	}
+
+	.daily-quote-actions text {
+		padding: 4rpx 16rpx;
+		border-radius: 999rpx;
+		background: #f0f8ff;
+		font-size: 22rpx;
+		color: #03a9f4;
+	}
+
+	.daily-rank {
+		padding: 20rpx 24rpx;
+	}
+
+	.daily-rank-head {
+		align-items: center;
+		margin-bottom: 8rpx;
+	}
+
+	.daily-rank-tip {
+		font-size: 22rpx;
+		color: #c0c4cc;
+	}
+
+	.daily-rank-item {
+		align-items: center;
+		padding: 14rpx 0;
+	}
+
+	.daily-rank-main {
+		align-items: center;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.daily-rank-no {
+		width: 36rpx;
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #c0c4cc;
+
+		&.is-top {
+			color: #ff9800;
+		}
+	}
+
+	.daily-rank-title {
+		flex: 1;
+		min-width: 0;
+		font-size: 26rpx;
+		color: #303133;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.daily-rank-visit {
+		margin-left: 16rpx;
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.nav-box {		background-color: #ffff;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}

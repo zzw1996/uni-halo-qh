@@ -50,6 +50,7 @@ import run.halo.app.extension.exception.ExtensionException;
 
 
 import java.time.Instant;
+import java.util.List;
 
 
 
@@ -706,6 +707,10 @@ class UserActivityServiceImplTest {
         when(client.listAll(eq(UserActivity.class), any(ListOptions.class), eq(null)))
 
             .thenReturn(Flux.just(existingActivity, activity2));
+
+        when(pointsPersistence.listRecordsByOpenid("openid-123"))
+
+            .thenReturn(Mono.just(List.of()));
 
 
 

@@ -1,6 +1,6 @@
 <template>
 	<view class="article-card " :class="cardType" @click="fnClickEvent('card')">
-		<view class="left">
+		<view class="left" v-if="calcShowArticleCover">
 			<cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
 			<!-- <image class="thumbnail" lazy-load :src="$utils.checkThumbnailUrl(article.spec.cover)" mode="aspectFill"></image> -->
 		</view>
@@ -42,6 +42,10 @@
 			}
 		},
 		computed: {
+			// 应用设置：是否显示文章封面
+			calcShowArticleCover() {
+				return this.globalAppSettings?.articleCard?.showCover !== false;
+			},
 			cardType() {
 				// tb_image_text=上图下文
 				// tb_text_image=上文下图

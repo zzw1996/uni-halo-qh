@@ -21,13 +21,24 @@
 			</view>
 			<!-- 内容区域 -->
 			<view v-else class="app-page-content" @click="fnCloseInteractionMenus">
-				<view v-if="dataList.length === 0" class="content-empty flex flex-center" style="min-height: 70vh;">
+				<view class="feed-tabs">
+					<view
+						v-for="tab in feedTabs"
+						:key="tab.value"
+						class="feed-tab"
+						:class="{ 'is-active': activeFeed === tab.value }"
+						@click="activeFeed = tab.value"
+					>
+						<text>{{ tab.label }}</text>
+					</view>
+				</view>
+				<view v-if="displayList.length === 0" class="content-empty flex flex-center" style="min-height: 70vh;">
 					<!-- 空布局 -->
 					<tm-empty icon="icon-shiliangzhinengduixiang-" label="暂无数据"></tm-empty>
 				</view>
 				<block v-else>
 					<!-- 卡片 -->
-					<tm-translate v-for="(moment, index) in dataList" :key="moment.metadata.name"
+					<tm-translate v-for="(moment, index) in displayList" :key="moment.metadata.name"
 						animation-name="fadeUp" :wait="calcAniWait(index)">
 						<view class="moment-card">
 							<view class="moment-card__head">
@@ -240,11 +251,36 @@
 				wxUserInfo: null,
 				canPublishMoment: false,
 				momentOwnerName: '',
-				deletingMomentName: ''
+				deletingMomentName: '',
+				activeFeed: 'latest'
 			};
 		},
 
 		computed: {
+			// 瞬间 feed 切换：latest=最新发布，hot=点赞最多（客户端排序）
+			feedTabs() {
+				return [
+					{ label: '最新', value: 'latest' },
+					{ label: '最热', value: 'hot' }
+				];
+			},
+			displayList() {
+				const list = [...this.dataList];
+				if (this.activeFeed === 'hot') {
+					list.sort((a, b) => {
+						const av = Number(a?.stats?.upvote ?? 0);
+						const bv = Number(b?.stats?.upvote ?? 0);
+						return bv - av;
+					});
+				} else {
+					list.sort((a, b) => {
+						const at = String(a?.spec?.publishTime || a?.spec?.releaseTime || '');
+						const bt = String(b?.spec?.publishTime || b?.spec?.releaseTime || '');
+						return bt.localeCompare(at);
+					});
+				}
+				return list;
+			},
 			loginRequired() {
 				return isWxLoginRequired(this.haloConfigs);
 			},
@@ -726,6 +762,27 @@
 
 	.loading-wrap {
 		padding: 24rpx;
+	}
+
+	.feed-tabs {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		padding: 20rpx 24rpx 4rpx;
+	}
+
+	.feed-tab {
+		padding: 8rpx 32rpx;
+		border-radius: 999rpx;
+		background: #fff;
+		font-size: 26rpx;
+		color: #909399;
+	}
+
+	.feed-tab.is-active {
+		background: #03a9f4;
+		color: #fff;
+		font-weight: 600;
 	}
 
 	.login-gate {

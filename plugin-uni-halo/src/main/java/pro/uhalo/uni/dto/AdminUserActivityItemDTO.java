@@ -39,4 +39,7 @@ public class AdminUserActivityItemDTO {
 
     /** 该行为当日已领取的积分，null 表示不适用 */
     private Integer pointsEarned;
+
+    /** 可读时间（yyyy-MM-dd HH:mm:ss，Asia/Shanghai） */
+    private String recordTimeText;
 }

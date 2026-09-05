@@ -25,4 +25,7 @@ public class UserPoints extends AbstractExtension {
 
     /** 最近一次签到日期，格式 yyyy-MM-dd（Asia/Shanghai） */
     private String lastSignInDate;
+
+    /** 瞬间发布券余额（积分兑换获得，发布超出免费配额时消耗） */
+    private Integer publishTickets;
 }

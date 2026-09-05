@@ -339,6 +339,27 @@
 							}
 						}
 					}
+				},
+				{
+					"path": "points-recharge/points-recharge",
+					"style": {
+						"navigationBarTitleText": "积分充值",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "toolbox/toolbox",
+					"style": {
+						"navigationBarTitleText": "工具箱",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "points-exchange/points-exchange",
+					"style": {
+						"navigationBarTitleText": "积分兑换",
+						"enablePullDownRefresh": false
+					}
 				}
 			]
 		},
@@ -393,12 +414,6 @@
 				"selectedIconPath": "static/tabbar/select_category_active.png",
 				"pagePath": "pages/tabbar/category/category",
 				"text": "分类"
-			},
-			{
-				"iconPath": "static/tabbar/select_gallery.png",
-				"selectedIconPath": "static/tabbar/select_gallery_active.png",
-				"pagePath": "pages/tabbar/gallery/gallery",
-				"text": "图库"
 			},
 			{
 				"iconPath": "static/tabbar/select_links.png",
