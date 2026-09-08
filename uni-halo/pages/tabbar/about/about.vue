@@ -15,16 +15,37 @@
 
 				<!-- 用户卡片 -->
 				<view class="user-card" @click="fnHandleUserCard">
-					<view class="uc-avatar" :class="{ online: isLoggedIn }">
+					<view class="uc-avatar" :class="[{ online: isLoggedIn }, calcAvatarFrameClass]">
 						<image v-if="isLoggedIn && calcUserAvatar" :src="calcUserAvatar" mode="aspectFill"></image>
 						<tm-icons v-else name="icon-user" :size="52" color="#c0c4cc"></tm-icons>
 						<view v-if="isLoggedIn" class="online-dot"></view>
 					</view>
 					<view class="uc-info">
 						<text class="uc-name">{{ isLoggedIn ? calcUserNickname : '点击登录' }}</text>
+						<text v-if="isLoggedIn && calcLevelText" class="uc-level">{{ calcLevelText }}</text>
 						<text class="uc-desc">{{ isLoggedIn ? '点击编辑资料' : '登录后享受更多功能' }}</text>
 					</view>
 					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#c0c4cc"></tm-icons>
+				</view>
+
+				<!-- 快捷入口 -->
+				<view class="quick-links">
+					<view class="quick-link" @click="fnToIdentityCenter">
+						<view class="ql-icon ql-icon--crown">👑</view>
+						<view class="ql-main">
+							<text class="ql-title">我的身份</text>
+							<text class="ql-sub">等级 · 称号 · 装扮</text>
+						</view>
+						<text class="ql-arrow">›</text>
+					</view>
+					<view v-if="calcPointsEnabled" class="quick-link" @click="fnToPointsExchange">
+						<view class="ql-icon ql-icon--gift">🎁</view>
+						<view class="ql-main">
+							<text class="ql-title">积分兑换</text>
+							<text class="ql-sub">积分换好物</text>
+						</view>
+						<text class="ql-arrow">›</text>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -60,7 +81,7 @@
 					</view>
 					<view class="points-card-links">
 						<view v-if="calcPayEnabled" class="points-recharge-link" @click="fnToPointsRecharge">
-							<text>积分充值</text>
+							<text>权益直购</text>
 						</view>
 						<view class="points-card-link" @click="fnToPointsHistory">
 							<text>明细</text>
@@ -68,31 +89,25 @@
 						</view>
 					</view>
 				</view>
-				<view class="points-sign-row">
-					<view class="points-sign-info">
-						<text class="points-sign-days">已连续签到 {{ calcConsecutiveDays }} 天</text>
-						<text class="points-sign-tip">{{ calcSignInTip }}</text>
+				<view class="points-actions-grid">
+					<view class="pa-card pa-card--sign" :class="{ 'is-done': calcSignedToday }" @click="fnHandleSignIn">
+						<text class="pa-icon">📅</text>
+						<text class="pa-title">今日签到</text>
+						<text class="pa-tip">{{ calcSignedToday ? '已连续 ' + calcConsecutiveDays + ' 天' : '每天签到领积分' }}</text>
+						<text class="pa-btn" :class="{ 'is-done': calcSignedToday }">{{ calcSignInButtonText }}</text>
 					</view>
-					<tm-button
-						size="m"
-						:theme="calcSignInButtonTheme"
-						:shadow="calcSignInButtonShadow"
-						:loading="signInLoading"
-						:disabled="calcSignInButtonDisabled"
-						@click="fnHandleSignIn"
-					>{{ calcSignInButtonText }}</tm-button>
-				</view>
-				<view class="points-draw-row">
-					<view class="points-draw-info">
-						<text class="points-draw-title">每日翻牌</text>
-						<text class="points-draw-tip">每天一次，消耗积分翻奖，最高 100 分</text>
+					<view class="pa-card pa-card--draw" @click="fnOpenPointsDraw">
+						<text class="pa-icon">🎴</text>
+						<text class="pa-title">每日翻牌</text>
+						<text class="pa-tip">每天一次 · 最高 {{ drawMaxPrize }} 分</text>
+						<text class="pa-btn">翻牌抽奖</text>
 					</view>
-					<tm-button
-						size="m"
-						theme="orange"
-						:loading="drawChecking"
-						@click="fnOpenPointsDraw"
-					>翻牌抽奖</tm-button>
+					<view class="pa-card pa-card--task" @click="fnToTaskCenter">
+						<text class="pa-icon">✅</text>
+						<text class="pa-title">每日任务</text>
+						<text class="pa-tip">完成任务领积分</text>
+						<text class="pa-btn">去完成</text>
+					</view>
 				</view>
 			<view v-if="calcWeekRecords.length" class="points-week-row">
 				<view
@@ -110,14 +125,19 @@
 		<!-- ========== 3. 我的服务 ========== -->
 		<view class="section-card">
 			<view class="sc-title">我的服务</view>
-			<tm-grid
-				:list="mergedServiceList"
-				:grid="4"
-				:height="140"
-				:icon-size="48"
-				font-color="grey-darken-3"
-				@change="fnOnServiceClick"
-			></tm-grid>
+			<view class="service-grid">
+				<view
+					v-for="(item, index) in mergedServiceList"
+					:key="index"
+					class="service-item"
+					@click="fnOnServiceClick(item)"
+				>
+				<view class="service-icon" :class="'service-icon--' + (item.color || 'blue')">
+					<text :class="[fnIconFontClass(item.icon), item.icon]"></text>
+				</view>
+					<text class="service-label">{{ item.text }}</text>
+				</view>
+			</view>
 		</view>
 
 		<!-- ========== 5. 版权 ========== -->
@@ -268,7 +288,6 @@
 		checkNeedPluginAvailable
 	} from "@/utils/plugin.js"
 
-	import tmGrid from '@/tm-vuetify/components/tm-grid/tm-grid.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import tmFlop from '@/tm-vuetify/components/tm-flop/tm-flop.vue';
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
@@ -279,7 +298,6 @@
 
 	export default {
 		components: {
-			tmGrid,
 			tmButton,
 			tmFlop,
 			tmIcons,
@@ -320,11 +338,13 @@
 				pointsDrawShow: false,
 				drawChecking: false,
 				drawCost: 10,
-				drawMaxPrize: 100,
-				pointsApiReady: null,
-				pointsLocalMode: false,
-				navList: [],
-			};
+					drawMaxPrize: 100,
+					pointsApiReady: null,
+					pointsLocalMode: false,
+					navList: [],
+					levelStatus: null,
+					outfitStatus: null,
+				};
 		},
 		computed: {
 			haloConfigs() {
@@ -368,6 +388,19 @@
 					return this.wxUserInfo.nickname;
 				}
 				return '微信用户';
+			},
+			calcLevelText() {
+				const status = this.levelStatus;
+				if (!status || !status.enabled || !status.level) {
+					return '';
+				}
+				return `Lv.${status.level}${status.levelTitle ? ' · ' + status.levelTitle : ''}`;
+			},
+			calcAvatarFrameClass() {
+				const frame = this.outfitStatus?.avatarFrame;
+				if (frame === 'gold') return 'frame-gold';
+				if (frame === 'rainbow') return 'frame-rainbow';
+				return '';
 			},
 			calcProfileModifyState() {
 				return getProfileModifyState(this.wxUserInfo, this.wxAppConfig);
@@ -505,6 +538,13 @@
 			},
 			serviceList() {
 				const list = [];
+				list.push({
+					text: '邀请好友',
+					icon: 'icon-paper-plane',
+					color: 'green',
+					path: '/pagesA/invite/invite',
+					requireLogin: true
+				});
 				if (this.calcIsShowComment) {
 					list.push({
 						text: '我的评论',
@@ -527,21 +567,6 @@
 					path: '/pagesA/user-activities/user-activities?type=upvote',
 						requireLogin: true
 					});
-				if (this.calcPointsEnabled) {
-					list.push({
-						text: '积分明细',
-						icon: 'haloicon-rizhishenji',
-						color: 'purple',
-						path: '/pagesA/points-history/points-history',
-						requireLogin: true
-					}, {
-						text: '积分兑换',
-						icon: 'haloicon-tianxie',
-						color: 'orange',
-						path: '/pagesA/points-exchange/points-exchange',
-						requireLogin: true
-					});
-				}
 				list.push({
 					text: '应用配置',
 					icon: 'haloicon-shezhi',
@@ -576,6 +601,7 @@
 			this.fnSyncPointsApiStateFromCache();
 			this.fnCheckLoginStatus();
 			this.fnProbePayEnabled();
+			this.fnRefreshIdentity();
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
@@ -608,8 +634,21 @@
 				}
 			},
 
+			/** 按图标名选择字体基类：halocoloricon / haloicon 字体（common/icons）或 tm 通用 iconfont */
+			fnIconFontClass(icon) {
+				const name = String(icon || '');
+				if (name.startsWith('halocoloricon')) {
+					return 'halocoloricon';
+				}
+				if (name.startsWith('haloicon')) {
+					return 'haloicon';
+				}
+				return 'iconfont';
+			},
+
 			fnOnServiceClick(e) {
-				const item = e.data;
+				// 兼容 tm-grid 回调（e.data）与自定义网格直传 item
+				const item = e?.data || e;
 				if (!item) return;
 				if (item.action === 'settings') {
 					this.fnToSettings();
@@ -617,7 +656,7 @@
 				}
 				if (item.requireLogin && !this.fnEnsureLogin()) return;
 				this.fnOnNav({
-					type: item.type,
+					type: item.type || (item.path ? 'page' : undefined),
 					path: item.path,
 					isAdmin: item.isAdmin,
 					openType: item.openType,
@@ -703,6 +742,47 @@
 			fnToPointsHistory() {
 				if (!this.fnEnsureLogin()) return;
 				uni.navigateTo({ url: '/pagesA/points-history/points-history' });
+			},
+
+			fnToIdentityCenter() {
+				if (!this.fnEnsureLogin()) return;
+				uni.navigateTo({ url: '/pagesA/identity/identity' });
+			},
+
+			fnToPointsExchange() {
+				if (!this.fnEnsureLogin()) return;
+				uni.navigateTo({ url: '/pagesA/points-exchange/points-exchange' });
+			},
+
+			/** 拉取等级/装扮状态（失败静默，不影响页面） */
+			async fnRefreshIdentity() {
+				if (!this.isLoggedIn) return;
+				try {
+					const [levelRes, outfitRes] = await Promise.all([
+						this.$httpApi.v2.getLevelStatus(),
+						this.$httpApi.v2.getOutfitStatus()
+					]);
+					const levelData = levelRes?.data || levelRes || {};
+					this.levelStatus = {
+						enabled: levelData.enabled !== false,
+						level: Number(levelData.level || 0),
+						levelTitle: levelData.levelTitle || ''
+					};
+					const outfitData = outfitRes?.data || outfitRes || {};
+					this.outfitStatus = {
+						avatarFrame: outfitData.avatarFrame || '',
+						nickFrame: outfitData.nickFrame || '',
+						theme: outfitData.theme || ''
+					};
+				} catch (err) {
+					this.levelStatus = null;
+					this.outfitStatus = null;
+				}
+			},
+
+			fnToTaskCenter() {
+				if (!this.fnEnsureLogin()) return;
+				uni.navigateTo({ url: '/pagesA/task-center/task-center' });
 			},
 
 			/**
@@ -939,7 +1019,8 @@
 					isAdmin: false,
 					type: 'page',
 					requireLogin: true,
-					show: await checkNeedPluginAvailable(NeedPluginIds.PluginDataStatistics)
+					// 数据看板始终显示（页面内部有插件未安装提示）
+					show: true
 				}, {
 					key: 'archives',
 					title: this.calcAuditModeEnabled ? '内容归档' : '文章归档',
@@ -1195,6 +1276,18 @@
 			border-color: #667eea;
 		}
 
+		&.frame-gold {
+			border: 5rpx solid #f5c542;
+			box-shadow: 0 0 16rpx rgba(245, 197, 66, 0.5);
+		}
+
+		&.frame-rainbow {
+			border: 5rpx solid transparent;
+			background: linear-gradient(#f0f0f5, #f0f0f5) padding-box,
+				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
+			box-shadow: 0 0 16rpx rgba(155, 140, 255, 0.4);
+		}
+
 		image {
 			width: 100%;
 			height: 100%;
@@ -1228,11 +1321,90 @@
 		white-space: nowrap;
 	}
 
+	.uc-level {
+		display: inline-block;
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #667eea;
+		background: rgba(102, 126, 234, 0.1);
+		border-radius: 999rpx;
+		padding: 2rpx 14rpx;
+		margin-top: 8rpx;
+	}
+
 	.uc-desc {
 		display: block;
 		font-size: 24rpx;
 		color: $text3;
 		margin-top: 4rpx;
+	}
+
+	/* ===== 快捷入口 ===== */
+	.quick-links {
+		display: flex;
+		gap: 16rpx;
+		margin: 24rpx 28rpx 0;
+	}
+
+	.quick-link {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+		padding: 20rpx 22rpx;
+		border-radius: 18rpx;
+		background: rgba(255, 255, 255, 0.95);
+		box-shadow: 0 6rpx 18rpx rgba(31, 41, 55, 0.12);
+	}
+
+	.ql-icon {
+		width: 68rpx;
+		height: 68rpx;
+		border-radius: 20rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 36rpx;
+		flex-shrink: 0;
+
+		&--crown {
+			background: #fff2d6;
+		}
+
+		&--gift {
+			background: #ffe9e0;
+		}
+	}
+
+	.ql-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.ql-title {
+		display: block;
+		font-size: 26rpx;
+		font-weight: 700;
+		color: #303133;
+	}
+
+	.ql-sub {
+		display: block;
+		margin-top: 2rpx;
+		font-size: 20rpx;
+		color: #909399;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+	}
+
+	.ql-arrow {
+		font-size: 30rpx;
+		color: #c0c4cc;
+		margin-left: 4rpx;
+		flex-shrink: 0;
 	}
 
 	/* ===== 通用卡片 ===== */
@@ -1248,6 +1420,82 @@
 		font-weight: 600;
 		color: $text2;
 		padding: 24rpx 28rpx 0;
+	}
+
+	/* ===== 我的服务 ===== */
+	.service-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 12rpx 8rpx;
+		padding: 20rpx 16rpx 24rpx;
+	}
+
+	.service-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 10rpx 0;
+		min-width: 0;
+	}
+
+	.service-icon {
+		width: 84rpx;
+		height: 84rpx;
+		border-radius: 24rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 44rpx;
+
+		.haloicon {
+			font-size: 44rpx;
+		}
+
+		&.service-icon--blue {
+			background: #e5efff;
+			color: #4a7de0;
+		}
+
+		&.service-icon--light-blue {
+			background: #e5f4ff;
+			color: #2aa2e0;
+		}
+
+		&.service-icon--green {
+			background: #e5f7ec;
+			color: #35a35f;
+		}
+
+		&.service-icon--orange {
+			background: #fff0e0;
+			color: #e8862b;
+		}
+
+		&.service-icon--purple {
+			background: #f1eaff;
+			color: #8a63d2;
+		}
+
+		&.service-icon--red {
+			background: #ffe9e9;
+			color: #e05555;
+		}
+
+		&.service-icon--grey {
+			background: #f0f1f5;
+			color: #7b8290;
+		}
+	}
+
+	.service-label {
+		display: block;
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		color: $text2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
 	}
 
 	/* ===== 统计 ===== */
@@ -1345,61 +1593,81 @@
 		color: $text3;
 	}
 
-	.points-sign-row {
+	.points-actions-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 14rpx;
+		margin-top: 20rpx;
+	}
+
+	.pa-card {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		justify-content: space-between;
-		gap: 20rpx;
-		padding: 20rpx 0 8rpx;
-		border-top: 1rpx solid #f0f0f0;
+		padding: 24rpx 8rpx 20rpx;
+		border-radius: 16rpx;
+		border: 2rpx solid transparent;
+		text-align: center;
+
+		&.pa-card--sign {
+			background: linear-gradient(160deg, #eef4ff 0%, #e8f0ff 100%);
+			border-color: #d6e4ff;
+
+			&.is-done {
+				background: linear-gradient(160deg, #eef8ea 0%, #e2f2dd 100%);
+				border-color: #cdeec1;
+			}
+		}
+
+		&.pa-card--draw {
+			background: linear-gradient(160deg, #fff5ec 0%, #ffefe0 100%);
+			border-color: #ffe3c9;
+		}
+
+		&.pa-card--task {
+			background: linear-gradient(160deg, #f3f0ff 0%, #ece7ff 100%);
+			border-color: #ddd4fb;
+		}
 	}
 
-	.points-draw-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 20rpx;
-		padding: 16rpx 0 8rpx;
-		border-top: 1rpx solid #f0f0f0;
+	.pa-icon {
+		font-size: 40rpx;
+		line-height: 1.2;
 	}
 
-	.points-draw-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.points-draw-title {
+	.pa-title {
 		display: block;
+		margin-top: 10rpx;
 		font-size: 26rpx;
-		font-weight: 600;
+		font-weight: 700;
 		color: $text2;
 	}
 
-	.points-draw-tip {
-		display: block;
-		margin-top: 4rpx;
-		font-size: 22rpx;
-		color: $text3;
-	}
-
-	.points-sign-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.points-sign-days {
-		display: block;
-		font-size: 26rpx;
-		font-weight: 600;
-		color: $text2;
-	}
-
-	.points-sign-tip {
+	.pa-tip {
 		display: block;
 		margin-top: 6rpx;
-		font-size: 22rpx;
+		font-size: 20rpx;
 		color: $text3;
-		line-height: 1.4;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+	}
+
+	.pa-btn {
+		margin-top: 14rpx;
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #ffffff;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		border-radius: 999rpx;
+		padding: 10rpx 26rpx;
+		line-height: 1;
+
+		&.is-done {
+			background: #c9dcf6;
+			color: #5a7fbe;
+		}
 	}
 
 	.points-week-row {

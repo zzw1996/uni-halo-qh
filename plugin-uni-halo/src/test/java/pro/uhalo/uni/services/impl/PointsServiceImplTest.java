@@ -82,6 +82,8 @@ class PointsServiceImplTest {
         userPoints.setMetadata(metadata);
         lenient().when(rateLimiter.tryAcquire(any(), anyInt(), any())).thenReturn(true);
         lenient().when(pointsEvidenceService.evidenceReady(any(), any(), any())).thenReturn(Mono.just(true));
+        // 积分商城 mallConfig 未配置时回落旧分组（多数用例只 stub 旧分组即可）
+        lenient().when(settingFetcher.get("mallConfig")).thenReturn(Mono.empty());
     }
     @Test
     void earnShouldRejectWhenPointsDisabled() throws Exception {
@@ -350,38 +352,86 @@ class PointsServiceImplTest {
     }
 
     @Test
-    void exchangeShouldDeductPointsAndGrantTicket() throws Exception {
+    void exchangeShouldDeductPointsForDashboard() throws Exception {
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.just(MAPPER.readTree("{}")));
         userPoints.setBalance(100L);
         when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
-            "{\"enabled\":true,\"rules\":{\"exchange\":{\"publishTicket\":"
-                + "{\"points\":50,\"dailyMaxCount\":5,\"freeCount\":3}}}}")));
+            "{\"enabled\":true,\"rules\":{\"exchange\":{\"dashboardAdvanced\":"
+                + "{\"points\":30,\"dailyMaxCount\":1,\"freeCount\":0}}}}")));
         when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
         when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
         when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
         when(persistence.saveAccount(any())).thenReturn(Mono.just(userPoints));
 
-        StepVerifier.create(pointsService.exchange("openid-123", "publish_ticket"))
+        StepVerifier.create(pointsService.exchange("openid-123", "dashboard_advanced"))
             .consumeNextWith(res -> {
-                assertThat(res.getPoints()).isEqualTo(50);
-                assertThat(res.getBalance()).isEqualTo(50L);
-                assertThat(res.getPublishTickets()).isEqualTo(1);
+                assertThat(res.getPoints()).isEqualTo(30);
+                assertThat(res.getBalance()).isEqualTo(70L);
             })
             .verifyComplete();
     }
 
     @Test
-    void exchangeShouldRejectWhenInsufficientPoints() throws Exception {
+    void exchangeShouldRejectOfflinePublishTicket() throws Exception {
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.just(MAPPER.readTree("{}")));
         when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
             "{\"enabled\":true,\"rules\":{\"exchange\":{\"publishTicket\":"
                 + "{\"points\":50,\"dailyMaxCount\":5,\"freeCount\":3}}}}")));
-        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
-        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
 
         StepVerifier.create(pointsService.exchange("openid-123", "publish_ticket"))
             .expectErrorSatisfies(ex -> assertThat(ex)
                 .isInstanceOf(WxAuthException.class)
+                .hasMessageContaining("已下线"))
+            .verify();
+    }
+
+    @Test
+    void exchangeShouldRejectWhenInsufficientPoints() throws Exception {
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.just(MAPPER.readTree("{}")));
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
+            "{\"enabled\":true,\"rules\":{\"exchange\":{\"dashboardAdvanced\":"
+                + "{\"points\":50,\"dailyMaxCount\":1,\"freeCount\":0}}}}")));
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "dashboard_advanced"))
+            .expectErrorSatisfies(ex -> assertThat(ex)
+                .isInstanceOf(WxAuthException.class)
                 .hasMessageContaining("积分不足"))
             .verify();
+    }
+
+    @Test
+    void voteShouldAwardTenPointsWithDefaultRule() throws Exception {
+        stubEnabledConfig();
+        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of()))
+            .thenReturn(Mono.just(List.of(
+                PointsPersistence.newRecord("openid-123", "vote", 10, 30L,
+                    "投票测试", "vote-1",
+                    PointsServiceImpl.buildDailyEarnKey("openid-123", "vote", "vote-1"),
+                    "wx-user-1"))));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(persistence.appendRecord(any(PointsRecord.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        StepVerifier.create(pointsService.earn("openid-123", earnRequest("vote", "vote-1")))
+            .consumeNextWith(response -> {
+                assertThat(response.getEarned()).isEqualTo(10);
+                assertThat(response.getBalance()).isEqualTo(30L);
+                assertThat(response.getTodayEarned()).isEqualTo(10);
+                assertThat(response.getMessage()).isEqualTo("+10 积分");
+            })
+            .verifyComplete();
+
+        var captor = ArgumentCaptor.forClass(PointsRecord.class);
+        verify(persistence).appendRecord(captor.capture());
+        assertThat(captor.getValue().getAction()).isEqualTo("vote");
+        assertThat(captor.getValue().getEarnKey())
+            .isEqualTo(PointsServiceImpl.buildDailyEarnKey("openid-123", "vote", "vote-1"));
     }
 
     private void stubDrawConfig(int cost) throws Exception {

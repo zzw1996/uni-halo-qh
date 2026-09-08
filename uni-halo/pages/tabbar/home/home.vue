@@ -33,7 +33,7 @@
 				</view>
 			</view>
 
-			<!-- 每日一句 + 热榜 -->
+			<!-- 每日一句 + 倒数日 + 热榜 -->
 			<view class="daily-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
 				<view class="daily-quote uh-py-12">
 				<view class="daily-quote-head flex flex-between">
@@ -51,6 +51,36 @@
 							<text class="daily-quote-share" @click="fnShareDailyQuote">分享</text>
 						</view>
 					</view>
+				</view>
+				<view class="daily-countdown">
+					<view class="countdown-head flex flex-between">
+						<text class="page-item_title text-weight-b">倒数日</text>
+						<view class="countdown-add-btn" @click="fnToggleCountdownForm">
+							<text>{{ countdownShowForm ? '收起' : '＋ 新增' }}</text>
+						</view>
+					</view>
+					<view v-if="countdownShowForm" class="countdown-form">
+						<input class="countdown-input" v-model="countdownForm.name" placeholder="名称，如：恋爱纪念日" maxlength="20" />
+						<picker mode="date" :value="countdownForm.date" @change="fnOnCountdownDateChange">
+							<view class="countdown-input countdown-date">{{ countdownForm.date || '选择日期' }}</view>
+						</picker>
+						<view class="countdown-add-btn countdown-add-btn-solid" @click="fnAddCountdown">
+							<text>添加</text>
+						</view>
+					</view>
+					<view v-if="countdownList.length" class="countdown-list">
+						<view v-for="(item, index) in countdownList" :key="index" class="countdown-item flex flex-between">
+							<view class="countdown-main">
+								<text class="countdown-name">{{ item.name }}</text>
+								<text class="countdown-date-text">{{ item.date }}</text>
+							</view>
+							<text class="countdown-days" :class="{ 'is-today': item.days === 0 }">
+								{{ item.days === 0 ? '就是今天！' : (item.days > 0 ? `还有 ${item.days} 天` : `已过 ${-item.days} 天`) }}
+							</text>
+							<text class="countdown-del" @click="fnRemoveCountdown(index)">删除</text>
+						</view>
+					</view>
+					<view v-else class="countdown-empty">还没有倒数日，点右上角「＋ 新增」添加一个吧</view>
 				</view>
 				<view v-if="rankList.length" class="daily-rank">
 					<view class="daily-rank-head flex flex-between">
@@ -72,36 +102,16 @@
 				</view>
 			</view>
 
-			<!-- 倒数日 -->
-			<view class="countdown-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
-				<view class="countdown-head flex flex-between">
-					<text class="page-item_title text-weight-b">倒数日</text>
-					<view class="countdown-add-btn" @click="fnToggleCountdownForm">
-						<text>{{ countdownShowForm ? '收起' : '＋ 新增' }}</text>
-					</view>
+			<!-- 每日任务入口 -->
+			<view class="daily-task-block ml-24 mr-24 mt-16 mb-16 bg-white round-3" @click="fnToTaskCenter">
+				<view class="daily-task-main">
+					<text class="page-item_title text-weight-b">每日任务</text>
+					<text class="daily-task-tip">签到 / 浏览 / 点赞 / 投票，完成任务领积分</text>
 				</view>
-				<view v-if="countdownShowForm" class="countdown-form">
-					<input class="countdown-input" v-model="countdownForm.name" placeholder="名称，如：恋爱纪念日" maxlength="20" />
-					<picker mode="date" :value="countdownForm.date" @change="fnOnCountdownDateChange">
-						<view class="countdown-input countdown-date">{{ countdownForm.date || '选择日期' }}</view>
-					</picker>
-					<view class="countdown-add-btn countdown-add-btn-solid" @click="fnAddCountdown">
-						<text>添加</text>
-					</view>
+				<view class="daily-task-arrow">
+					<text class="daily-task-btn">去完成</text>
+					<text class="daily-task-arrow-icon">›</text>
 				</view>
-				<view v-if="countdownList.length" class="countdown-list">
-					<view v-for="(item, index) in countdownList" :key="index" class="countdown-item flex flex-between">
-						<view class="countdown-main">
-							<text class="countdown-name">{{ item.name }}</text>
-							<text class="countdown-date-text">{{ item.date }}</text>
-						</view>
-						<text class="countdown-days" :class="{ 'is-today': item.days === 0 }">
-							{{ item.days === 0 ? '就是今天！' : (item.days > 0 ? `还有 ${item.days} 天` : `已过 ${-item.days} 天`) }}
-						</text>
-						<text class="countdown-del" @click="fnRemoveCountdown(index)">删除</text>
-					</view>
-				</view>
-				<view v-else class="countdown-empty">还没有倒数日，点右上角「＋ 新增」添加一个吧</view>
 			</view>
 
 			<!-- 精品分类 -->
@@ -591,6 +601,10 @@
 				this.fnLoadCountdowns();
 			},
 
+			fnToTaskCenter() {
+				uni.navigateTo({ url: '/pagesA/task-center/task-center' });
+			},
+
 			fnLoadCountdowns() {
 				const raw = uni.getStorageSync('toolbox.countdowns');
 				const list = Array.isArray(raw) ? raw : [];
@@ -889,8 +903,48 @@
 		overflow: hidden;
 	}
 
-	.countdown-block {
-		overflow: hidden;
+	.daily-task-block {
+		display: flex;
+		align-items: center;
+		padding: 20rpx 24rpx;
+		background-color: #fff;
+	}
+
+	.daily-task-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.daily-task-tip {
+		display: block;
+		margin-top: 6rpx;
+		padding-left: 24rpx;
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.daily-task-arrow {
+		display: flex;
+		align-items: center;
+		gap: 4rpx;
+		margin-left: 16rpx;
+	}
+
+	.daily-task-btn {
+		font-size: 22rpx;
+		padding: 8rpx 18rpx;
+		border-radius: 999rpx;
+		background: #f0f8ff;
+		color: #03a9f4;
+	}
+
+	.daily-task-arrow-icon {
+		font-size: 30rpx;
+		color: #03a9f4;
+		opacity: 0.6;
+	}
+
+	.daily-countdown {
 		padding: 20rpx 24rpx;
 	}
 
@@ -1051,6 +1105,7 @@
 
 	.daily-rank {
 		padding: 20rpx 24rpx;
+		border-top: 1rpx solid #f0f0f0;
 	}
 
 	.daily-rank-head {

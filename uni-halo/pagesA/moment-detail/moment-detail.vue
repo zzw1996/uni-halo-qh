@@ -74,6 +74,11 @@
 					</view>
 				</view>
 
+				<!-- 表情快捷反馈 -->
+				<view class="card" style="padding: 20rpx 24rpx;">
+					<content-reaction-bar content-type="moment" :content-name="moment.metadata.name"></content-reaction-bar>
+				</view>
+
 			</view>
 
 			<!-- 返回顶部 -->
@@ -104,6 +109,7 @@
 		generateUUID
 	} from '@/utils/uuid.js';
 	import { normalizeMomentListItem } from '@/utils/momentPublish.js';
+	import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
 
 	export default {
 		components: {
@@ -112,7 +118,8 @@
 			tmButton,
 			tmEmpty,
 			mpHtml,
-			tmTags
+			tmTags,
+			contentReactionBar
 		},
 		data() {
 			return {

@@ -1055,6 +1055,100 @@ export default {
 	},
 
 	/**
+	 * 查询内容表情反馈状态（counts + mine）
+	 * GET /userActivities/reactions/status?contentType=&articleName=
+	 */
+	getContentReactionStatus: async (contentType, articleName) => {
+		const query = qs.stringify({
+			articleName: (articleName || '').trim(),
+			contentType: String(contentType || 'post')
+		});
+		const openid = getOpenid();
+		const res = await directRequest({
+			url: `${buildUniHaloUrl('/userActivities/reactions/status')}?${query}`,
+			method: 'GET',
+			header: openid
+				? { 'Wechat-Session-Id': openid }
+				: undefined
+		});
+		if (!isDirectRequestSuccess(res.statusCode)) {
+			return Promise.reject({
+				error: extractResponseError(res.data) || '查询表情失败',
+				statusCode: res.statusCode
+			});
+		}
+		const data = res.data || {};
+		return {
+			counts: data.counts || {},
+			mine: data.mine || ''
+		};
+	},
+
+	/**
+	 * 提交表情反馈（同内容换表情 = 替换）
+	 * POST /userActivities/reactions
+	 */
+	submitContentReaction: async (contentType, articleName, kind) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		const body = {
+			type: 'reaction',
+			contentType: String(contentType || 'post'),
+			articleName: (articleName || '').trim(),
+			reactionKind: String(kind || '')
+		};
+		const res = await directRequest({
+			url: buildUniHaloUrl('/userActivities/reactions'),
+			method: 'POST',
+			data: body,
+			header: {
+				'Wechat-Session-Id': openid
+			}
+		});
+		if (!isDirectRequestSuccess(res.statusCode)) {
+			return Promise.reject({
+				error: extractResponseError(res.data) || '表情反馈失败',
+				statusCode: res.statusCode
+			});
+		}
+		return res.data || {};
+	},
+
+	/**
+	 * 取消我的表情反馈
+	 * DELETE /userActivities/reactions
+	 */
+	cancelContentReaction: async (contentType, articleName) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		const body = {
+			type: 'reaction',
+			contentType: String(contentType || 'post'),
+			articleName: (articleName || '').trim()
+		};
+		const res = await directRequest({
+			url: buildUniHaloUrl('/userActivities/reactions'),
+			method: 'DELETE',
+			data: body,
+			header: {
+				'Content-Type': 'application/json',
+				'Wechat-Session-Id': openid
+			}
+		});
+		if (!isDirectRequestSuccess(res.statusCode)) {
+			return Promise.reject({
+				error: extractResponseError(res.data) || '取消表情失败',
+				statusCode: res.statusCode
+			});
+		}
+		return res.data || {};
+	},
+
+	/**
 	 * 查询当前用户是否已点赞某篇文章
 	 * GET /userActivities/upvote/status?articleName=xxx
 	 * 返回：{ upvoted: boolean }
@@ -1141,6 +1235,17 @@ export default {
 	 */
 	getQRCodeInfo: (key) => {
 		return HttpHandler.Get(`/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/getQRCodeInfo/${key}`, null, {})
+	},
+
+	/**
+	 * 获取邀请场景小程序码（scene = inv:邀请码）
+	 * 接口：GET /getInviteQRCode/{inviteCode}
+	 * 鉴权：无需鉴权
+	 * 参数：inviteCode - 当前用户邀请码
+	 * 返回：{ imageUrl, base64 }（base64 供前端写本地文件绘制，绕开域名白名单）
+	 */
+	getInviteQRCodeImg: (inviteCode) => {
+		return HttpHandler.Get(`/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/getInviteQRCode/${encodeURIComponent(inviteCode)}`, null, {})
 	},
 
 	// ==================== Halo 账号绑定（v1.0.37 邮箱验证码） ====================
@@ -1309,14 +1414,6 @@ export default {
 	},
 
 	/**
-	 * 消耗 1 张发布券
-	 * POST /points/exchange/spend
-	 */
-	spendPublishTicket: async () => {
-		return requestPointsApi({ apiKey: 'exchangeSpend', method: 'POST', data: {} });
-	},
-
-	/**
 	 * 今日翻牌状态（不消耗积分）
 	 * GET /points/draw/status
 	 */
@@ -1330,6 +1427,135 @@ export default {
 	 */
 	getPointsHistory: async (params = {}) => {
 		return requestPointsApi({ apiKey: 'history', method: 'GET', params: params || {} });
+	},
+
+	/**
+	 * 每日任务列表与今日进度
+	 * GET /points/tasks/daily
+	 */
+	getDailyTasks: async () => {
+		return requestPointsApi({ apiKey: 'dailyTasks', method: 'GET' });
+	},
+
+	/**
+	 * 领取每日任务今日奖励
+	 * POST /points/tasks/claim
+	 */
+	claimDailyTask: async (type) => {
+		return requestPointsApi({
+			apiKey: 'claimTask',
+			method: 'POST',
+			data: { type: String(type || '') }
+		});
+	},
+
+	/**
+	 * 等级状态（等级、佩戴称号、称号进度）
+	 * GET /points/level
+	 */
+	getLevelStatus: async () => {
+		return requestPointsApi({ apiKey: 'levelStatus', method: 'GET' });
+	},
+
+	/**
+	 * 佩戴称号
+	 * POST /points/level/title
+	 */
+	wearLevelTitle: async (titleId) => {
+		return requestPointsApi({
+			apiKey: 'wearTitle',
+			method: 'POST',
+			data: { titleId: String(titleId || '') }
+		});
+	},
+
+	/**
+	 * 装扮商店与持有状态
+	 * GET /points/outfit
+	 */
+	getOutfitStatus: async () => {
+		return requestPointsApi({ apiKey: 'outfitStatus', method: 'GET' });
+	},
+
+	/**
+	 * 购买装扮（消耗积分）
+	 * POST /points/outfit/buy
+	 */
+	buyOutfitItem: async (key) => {
+		return requestPointsApi({
+			apiKey: 'buyOutfit',
+			method: 'POST',
+			data: { key: String(key || '') }
+		});
+	},
+
+	/**
+	 * 穿戴/脱下装扮（key 为空表示脱下）
+	 * POST /points/outfit/equip
+	 */
+	equipOutfitItem: async (key) => {
+		return requestPointsApi({
+			apiKey: 'equipOutfit',
+			method: 'POST',
+			data: { key: key || null }
+		});
+	},
+
+	/**
+	 * 邀请信息（邀请码、已邀请人数、奖励）
+	 * GET /points/invite/info
+	 */
+	getInviteInfo: async () => {
+		return requestPointsApi({ apiKey: 'inviteInfo', method: 'GET' });
+	},
+
+	/**
+	 * 幸运抽奖配置（规则公示）
+	 * GET /points/lucky/config
+	 */
+	getLuckyConfig: async () => {
+		return requestPointsApi({ apiKey: 'luckyConfig', method: 'GET' });
+	},
+
+	/**
+	 * 参与一次幸运抽奖（消耗积分）
+	 * POST /points/lucky/draw
+	 */
+	drawLuckyGift: async () => {
+		return requestPointsApi({ apiKey: 'luckyDraw', method: 'POST', data: {} });
+	},
+
+	/**
+	 * 中奖后提交收货信息
+	 * POST /points/lucky/submit
+	 */
+	submitLuckyClaim: async (data = {}) => {
+		const body = {
+			winningId: String(data.winningId || ''),
+			contactName: String(data.contactName || ''),
+			phone: String(data.phone || ''),
+			address: String(data.address || '')
+		};
+		return requestPointsApi({ apiKey: 'luckySubmit', method: 'POST', data: body });
+	},
+
+	/**
+	 * 我的中奖单列表（含待填写收货信息的提醒）
+	 * GET /points/lucky/mine
+	 */
+	getMyLuckyClaims: async () => {
+		return requestPointsApi({ apiKey: 'luckyMine', method: 'GET' });
+	},
+
+	/**
+	 * 站点数据看板（插件自身统计，不依赖第三方插件）
+	 * GET /dashboard/summary
+	 */
+	getDashboardSummary: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/dashboard/summary'),
+			method: 'GET'
+		});
 	},
 
 	/**

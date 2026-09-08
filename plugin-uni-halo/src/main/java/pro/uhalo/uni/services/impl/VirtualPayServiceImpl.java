@@ -42,12 +42,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 虚拟支付（道具直购：积分充值）核心服务。
+ * 虚拟支付核心服务（道具直购）。
  *
  * <p>实现依据（官方文档）：</p>
  * <ul>
  *   <li>下单：服务器生成 signData + paySig + signature（mode=short 道具直购），前端调用基础库 wx.requestVirtualPayment</li>
- *   <li>发货：以 xpay_goods_deliver_notify 推送为主，按 wx_order_id 幂等，返回 &lt;xml&gt;&lt;ErrCode&gt;0&lt;/ErrCode&gt;&lt;/xml&gt;</li>
+ *   <li>发货：以 xpay_goods_deliver_notify 推送为主，按 earnKey 幂等，返回 &lt;xml&gt;&lt;ErrCode&gt;0&lt;/ErrCode&gt;&lt;/xml&gt;</li>
+ *   <li>道具类型：points=旧积分充值（兼容已配置商品）；dashboard=数据看板当日高级版；publish_ticket=发布券；outfit=装扮解锁</li>
  *   <li>兜底：推送丢失时定时调用 /xpay/query_order 查单补发</li>
  *   <li>签名：pay_sig = HMAC-SHA256(AppKey, uri + "&" + post_body)；signature = HMAC-SHA256(sessionKey, post_body)</li>
  * </ul>
@@ -138,6 +139,9 @@ public class VirtualPayServiceImpl implements VirtualPayService {
         var order = PayOrderPersistence.newOrder(openid, WxUserIds.resolveId(wxUser), outTradeNo,
             goods.getGoodsId(), goods.getName(), goods.getPrice(), goods.getPoints(),
             quantity, env, outTradeNo);
+        order.setGoodsType(goods.getType());
+        order.setGoodsValue(goods.getValue());
+        order.setGoodsStyle(goods.getStyle());
         return payOrderPersistence.create(order)
             .flatMap(saved -> buildPayData(config, saved, wxUser.getSessionKey()))
             .onErrorResume(ex -> {
@@ -357,23 +361,124 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     }
 
     private Mono<PayOrder> doDeliver(PayOrder order, RemoteOrderStatus remote) {
-        var grant = (order.getPoints() == null ? 0 : order.getPoints())
-            * (order.getQuantity() == null ? 1 : order.getQuantity());
-        if (grant <= 0) {
-            log.error("虚拟支付发货跳过：订单 {} 到账积分为 0", order.getOutTradeNo());
-            return Mono.error(new WxAuthException("订单积分配置无效，发货失败"));
-        }
-        var earnKey = order.getOpenid() + ":recharge:" + order.getOutTradeNo();
+        var earnKey = order.getOpenid() + ":purchase:" + order.getOutTradeNo();
         return resolveWxUserId(order)
             .flatMap(wxUserId -> {
                 var updated = copyForDeliver(order, remote, wxUserId);
-                // 以积分流水 earnKey 为幂等锚点：先查流水，已存在则视为已发放（不重复入账），
+                // 以流水 earnKey 为幂等锚点：先查流水，已存在则视为已发放（不重复入账），
                 // 订单状态更新失败时下次重试也会跳过入账，保证恰好一次发放。
                 return pointsPersistence.findRecordByEarnKey(earnKey)
                     .flatMap(existing -> markDelivered(updated))
-                    .switchIfEmpty(grantPoints(order, earnKey, grant, wxUserId)
+                    .switchIfEmpty(grantGoods(order, earnKey, wxUserId)
                         .then(markDelivered(updated)));
             });
+    }
+
+    /** 道具直购发放：按商品类型分发，未配置 type 时保守兼容旧的积分充值逻辑 */
+    private Mono<Void> grantGoods(PayOrder order, String earnKey, String wxUserId) {
+        var type = StringUtils.hasText(order.getGoodsType())
+            ? order.getGoodsType().trim().toLowerCase() : "";
+        if (type.isEmpty() || "points".equals(type)) {
+            var grant = (order.getPoints() == null ? 0 : order.getPoints())
+                * (order.getQuantity() == null ? 1 : order.getQuantity());
+            if (grant <= 0) {
+                log.error("虚拟支付发货跳过：订单 {} 到账积分为 0", order.getOutTradeNo());
+                return Mono.error(new WxAuthException("订单积分配置无效，发货失败"));
+            }
+            return grantPoints(order, earnKey, grant, wxUserId).then();
+        }
+        return switch (type) {
+            case "dashboard" -> grantDashboardAccess(order, earnKey);
+            case "publish_ticket" -> grantPublishTickets(order, earnKey, wxUserId);
+            case "outfit" -> grantOutfit(order, earnKey, wxUserId, order.getGoodsStyle());
+            default -> {
+                log.error("虚拟支付发货跳过：订单 {} 道具类型未知：{}", order.getOutTradeNo(), type);
+                yield Mono.error(new WxAuthException("未知的道具类型，发货失败"));
+            }
+        };
+    }
+
+    /** 数据看板高级版（当日）：写入一条 exchange_dashboard 记录，与积分兑换的当日开通判定完全兼容 */
+    private Mono<Void> grantDashboardAccess(PayOrder order, String earnKey) {
+        return pointsPersistence.getOrCreateAccount(order.getOpenid())
+            .flatMap(account -> pointsPersistence.appendRecord(pointsPersistence.newRecord(
+                order.getOpenid(), "exchange_dashboard", 0, safeBalance(account),
+                "道具直购 · " + (StringUtils.hasText(order.getGoodsName())
+                    ? order.getGoodsName() : "数据看板高级版"),
+                order.getGoodsId(), earnKey, order.getWxUserId())))
+            .then();
+    }
+
+    /** 发布券：发放到 UserPoints.publishTickets */
+    private Mono<Void> grantPublishTickets(PayOrder order, String earnKey, String wxUserId) {
+        var count = Math.max(1, order.getGoodsValue() == null ? 1 : order.getGoodsValue());
+        return pointsPersistence.getOrCreateAccount(order.getOpenid())
+            .flatMap(account -> {
+                if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                    account.setWxUserId(wxUserId);
+                }
+                var current = account.getPublishTickets() == null ? 0 : account.getPublishTickets();
+                account.setPublishTickets(current + count);
+                return pointsPersistence.saveAccount(account)
+                    .then(pointsPersistence.appendRecord(pointsPersistence.newRecord(
+                        order.getOpenid(), "purchase_publish_ticket", 0, safeBalance(account),
+                        "道具直购 · 发布券 x" + count, order.getGoodsId(), earnKey, wxUserId)))
+                    .then();
+            });
+    }
+
+    /** 装扮：直购即拥有（outfitOwned 追加），佩戴仍由用户在身份中心操作 */
+    private Mono<Void> grantOutfit(PayOrder order, String earnKey, String wxUserId, String outfitKey) {
+        if (!StringUtils.hasText(outfitKey)) {
+            return Mono.error(new WxAuthException("装扮商品未配置 key"));
+        }
+        var key = outfitKey.trim();
+        return pointsPersistence.getOrCreateAccount(order.getOpenid())
+            .flatMap(account -> {
+                if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                    account.setWxUserId(wxUserId);
+                }
+                var owned = new ArrayList<>(parseOwned(account.getOutfitOwned()));
+                if (owned.contains(key)) {
+                    // 已拥有：仍落一条 0 分流水用于幂等标记
+                    return pointsPersistence.appendRecord(pointsPersistence.newRecord(
+                        order.getOpenid(), "purchase_outfit", 0, safeBalance(account),
+                        "道具直购 · 已拥有装扮（重复购买）", key, earnKey, wxUserId))
+                        .then();
+                }
+                owned.add(key);
+                account.setOutfitOwned(writeOwned(owned));
+                return pointsPersistence.saveAccount(account)
+                    .then(pointsPersistence.appendRecord(pointsPersistence.newRecord(
+                        order.getOpenid(), "purchase_outfit", 0, safeBalance(account),
+                        "道具直购 · 解锁装扮", key, earnKey, wxUserId)))
+                    .then();
+            });
+    }
+
+    private static List<String> parseOwned(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return List.of();
+        }
+        try {
+            var parsed = OBJECT_MAPPER.readValue(raw, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
+            });
+            return parsed == null ? List.of() : new ArrayList<>(parsed);
+        } catch (Exception ex) {
+            return new ArrayList<>();
+        }
+    }
+
+    private static String writeOwned(List<String> owned) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(owned);
+        } catch (Exception ex) {
+            return "[]";
+        }
+    }
+
+    private static long safeBalance(pro.uhalo.uni.scheme.UserPoints account) {
+        return account.getBalance() == null ? 0L : Math.max(0L, account.getBalance());
     }
 
     private Mono<PointsRecord> grantPoints(PayOrder order, String earnKey, int grant, String wxUserId) {
@@ -420,6 +525,9 @@ public class VirtualPayServiceImpl implements VirtualPayService {
         updated.setGoodsName(order.getGoodsName());
         updated.setPrice(order.getPrice());
         updated.setPoints(order.getPoints());
+        updated.setGoodsType(order.getGoodsType());
+        updated.setGoodsValue(order.getGoodsValue());
+        updated.setGoodsStyle(order.getGoodsStyle());
         updated.setQuantity(order.getQuantity());
         updated.setEnv(order.getEnv());
         updated.setAttach(order.getAttach());
@@ -484,7 +592,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(body)
                         .retrieve()
-                        .bodyToMono(JsonNode.class)
+                        .bodyToMono(String.class)
+                        .map(this::parseJsonNode)
                         .flatMap(this::parseRemoteOrderStatus);
                 }));
     }
@@ -498,6 +607,18 @@ public class VirtualPayServiceImpl implements VirtualPayService {
             return OBJECT_MAPPER.writeValueAsString(data);
         } catch (Exception ex) {
             throw new IllegalStateException("query_order body 序列化失败", ex);
+        }
+    }
+
+    /** 微信接口响应：String → JsonNode（手动解析，避免 WebFlux JsonNode 编解码兼容问题） */
+    private JsonNode parseJsonNode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new WxAuthException("微信接口响应为空");
+        }
+        try {
+            return OBJECT_MAPPER.readTree(raw);
+        } catch (Exception ex) {
+            throw new WxAuthException("微信接口响应解析失败");
         }
     }
 
@@ -536,7 +657,10 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 }
                 var url = TOKEN_URL + "?grant_type=client_credential&appid=" + config.appId()
                     + "&secret=" + config.appSecret();
-                return WEB_CLIENT.get().uri(url).retrieve().bodyToMono(JsonNode.class)
+                // String + 手动解析，避开部分 Spring/Jackson 组合下 bodyToMono(JsonNode.class) 的
+                // "Type definition error: [simple type, class com.fasterxml.jackson.databind.JsonNode]" 崩溃
+                return WEB_CLIENT.get().uri(url).retrieve().bodyToMono(String.class)
+                    .map(this::parseJsonNode)
                     .flatMap(body -> {
                         if (body.hasNonNull("errcode") && body.get("errcode").asInt() != 0) {
                             return Mono.error(new WxAuthException("微信 access_token 获取失败："
@@ -585,12 +709,24 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 var name = textValue(item, "name");
                 var price = item.path("price").asLong(0);
                 var points = item.path("points").asInt(0);
-                if (StringUtils.hasText(goodsId) && StringUtils.hasText(name) && price > 0 && points > 0) {
+                var type = textValue(item, "type").toLowerCase();
+                var value = item.path("value").asInt(0);
+                var style = textValue(item, "style");
+                var valid = StringUtils.hasText(goodsId) && StringUtils.hasText(name) && price > 0;
+                var isPoints = type.isEmpty() || "points".equals(type);
+                var isGoods = "dashboard".equals(type) || "publish_ticket".equals(type)
+                    || "outfit".equals(type);
+                var typeValid = isPoints ? points > 0
+                    : isGoods && (!"outfit".equals(type) || StringUtils.hasText(style));
+                if (valid && typeValid) {
                     goods.add(PayGoodsDTO.builder()
                         .goodsId(goodsId)
                         .name(name)
                         .price(price)
                         .points(points)
+                        .type(type)
+                        .value(value)
+                        .style(style)
                         .build());
                 }
             }

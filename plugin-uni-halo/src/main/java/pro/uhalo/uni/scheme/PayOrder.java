@@ -36,8 +36,17 @@ public class PayOrder extends AbstractExtension {
     /** 道具单价（分），与微信后台道具价格一致 */
     private Long price;
 
-    /** 到账积分（1 个道具 = points 分） */
+    /** 到账积分（1 个道具 = points 分；仅旧积分充值模式使用） */
     private Integer points;
+
+    /** 道具类型：points | dashboard | publish_ticket | outfit */
+    private String goodsType;
+
+    /** 道具数量 */
+    private Integer goodsValue;
+
+    /** 装扮 key（type=outfit 时使用） */
+    private String goodsStyle;
 
     private Integer quantity;
 

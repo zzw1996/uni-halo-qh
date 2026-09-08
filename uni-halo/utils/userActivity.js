@@ -9,13 +9,15 @@ import { isPointsEnabled, tryEarnPointsByAction, POINTS_ACTIONS } from '@/utils/
 export const USER_ACTIVITY_TYPES = {
 	COMMENT: 'comment',
 	BROWSE: 'browse',
-	UPVOTE: 'upvote'
+	UPVOTE: 'upvote',
+	VOTE: 'vote'
 };
 
 export const USER_ACTIVITY_TITLES = {
 	comment: '我的评论',
 	browse: '我的浏览',
-	upvote: '我的点赞'
+	upvote: '我的点赞',
+	vote: '我的投票'
 };
 
 /**
@@ -103,7 +105,8 @@ export function recordUserActivity(httpApi, type, articlePayload = {}) {
 		if (!isPointsEnabled()) return;
 		const actionMap = {
 			[USER_ACTIVITY_TYPES.COMMENT]: POINTS_ACTIONS.COMMENT,
-			[USER_ACTIVITY_TYPES.UPVOTE]: POINTS_ACTIONS.UPVOTE
+			[USER_ACTIVITY_TYPES.UPVOTE]: POINTS_ACTIONS.UPVOTE,
+			[USER_ACTIVITY_TYPES.VOTE]: POINTS_ACTIONS.VOTE
 		};
 		const action = actionMap[type];
 		if (action) {

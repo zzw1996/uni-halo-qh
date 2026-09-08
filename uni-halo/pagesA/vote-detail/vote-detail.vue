@@ -203,6 +203,7 @@
 		calcVotePercent,
 		voteCacheUtil
 	} from '@/utils/vote.js'
+	import { recordUserActivity } from '@/utils/userActivity.js'
 
 	export default {
 		components: {
@@ -371,6 +372,12 @@
 						voteCacheUtil.set(this.name, {
 							selected: [...this.submitForm.voteData],
 							data: this.vote
+						})
+
+						// 上报投票行为并领取投票积分（未登录/积分未开启时静默跳过）
+						recordUserActivity(this.$httpApi.v2, 'vote', {
+							articleName: this.name,
+							title: this.vote?.spec?.title || ''
 						})
 
 						setTimeout(() => {

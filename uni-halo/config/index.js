@@ -72,6 +72,18 @@ export const DefaultAppConfigs = {
 	payConfig: {
 		enabled: false,
 		goods: []
+	},
+	/** 等级/称号/装扮配置（由插件后台 levelConfig 下发） */
+	levelConfig: {
+		enabled: true,
+		levels: [],
+		titles: [],
+		outfits: []
+	},
+	/** 邀请奖励配置（由插件后台 inviteConfig 下发） */
+	inviteConfig: {
+		enabled: true,
+		rewardPoints: 30
 	}
 }
 

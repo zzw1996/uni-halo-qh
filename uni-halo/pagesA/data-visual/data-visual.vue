@@ -1,621 +1,224 @@
 <template>
-	<view class="app-page flex flex-col pa-24" :class="[uniHaloPluginPageClass]">
-		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId" :error-text="uniHaloPluginAvailableError" />
-		<template v-else>
-			<!-- 高级版卡片 -->
-			<view class="advanced-card">
-				<view class="advanced-head">
-					<text class="advanced-title">数据看板高级版</text>
-					<tm-tags v-if="advancedUnlocked" color="bg-gradient-light-blue-accent" :shadow="0" size="s" model="fill">今日已解锁</tm-tags>
-				</view>
-				<text class="advanced-tip">{{ advancedUnlocked ? '30 日趋势与数据摘要导出已解锁，当天有效' : '解锁当日高级功能：30 日趋势与数据摘要导出（30 积分/次，每日 1 次）' }}</text>
-				<view class="advanced-actions">
-					<tm-button v-if="!advancedUnlocked" size="m" theme="primary" :loading="unlocking" @click="fnUnlockAdvanced">解锁高级版</tm-button>
-					<tm-button v-else size="m" theme="primary" @click="fnCopyStatisticalSummary">复制今日摘要</tm-button>
+	<view class="app-page">
+		<!-- 高级版卡片 -->
+		<view class="advanced-card">
+			<view class="advanced-head">
+				<text class="advanced-title">数据看板高级版</text>
+				<tm-tags v-if="advancedUnlocked" color="bg-gradient-light-blue-accent" :shadow="0" size="s" model="fill">今日已解锁</tm-tags>
+			</view>
+			<text class="advanced-tip">{{ advancedUnlocked ? '已解锁：完整数据导出（含近 7 日趋势与热榜数据）' : '解锁当日高级功能：完整数据导出（30 积分/次，每日 1 次）' }}</text>
+			<view class="advanced-actions">
+				<tm-button v-if="!advancedUnlocked" size="m" theme="primary" :loading="unlocking" @click="fnUnlockAdvanced">解锁高级版</tm-button>
+				<tm-button v-else size="m" theme="primary" @click="fnCopySummary">导出完整数据</tm-button>
+			</view>
+		</view>
+
+		<view v-if="loading === 'loading'" class="loading-wrap">
+			<tm-skeleton model="listAvatr"></tm-skeleton>
+			<tm-skeleton model="listAvatr"></tm-skeleton>
+			<tm-skeleton model="listAvatr"></tm-skeleton>
+		</view>
+		<view v-else-if="loading === 'error'" class="empty-wrap">
+			<tm-empty icon="icon-wind-cry" label="数据加载失败"></tm-empty>
+			<tm-button class="mt-16" size="s" theme="grey" @click="fnGetData">重新加载</tm-button>
+			<text class="empty-tip">若仍失败，请确认插件已升级到 v1.0.75+</text>
+		</view>
+		<view v-else>
+			<view class="stat-grid">
+				<view class="stat-card" v-for="(card, index) in statCards" :key="index">
+					<text class="stat-value">{{ card.value }}</text>
+					<text class="stat-label">{{ card.label }}</text>
 				</view>
 			</view>
-			<!-- 加载区域 -->
-			<view v-if="loading == 'loading'" class="loading-wrap pa-24">
-				<tm-skeleton model="listAvatr"></tm-skeleton>
-				<tm-skeleton model="listAvatr"></tm-skeleton>
-				<tm-skeleton model="listAvatr"></tm-skeleton>
-				<tm-skeleton model="listAvatr"></tm-skeleton>
-			</view>
-			<view v-else-if="loading == 'error'" class="content-empty flex flex-center">
-				<tm-empty icon="icon-wind-cry" label="加载异常"></tm-empty>
-			</view>
-			<!-- 内容区域 -->
-			<view v-else class="content flex flex-col uh-gap-y-12">
-				<!-- 标签统计 -->
-				<view class="card bg-white pa-24 round-4">
-					<view class="card-head flex items-center justify-between">
-						<view class="card-head_title flex items-end uh-gap-x-4">
-							<text class="card-head_text">标签统计</text>
-							<text class="card-head_subtext">(全部标签的文章数量占比)</text>
-						</view>
-						<view @click="tagChart.isExpand = !tagChart.isExpand">
-							<tm-icons v-if="tagChart.isExpand" :size="24" name="icon-angle-down" color="gray"></tm-icons>
-							<tm-icons v-else :size="24" name="icon-angle-up" color="gray"></tm-icons>
-						</view>
-					</view>
-					<view v-show="tagChart.isExpand" class="card-body flex">
-						<view class="chart-box">
-							<qiun-data-charts :type="tagChart.type" :opts="tagChart.opts" :chartData="tagChart.data" :tooltipFormat="tagChart.tooltipFormat" />
-						</view>
-					</view>
+
+			<view class="section-card">
+				<view class="section-head">
+					<text class="section-title">近 7 日发文趋势</text>
 				</view>
-				<!-- 分类统计 -->
-				<view class="card bg-white pa-24 round-4">
-					<view class="card-head flex items-center justify-between">
-						<view class="card-head_title flex items-end uh-gap-x-4">
-							<text class="card-head_text">分类统计</text>
-							<text class="card-head_subtext">(全部分类的文章数量占比)</text>
+				<view class="trend-row">
+					<view v-for="(item, index) in trendBars" :key="index" class="trend-col">
+						<text class="trend-count">{{ item.count }}</text>
+						<view class="trend-bar-wrap">
+							<view class="trend-bar" :style="{ height: item.height }"></view>
 						</view>
-						<view @click="categoryChart.isExpand = !categoryChart.isExpand">
-							<tm-icons v-if="categoryChart.isExpand" :size="24" name="icon-angle-down" color="gray"></tm-icons>
-							<tm-icons v-else :size="24" name="icon-angle-up" color="gray"></tm-icons>
-						</view>
-					</view>
-					<view v-show="categoryChart.isExpand" class="card-body flex">
-						<view class="chart-box">
-							<qiun-data-charts
-								:canvasId="categoryChart.id"
-								:canvas2d="true"
-								:ontouch="true"
-								:type="categoryChart.type"
-								:opts="categoryChart.opts"
-								:chartData="categoryChart.data"
-								:tooltipFormat="categoryChart.tooltipFormat"
-							/>
-						</view>
-					</view>
-				</view>
-				<!-- 文章发布趋势 -->
-				<view class="card bg-white pa-24 round-4">
-					<view class="card-head flex items-center justify-between">
-						<view class="card-head_title flex items-end uh-gap-x-4">
-							<text class="card-head_text">文章发布趋势</text>
-							<text class="card-head_subtext">(按日期统计文章发布数量)</text>
-						</view>
-						<view @click="trandArticleChart.isExpand = !trandArticleChart.isExpand">
-							<tm-icons v-if="trandArticleChart.isExpand" :size="24" name="icon-angle-down" color="gray"></tm-icons>
-							<tm-icons v-else :size="24" name="icon-angle-up" color="gray"></tm-icons>
-						</view>
-					</view>
-					<view v-show="trandArticleChart.isExpand" class="card-body flex">
-						<heatmap style="width: 100%" :chartData="trandArticleChart.data"></heatmap>
-					</view>
-				</view>
-				<!-- 评论活跃用户 -->
-				<view class="card bg-white pa-24 round-4">
-					<view class="card-head flex items-center justify-between">
-						<view class="card-head_title flex items-end uh-gap-x-4">
-							<text class="card-head_text">评论活跃用户</text>
-							<text class="card-head_subtext">(按评论作者统计评论数量)</text>
-						</view>
-						<view @click="userCommentsChart.isExpand = !userCommentsChart.isExpand">
-							<tm-icons v-if="userCommentsChart.isExpand" :size="24" name="icon-angle-down" color="gray"></tm-icons>
-							<tm-icons v-else :size="24" name="icon-angle-up" color="gray"></tm-icons>
-						</view>
-					</view>
-					<view v-show="userCommentsChart.isExpand" class="card-body flex">
-						<view class="chart-box">
-							<qiun-data-charts
-								:canvasId="userCommentsChart.id"
-								:canvas2d="true"
-								:ontouch="true"
-								:type="userCommentsChart.type"
-								:opts="userCommentsChart.opts"
-								:chartData="userCommentsChart.data"
-								:tooltipFormat="userCommentsChart.tooltipFormat"
-							/>
-						</view>
-					</view>
-				</view>
-				<!-- 热门文章 Top10 -->
-				<view class="card bg-white pa-24 round-4">
-					<view class="card-head flex items-center justify-between">
-						<view class="card-head_title flex items-end uh-gap-x-4">
-							<text class="card-head_text">热门文章前10</text>
-							<text class="card-head_subtext">(按访问量排序的热门文章)</text>
-						</view>
-						<view @click="top10ArticlesChart.isExpand = !top10ArticlesChart.isExpand">
-							<tm-icons v-if="top10ArticlesChart.isExpand" :size="24" name="icon-angle-down" color="gray"></tm-icons>
-							<tm-icons v-else :size="24" name="icon-angle-up" color="gray"></tm-icons>
-						</view>
-					</view>
-					<view class="card-body flex">
-						<view class="chart-box">
-							<qiun-data-charts
-								:canvasId="top10ArticlesChart.id"
-								:canvas2d="true"
-								:ontouch="true"
-								:type="top10ArticlesChart.type"
-								:opts="top10ArticlesChart.opts"
-								:chartData="top10ArticlesChart.data"
-								:tooltipFormat="top10ArticlesChart.tooltipFormat"
-							/>
-						</view>
+						<text class="trend-date">{{ item.short }}</text>
 					</view>
 				</view>
 			</view>
-		</template>
+
+			<view class="section-card">
+				<view class="section-head">
+					<text class="section-title">热榜 TOP5</text>
+				</view>
+				<view v-if="!summary || !summary.topArticles || !summary.topArticles.length" class="empty-tip">暂无数据</view>
+				<view
+					v-for="(item, index) in summary && summary.topArticles ? summary.topArticles : []"
+					:key="item.name"
+					class="rank-item"
+					@click="fnToArticle(item)"
+				>
+					<text class="rank-no" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</text>
+					<text class="rank-title">{{ item.title || item.name }}</text>
+					<text class="rank-visit">{{ item.visit }} 阅读</text>
+				</view>
+			</view>
+
+			<view class="footer-tip">
+				<text>统计由 UniHalo 插件实时计算（文章/分类/标签/评论/访问/点赞/微信用户/积分发放），不依赖第三方插件。</text>
+				<text>高级版解锁后可导出完整数据（JSON 文本），当日有效。</text>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script>
-import dataStatisticsApi from '@/api/v2/plugin.data-statistics.js';
-import { exchangePointsItem } from '@/utils/points.js';
-import { NeedPluginIds, NeedPlugins, checkNeedPluginAvailable } from '@/utils/plugin.js';
-import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
-import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
-import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
-import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
-import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
+	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
+	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
+	import tmTags from '@/tm-vuetify/components/tm-tags/tm-tags.vue';
+	import { exchangePointsItem } from '@/utils/points.js';
 
-import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
-import PluginUnavailable from '@/components/plugin-unavailable/plugin-unavailable.vue';
-
-import heatmap from '@/components/heatmap/heatmap.vue';
-
-export default {
-	mixins: [pluginAvailableMixin],
-	name: 'DataVisual',
-	components: {
-		tmSkeleton,
-		tmTranslate,
-		tmEmpty,
-		tmButton,
-		tmIcons,
-		heatmap,
-		PluginUnavailable
-	},
-	data() {
-		return {
-			loading: 'loading',
-			advancedUnlocked: false,
-			unlocking: false,
-			statistics: null,
-			tagChart: {
-				id: 'tagChart',
-				isExpand: true,
-				type: 'ring',
-				data: {},
-				tooltipFormat: 'tooltipTag',
-				opts: {
-					rotate: false,
-					rotateLock: false,
-					color: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#ea7ccc', '#0EA5E9'],
-					padding: [5, 5, 5, 5],
-					dataLabel: false,
-					legend: {
-						show: false,
-						position: 'right',
-						lineHeight: 18,
-						fontSize: 12
-					},
-					title: {
-						name: '',
-						fontSize: 16,
-						color: '#666666'
-					},
-					subtitle: {
-						name: '',
-						fontSize: 12,
-						color: '#eee'
-					},
-					extra: {
-						ring: {
-							ringWidth: 36,
-							activeOpacity: 0.5,
-							activeRadius: 10,
-							offsetAngle: -90,
-							labelWidth: 15,
-							border: true,
-							borderWidth: 1,
-							borderColor: '#FFFFFF'
-						},
-						tooltip: {
-							legendShape: 'circle',
-							fontSize: 11
-						}
-					}
-				}
+	export default {
+		components: {
+			tmSkeleton,
+			tmEmpty,
+			tmButton,
+			tmTags
+		},
+		data() {
+			return {
+				loading: 'loading',
+				summary: null,
+				advancedUnlocked: false,
+				unlocking: false
+			};
+		},
+		computed: {
+			statCards() {
+				const s = this.summary || {};
+				return [
+					{ label: '文章', value: s.totalPosts || 0 },
+					{ label: '分类', value: s.totalCategories || 0 },
+					{ label: '标签', value: s.totalTags || 0 },
+					{ label: '评论', value: s.totalComments || 0 },
+					{ label: '总访问', value: s.totalVisits || 0 },
+					{ label: '总点赞', value: s.totalUpvotes || 0 },
+					{ label: '用户', value: s.totalWxUsers || 0 },
+					{ label: '累计积分', value: s.totalPointsIssued || 0 }
+				];
 			},
-			categoryChart: {
-				id: 'categoryChart',
-				isExpand: true,
-				type: 'line',
-				data: {},
-				tooltipFormat: 'tooltipCategory',
-				opts: {
-					color: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#ea7ccc', '#0EA5E9'],
-					padding: [20, 15, 10, 15],
-					touchMoveLimit: 24,
-					enableScroll: true,
-					legend: {
-						show: false
-					},
-					xAxis: {
-						disableGrid: true,
-						fontSize: 11,
-						scrollShow: true,
-						itemCount: 6,
-						boundaryGap: 'center',
-						format: 'xAxisCategory'
-					},
-					yAxis: {
-						gridType: 'dash',
-						dashLength: 4,
-						data: [
-							{
-								fontSize: 11
-							}
-						]
-					},
-					extra: {
-						line: {
-							type: 'curve',
-							width: 2,
-							activeType: 'hollow'
-						},
-						tooltip: {
-							legendShape: 'circle',
-							fontSize: 11
-						}
-					}
-				}
-			},
-			trandArticleChart: {
-				isExpand: true,
-				type: 'hotmap',
-				data: [],
-				opts: {}
-			},
-			userCommentsChart: {
-				id: 'userCommentsChart',
-				isExpand: true,
-				loading: true,
-				type: 'column',
-				data: {},
-				tooltipFormat: 'tooltipUserComments',
-				opts: {
-					color: ['#EF4444', '#F59E0B', '#14B8A6', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#ea7ccc', '#0EA5E9'],
-					padding: [20, 15, 10, 10],
-					touchMoveLimit: 24,
-					enableScroll: true,
-					legend: {
-						show: false
-					},
-					xAxis: {
-						disableGrid: true,
-						boundaryGap: 'justify',
-						fontSize: 10,
-						scrollShow: true,
-						itemCount: 5,
-						format: 'xAxisUserComments'
-					},
-					yAxis: {
-						gridType: 'dash',
-						dashLength: 4,
-						data: [
-							{
-								min: 0,
-								fontSize: 11
-							}
-						]
-					},
-					extra: {
-						column: {
-							type: 'group',
-							width: 22,
-							activeBgColor: '#000000',
-							activeBgOpacity: 0.08,
-							linearType: 'custom',
-							seriesGap: 5,
-							linearOpacity: 0.7,
-							barBorderCircle: true,
-							customColor: ['#F59E0B']
-						},
-						tooltip: {
-							legendShape: 'circle',
-							fontSize: 11
-						}
-					}
-				}
-			},
-			top10ArticlesChart: {
-				id: 'top10ArticlesChart',
-				isExpand: true,
-				type: 'column',
-				data: {},
-				tooltipFormat: 'tooltipTop10Articles',
-				opts: {
-					color: ['#EF4444', '#F59E0B', '#14B8A6', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#ea7ccc', '#0EA5E9'],
-					padding: [20, 15, 10, 10],
-					touchMoveLimit: 24,
-					enableScroll: true,
-					legend: {
-						show: false
-					},
-					xAxis: {
-						disableGrid: true,
-						boundaryGap: 'justify',
-						fontSize: 10,
-						scrollShow: true,
-						itemCount: 5,
-						format: 'xAxisTop10Article'
-					},
-					yAxis: {
-						gridType: 'dash',
-						dashLength: 4,
-						data: [
-							{
-								min: 0,
-								fontSize: 11
-							}
-						]
-					},
-					extra: {
-						column: {
-							type: 'group',
-							width: 22,
-							activeBgColor: '#000000',
-							activeBgOpacity: 0.08,
-							linearType: 'custom',
-							seriesGap: 5,
-							linearOpacity: 0.7,
-							barBorderCircle: true,
-							customColor: ['#F59E0B']
-						},
-						tooltip: {
-							legendShape: 'circle',
-							fontSize: 11
-						}
-					}
-				}
-			}
-		};
-	},
-	async onReady() {
-		// 检查插件
-		this.setPluginId(this.NeedPluginIds.PluginDataStatistics);
-		this.setPluginError('阿偶，检测到当前插件没有安装或者启用，无法使用功能哦，请联系管理员');
-		if (!(await this.checkPluginAvailable())) return;
-		this.fnGetData();
-		this.fnInitAdvanced();
-	},
-	onPullDownRefresh() {
-		if (!this.uniHaloPluginAvailable) {
-			uni.hideLoading();
-			uni.stopPullDownRefresh();
-			return;
-		}
-		this.fnGetData();
-	},
-	methods: {
-		async fnInitAdvanced() {
-			const now = new Date();
-			const key = `dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-			if (uni.getStorageSync(key) === '1') {
-				this.advancedUnlocked = true;
-				return;
-			}
-			try {
-				const api = this.$httpApi?.v2;
-				if (api?.getExchangeBalance) {
-					const res = await api.getExchangeBalance();
-					const body = res?.data || res || {};
-					if (body?.dashboardUnlockedToday === true) {
-						this.advancedUnlocked = true;
-						uni.setStorageSync(key, '1');
-					}
-				}
-			} catch (e) {
-				// 兑换接口未部署时忽略
+			trendBars() {
+				const trend = (this.summary && this.summary.weekTrend) || [];
+				const max = Math.max(1, ...trend.map((item) => Number(item.count) || 0));
+				return trend.map((item) => ({
+					count: Number(item.count) || 0,
+					short: String(item.date || '').slice(5),
+					height: Math.max(8, Math.round(((Number(item.count) || 0) / max) * 160)) + 'rpx'
+				}));
 			}
 		},
-		async fnUnlockAdvanced() {
-			if (this.unlocking) return;
-			this.unlocking = true;
-			try {
-				const result = await exchangePointsItem(this.$httpApi.v2, 'dashboard_advanced');
-				if (!result.ok) {
-					uni.showToast({ icon: 'none', title: result.reason || '解锁失败' });
+		async onReady() {
+			await this.fnInitAdvanced();
+			this.fnGetData();
+		},
+		onPullDownRefresh() {
+			this.fnGetData().finally(() => uni.stopPullDownRefresh());
+		},
+		methods: {
+			async fnGetData() {
+				this.loading = 'loading';
+				try {
+					const res = await this.$httpApi.v2.getDashboardSummary();
+					const body = res?.data || res || {};
+					this.summary = body;
+					this.loading = 'success';
+				} catch (err) {
+					this.loading = 'error';
+				}
+			},
+			fnToArticle(item) {
+				if (!item?.name) return;
+				uni.navigateTo({
+					url: '/pagesA/article-detail/article-detail?name=' + encodeURIComponent(item.name),
+					animationType: 'slide-in-right'
+				});
+			},
+			async fnInitAdvanced() {
+				const now = new Date();
+				const key = `dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+				if (uni.getStorageSync(key) === '1') {
+					this.advancedUnlocked = true;
 					return;
 				}
-				this.advancedUnlocked = true;
-				const now = new Date();
-				uni.setStorageSync(`dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`, '1');
-				uni.showToast({ icon: 'success', title: '已解锁今日高级版' });
-			} finally {
-				this.unlocking = false;
-			}
-		},
-		fnCopyStatisticalSummary() {
-			const s = this.statistics || {};
-			const top = (s.top10Articles || []).slice(0, 3).map((item) => item.name).filter(Boolean);
-			const tags = (s.tags || []).slice(0, 5).map((item) => item.name || '').filter(Boolean);
-			const now = new Date();
-			const text = [
-				`数据看板摘要（${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}）`,
-				`热门 TOP3：${top.join('、') || '暂无'}`,
-				`热门标签：${tags.join('、') || '暂无'}`
-			].join('\n');
-			uni.setClipboardData({
-				data: text,
-				success: () => uni.showToast({ icon: 'none', title: '已复制摘要' })
-			});
-		},
-		fnGetData() {
-			uni.showLoading({
-				mask: true,
-				title: '加载中...'
-			});
-			// 设置状态为加载中
-			if (!this.isLoadMore) {
-				this.loading = 'loading';
-			}
-			this.loadMoreText = '加载中...';
-			dataStatisticsApi
-				.getChartData()
-				.then((res) => {
-					console.log('获取到统计数据：', res);
-					this.statistics = res;
-					this.handleTagChart();
-					this.handleCategoriesChart();
-					this.handleTrendArticlesChart();
-					this.handleUserCommentsChart();
-					this.handleTop10ArticlesChart();
-					this.loading = 'success';
-				})
-				.catch((err) => {
-					console.error(err);
-					this.loading = 'error';
-					this.loadMoreText = '加载失败，请下拉刷新！';
-				})
-				.finally(() => {
-					setTimeout(() => {
-						uni.hideLoading();
-						uni.stopPullDownRefresh();
-					}, 100);
+				try {
+					const api = this.$httpApi?.v2;
+					if (api?.getExchangeBalance) {
+						const res = await api.getExchangeBalance();
+						const body = res?.data || res || {};
+						const items = Array.isArray(body?.items) ? body.items : [];
+						const unlocked = body?.dashboardUnlockedToday === true
+							|| items.some((item) => item.key === 'dashboard_advanced' && Number(item.todayCount || 0) > 0);
+						if (unlocked) {
+							this.advancedUnlocked = true;
+							uni.setStorageSync(key, '1');
+						}
+					}
+				} catch (e) {
+					// 兑换接口未部署时忽略
+				}
+			},
+			async fnUnlockAdvanced() {
+				if (this.unlocking) return;
+				this.unlocking = true;
+				try {
+					const result = await exchangePointsItem(this.$httpApi.v2, 'dashboard_advanced');
+					if (!result.ok) {
+						uni.showToast({ icon: 'none', title: result.reason || '解锁失败' });
+						return;
+					}
+					this.advancedUnlocked = true;
+					const now = new Date();
+					uni.setStorageSync(`dashboard.advanced.${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`, '1');
+					uni.showToast({ icon: 'success', title: '已解锁今日高级版' });
+				} finally {
+					this.unlocking = false;
+				}
+			},
+			fnCopySummary() {
+				const text = JSON.stringify(this.summary || {}, null, 2);
+				uni.setClipboardData({
+					data: text,
+					success: () => uni.showToast({ icon: 'none', title: '已复制完整数据' })
 				});
-		},
-		// 处理标签统计
-		handleTagChart() {
-			const data = this.statistics.tags.sort((a, b) => b.count - a.count);
-			this.tagChart.data = {
-				series: [
-					{
-						data: data.map((item) => {
-							return {
-								name: item.name,
-								value: item.count
-							};
-						})
-					}
-				]
-			};
-		},
-		// 处理分类统计
-		handleCategoriesChart() {
-			const data = this.statistics.categories.sort((a, b) => b.total - a.total);
-			const seriesItemData = data.map((item) => item.total);
-			if (Math.max(...seriesItemData) < 10) {
-				this.categoryChart.opts.yAxis.data[0].max = 10;
 			}
-			this.categoryChart.data = {
-				categories: data.map((item) => item.name),
-				series: [
-					{
-						name: '分类',
-						data: seriesItemData
-					}
-				]
-			};
-		},
-		// 处理文章趋势
-		handleTrendArticlesChart() {
-			this.trandArticleChart.data = this.statistics.articles;
-		},
-		// 处理评论活跃用户
-		handleUserCommentsChart() {
-			this.userCommentsChart.loading = true;
-			const data = this.statistics.comments.sort((a, b) => b.count - a.count).slice(0, 10);
-			const seriesItemData = data.map((item) => item.count);
-			if (Math.max(...seriesItemData) < 10) {
-				this.userCommentsChart.opts.yAxis.data[0].max = 10;
-			}
-			this.userCommentsChart.data = {
-				categories: data.map((item) => item.username),
-				series: [
-					{
-						name: '评论',
-						data: seriesItemData
-					}
-				]
-			};
-			this.userCommentsChart.loading = false;
-		},
-		// 处理热门文章TOP10
-		handleTop10ArticlesChart() {
-			const data = this.statistics.top10Articles.sort((a, b) => b.views - a.views).slice(0, 10);
-			const seriesItemData = data.map((item) => item.views);
-			if (Math.max(...seriesItemData) < 10) {
-				this.top10ArticlesChart.opts.yAxis.data[0].max = 10;
-			}
-			this.top10ArticlesChart.data = {
-				categories: data.map((item) => item.name),
-				series: [
-					{
-						name: '评论',
-						data: seriesItemData
-					}
-				]
-			};
 		}
-	}
-};
+	};
 </script>
 
-<style lang="scss" scoped>
-.app-page {
-	box-sizing: border-box;
-	width: 100vw;
-	min-height: 100vh;
-	color: #353437;
-}
-.card {
-	box-sizing: border-box;
-	background-color: rgba(255, 255, 255, 0.95);
-	box-shadow: 0 0 12rpx rgba(226, 232, 240, 0.35);
-	backdrop-filter: blur(6rpx);
-	// border: 2rpx solid #e8edf4;
-}
-.card-head {
-	font-size: 32rpx;
-	font-weight: bold;
+<style scoped lang="scss">
+	.app-page {
+		min-height: 100vh;
+		background: #f5f6fa;
+		padding: 24rpx 24rpx 48rpx;
+	}
 
-	&_title {
+	.loading-wrap {
+		padding: 24rpx;
 	}
-	&_text {
-		box-sizing: border-box;
-		position: relative;
-		padding-left: 24rpx;
-		font-size: 30rpx;
-		&:before {
-			content: '';
-			position: absolute;
-			left: 0;
-			top: 50%;
-			transform: translateY(-50%);
-			width: 8rpx;
-			height: 70%;
-			background-color: #03a9f4;
-			border-radius: 12rpx;
-		}
-	}
-	&_subtext {
-		font-size: 26rpx;
-		font-weight: normal;
-		color: #6b7280;
-	}
-}
 
-.card-body {
-	box-sizing: border-box;
-	margin-top: 24rpx;
-	width: 100%;
-	overflow: hidden;
-	background-color: #fcfdfe;
-	border: 2rpx solid #e9eef3;
-	border-radius: 12rpx;
-}
-.chart-box {
-	width: 100%;
-	height: 320rpx;
-}
-</style>
+	.empty-wrap {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-top: 80rpx;
+	}
+
+	.empty-tip {
+		margin-top: 16rpx;
+		font-size: 22rpx;
+		color: #909399;
+		text-align: center;
+	}
 
 	.advanced-card {
 		margin-bottom: 24rpx;
@@ -648,3 +251,140 @@ export default {
 	.advanced-actions {
 		margin-top: 16rpx;
 	}
+
+	.stat-grid {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+	}
+
+	.stat-card {
+		width: 23%;
+		background: #fff;
+		border-radius: 16rpx;
+		padding: 24rpx 0;
+		margin-bottom: 20rpx;
+		text-align: center;
+	}
+
+	.stat-value {
+		display: block;
+		font-size: 34rpx;
+		font-weight: 800;
+		color: #03a9f4;
+	}
+
+	.stat-label {
+		display: block;
+		margin-top: 6rpx;
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.section-card {
+		background: #fff;
+		border-radius: 16rpx;
+		padding: 24rpx 28rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.section-head {
+		margin-bottom: 16rpx;
+	}
+
+	.section-title {
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #303133;
+	}
+
+	.trend-row {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		height: 240rpx;
+	}
+
+	.trend-col {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.trend-count {
+		font-size: 20rpx;
+		color: #909399;
+	}
+
+	.trend-bar-wrap {
+		height: 180rpx;
+		display: flex;
+		align-items: flex-end;
+		margin-top: 4rpx;
+	}
+
+	.trend-bar {
+		width: 36rpx;
+		border-radius: 8rpx 8rpx 0 0;
+		background: linear-gradient(180deg, #74b9ff 0%, #03a9f4 100%);
+	}
+
+	.trend-date {
+		margin-top: 8rpx;
+		font-size: 20rpx;
+		color: #c0c4cc;
+	}
+
+	.rank-item {
+		display: flex;
+		align-items: center;
+		padding: 14rpx 0;
+		border-bottom: 1rpx solid #f5f6fa;
+	}
+
+	.rank-no {
+		width: 40rpx;
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #c0c4cc;
+
+		&.is-top {
+			color: #ff9800;
+		}
+	}
+
+	.rank-title {
+		flex: 1;
+		min-width: 0;
+		font-size: 26rpx;
+		color: #303133;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.rank-visit {
+		margin-left: 16rpx;
+		font-size: 22rpx;
+		color: #909399;
+	}
+
+	.footer-tip {
+		margin-top: 8rpx;
+		padding: 24rpx;
+		border-radius: 12rpx;
+		background: #fff7e6;
+	}
+
+	.footer-tip text {
+		display: block;
+		font-size: 22rpx;
+		line-height: 1.7;
+		color: #b3800a;
+
+		& + text {
+			margin-top: 8rpx;
+		}
+	}
+</style>

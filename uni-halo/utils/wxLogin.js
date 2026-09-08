@@ -32,6 +32,39 @@ function uniLogin() {
 	});
 }
 
+/** 读取待消费的邀请码（分享卡片/邀请海报扫码时由 index.vue 写入），登录成功后才清除 */
+function peekPendingInviteCode() {
+	let code = '';
+	try {
+		code = uni.getStorageSync('invite.pending') || '';
+	} catch (e) {
+		// 忽略存储异常
+	}
+	return code || '';
+}
+
+/** 登录成功后清除待消费邀请码（首次登录注册时由后端消费发奖） */
+function clearPendingInviteCode() {
+	try {
+		uni.removeStorageSync('invite.pending');
+	} catch (e) {
+		// 忽略存储异常
+	}
+}
+
+/** 组装登录请求体：code + 可选的昵称与邀请码 */
+function buildLoginPayload(code, nickname) {
+	const payload = { code };
+	if (nickname) {
+		payload.nickname = nickname;
+	}
+	const inviteCode = peekPendingInviteCode();
+	if (inviteCode) {
+		payload.inviteCode = inviteCode;
+	}
+	return payload;
+}
+
 /**
  * 微信登录成功：持久化 UserDTO，返回是否需要引导 Halo 绑定
  * @returns {{ ok: true, data: object, needHaloBind?: boolean }}
@@ -106,7 +139,7 @@ export async function tryAutoWxLogin(httpApi) {
 	}
 
 	try {
-		const res = await httpApi.wxLogin({ code: loginRes.code });
+		const res = await httpApi.wxLogin(buildLoginPayload(loginRes.code));
 		const apiError = extractApiError(res?.data);
 		if (apiError) {
 			return { ok: false, reason: apiError };
@@ -114,6 +147,7 @@ export async function tryAutoWxLogin(httpApi) {
 		if (!(res?.statusCode === 200 && res?.data?.openid)) {
 			return { ok: false, reason: '登录失败，服务端返回异常，请稍后重试。' };
 		}
+		clearPendingInviteCode();
 		if (isProfileComplete(res.data)) {
 			const postResult = handlePostWxLogin(res.data);
 			return { ...postResult, autoLogin: true };
@@ -153,10 +187,7 @@ export async function performWxLoginWithProfile(httpApi, profile = {}) {
 	}
 
 	try {
-		const res = await httpApi.wxLogin({
-			code: loginRes.code,
-			nickname
-		});
+		const res = await httpApi.wxLogin(buildLoginPayload(loginRes.code, nickname));
 		const apiError = extractApiError(res?.data);
 		if (apiError) {
 			return { ok: false, reason: apiError };
@@ -164,6 +195,7 @@ export async function performWxLoginWithProfile(httpApi, profile = {}) {
 		if (!(res?.statusCode === 200 && res?.data?.openid)) {
 			return { ok: false, reason: '登录失败，服务端返回异常，请稍后重试。' };
 		}
+		clearPendingInviteCode();
 
 		let loginData = res.data;
 

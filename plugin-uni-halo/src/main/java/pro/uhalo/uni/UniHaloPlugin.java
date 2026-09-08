@@ -2,6 +2,7 @@ package pro.uhalo.uni;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import pro.uhalo.uni.scheme.LuckyWinning;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.QRCodeInfo;
@@ -45,9 +46,17 @@ public class UniHaloPlugin extends BasePlugin {
                                     QRCodeInfo::getPostId)));
         });
 
-        schemeManager.register(WxUser.class, indexSpecs -> indexSpecs.add(new IndexSpec()
-            .setName("openid")
-            .setIndexFunc(simpleAttribute(WxUser.class, WxUser::getOpenid))));
+        schemeManager.register(WxUser.class, indexSpecs -> {
+            indexSpecs.add(new IndexSpec()
+                .setName("openid")
+                .setIndexFunc(simpleAttribute(WxUser.class, WxUser::getOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("inviteCode")
+                .setIndexFunc(simpleAttribute(WxUser.class, WxUser::getInviteCode)));
+            indexSpecs.add(new IndexSpec()
+                .setName("inviterOpenid")
+                .setIndexFunc(simpleAttribute(WxUser.class, WxUser::getInviterOpenid)));
+        });
 
         schemeManager.register(UserActivity.class, indexSpecs -> {
             indexSpecs.add(new IndexSpec()
@@ -105,6 +114,16 @@ public class UniHaloPlugin extends BasePlugin {
             log.info("【UniHalo】PayOrder scheme 注册成功");
         });
 
+        schemeManager.register(LuckyWinning.class, indexSpecs -> {
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(LuckyWinning.class, LuckyWinning::getWxOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("status")
+                .setIndexFunc(simpleAttribute(LuckyWinning.class, LuckyWinning::getStatus)));
+            log.info("【UniHalo】LuckyWinning scheme 注册成功");
+        });
+
         log.info("【UniHalo】插件启动成功！");
     }
 
@@ -117,6 +136,7 @@ public class UniHaloPlugin extends BasePlugin {
         schemeManager.unregister(schemeManager.get(UserPoints.class));
         schemeManager.unregister(schemeManager.get(PointsRecord.class));
         schemeManager.unregister(schemeManager.get(PayOrder.class));
+        schemeManager.unregister(schemeManager.get(LuckyWinning.class));
 
         log.info("【UniHalo】插件停止！");
     }

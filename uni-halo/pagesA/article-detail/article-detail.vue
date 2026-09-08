@@ -229,6 +229,11 @@
 					</view>
 				</view>
 
+				<!-- 表情快捷反馈 -->
+				<view v-if="result" class="reaction-block mt-24">
+					<content-reaction-bar content-type="post" :content-name="result.metadata.name"></content-reaction-bar>
+				</view>
+
 				<!-- 评论展示区域 -->
 				<block v-if="postDetailConfig && postDetailConfig.showComment">
 					<view v-if="result" id="CommentList" class="comment-wrap bg-white mt-24 pa-24 round-4">
@@ -435,6 +440,7 @@ import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 import PointsToast from '@/components/points-toast/points-toast.vue';
 import ArticleVote from '@/components/article-vote/article-vote.vue';
 import ArticleDouban from '@/components/article-douban/article-douban.vue';
+import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
  
 import barrage from '@/components/barrage/barrage.vue';
 import { getAppConfigs } from '@/config/index.js';
@@ -475,6 +481,7 @@ export default {
 		wxLoginDialog,
 		PointsToast,
 		ArticleVote,
+		contentReactionBar,
 		PluginUnavailable,
 		ArticleDouban
 	},
@@ -633,6 +640,7 @@ export default {
 			return;
 		}
 		this.queryParams.name = decodeURIComponent(name);
+		this.fnPrefetchInviteCode();
 		this.fnSetPageTitle('文章加载中...');
 		// 文章加载优先，投票插件检查不阻塞
 		this.setPluginId(this.NeedPluginIds.PluginVote);
@@ -659,8 +667,13 @@ export default {
 	},
 	onShareAppMessage() {
 		const cover = this.result.spec.cover ? this.calcUrl(this.result.spec.cover) : '';
+		const inviteCode = uni.getStorageSync('invite.code') || '';
+		let path = '/pagesA/article-detail/article-detail?name=' + this.result.metadata.name;
+		if (inviteCode) {
+			path += '&inviteCode=' + encodeURIComponent(inviteCode);
+		}
 		return {
-			path: '/pagesA/article-detail/article-detail?name=' + this.result.metadata.name,
+			path,
 			title: this.result.spec.title,
 			imageUrl: cover
 		};
@@ -1130,6 +1143,19 @@ export default {
 			}).finally(() => {
 				this.fnRecordUserActivity(USER_ACTIVITY_TYPES.BROWSE);
 			});
+		},
+		/** 预取当前用户邀请码，供分享卡片携带（未登录/未开启时静默） */
+		async fnPrefetchInviteCode() {
+			if (!checkHasWxLogin()) return;
+			try {
+				const res = await this.$httpApi.v2.getInviteInfo();
+				const data = res?.data || res || {};
+				if (data?.inviteCode) {
+					uni.setStorageSync('invite.code', data.inviteCode);
+				}
+			} catch (err) {
+				// 静默：接口不可用不影响文章阅读
+			}
 		},
 		fnShowShare() {
 			if (!checkHasWxLogin() || !getOpenid()) {

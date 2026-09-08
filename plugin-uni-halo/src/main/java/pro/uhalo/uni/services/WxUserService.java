@@ -9,6 +9,10 @@ public interface WxUserService {
 
     Mono<WxUser> fetchByOpenid(String openid);
 
+    Mono<WxUser> fetchByInviteCode(String inviteCode);
+
+    Mono<Long> countByInviterOpenid(String inviterOpenid);
+
     Mono<WxUser> create(WxUser wxUser);
 
     Mono<WxUser> update(WxUser wxUser);

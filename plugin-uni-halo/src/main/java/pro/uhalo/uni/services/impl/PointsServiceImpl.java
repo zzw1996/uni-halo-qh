@@ -1,10 +1,12 @@
 package pro.uhalo.uni.services.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.AdminPointsRecordItemDTO;
+import pro.uhalo.uni.dto.ExchangeItemDTO;
 import pro.uhalo.uni.dto.AdminPointsRecordListResponse;
 import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.dto.PointsActionRuleDTO;
@@ -68,9 +70,8 @@ public class PointsServiceImpl implements PointsService {
     private static final String NEW_USER_ACTION = "new_user";
     private static final String DRAW_ACTION = "draw";
     private static final String DRAW_COST_ACTION = "draw_cost";
-    private static final String EXCHANGE_PUBLISH = "publish_ticket";
+    private static final String EXCHANGE_CONFIG_GROUP = "exchangeConfig";
     private static final String EXCHANGE_DASHBOARD = "dashboard_advanced";
-    private static final String EXCHANGE_PUBLISH_ACTION = "exchange_publish";
     private static final String EXCHANGE_DASHBOARD_ACTION = "exchange_dashboard";
     private static final SecureRandom PRIZE_RANDOM = new SecureRandom();
 
@@ -261,51 +262,58 @@ public class PointsServiceImpl implements PointsService {
                 }));
     }
 
-    // ========== 积分兑换（发布券 / 数据看板高级版） ==========
+    // ========== 积分兑换（配置驱动：当日开通标记） ==========
 
     @Override
     public Mono<PointsExchangeResponse> exchange(String openid, String item) {
         if (!StringUtils.hasText(item)) {
             return Mono.error(new WxAuthException("item 不能为空"));
         }
+        var itemKey = item.trim().toLowerCase();
         return requireOpenid(openid)
             .flatMap(id -> {
                 ensureRateLimit(id, "exchange", 30, "兑换过于频繁，请稍后再试");
                 return loadConfig().flatMap(config -> {
                     ensureEnabled(config);
-                    var rule = resolveExchangeRule(config, item);
-                    if (rule == null || rule.points() <= 0) {
-                        return Mono.error(new WxAuthException("该兑换项未配置"));
-                    }
-                    var action = exchangeActionOf(item);
-                    return persistence.listRecordsByOpenid(id)
-                        .map(records -> countRecordsToday(records, action, today()))
-                        .flatMap(todayCount -> {
-                            if (rule.dailyMax() > 0 && todayCount >= rule.dailyMax()) {
-                                return Mono.error(new WxAuthException("今日兑换次数已达上限"));
+                    return loadExchangeItems()
+                        .flatMap(items -> {
+                            var cfg = items.stream()
+                                .filter(it -> it.enabled() && it.key().equals(itemKey))
+                                .findFirst()
+                                .orElse(null);
+                            if (cfg == null) {
+                                return Mono.error(new WxAuthException("该兑换项不存在或已下线"));
                             }
-                            return persistence.getOrCreateAccount(id)
-                                .flatMap(account -> {
-                                    if (safeBalance(account) < rule.points()) {
-                                        return Mono.error(new WxAuthException("积分不足，需要 " + rule.points() + " 积分"));
+                            var action = exchangeActionOf(itemKey);
+                            return persistence.listRecordsByOpenid(id)
+                                .map(records -> countRecordsToday(records, action, today()))
+                                .flatMap(todayCount -> {
+                                    if (cfg.dailyMax() > 0 && todayCount >= cfg.dailyMax()) {
+                                        return Mono.error(new WxAuthException("今日兑换次数已达上限"));
                                     }
-                                    var newBalance = safeBalance(account) - rule.points();
-                                    account.setBalance(newBalance);
-                                    if (EXCHANGE_PUBLISH.equals(item)) {
-                                        account.setPublishTickets(safeTickets(account) + 1);
-                                    }
-                                    var earnKey = buildEarnKey(id, action, today() + "-" + (todayCount + 1));
-                                    var record = persistence.newRecord(id, action, -rule.points(), newBalance,
-                                        rule.description(), rule.description(), earnKey, account.getWxUserId());
-                                    return persistence.saveAccount(account)
-                                        .then(persistence.appendRecord(record))
-                                        .thenReturn(PointsExchangeResponse.builder()
-                                            .item(item)
-                                            .points(rule.points())
-                                            .balance(newBalance)
-                                            .publishTickets(account.getPublishTickets())
-                                            .message("兑换成功：" + rule.description())
-                                            .build());
+                                    return persistence.getOrCreateAccount(id)
+                                        .flatMap(account -> {
+                                            if (safeBalance(account) < cfg.points()) {
+                                                return Mono.error(new WxAuthException(
+                                                    "积分不足，需要 " + cfg.points() + " 积分"));
+                                            }
+                                            var newBalance = safeBalance(account) - cfg.points();
+                                            account.setBalance(newBalance);
+                                            var earnKey = buildEarnKey(id, action,
+                                                today() + "-" + (todayCount + 1));
+                                            var record = persistence.newRecord(id, action,
+                                                -cfg.points(), newBalance,
+                                                cfg.name(), cfg.description(), earnKey,
+                                                account.getWxUserId());
+                                            return persistence.saveAccount(account)
+                                                .then(persistence.appendRecord(record))
+                                                .thenReturn(PointsExchangeResponse.builder()
+                                                    .item(itemKey)
+                                                    .points(cfg.points())
+                                                    .balance(newBalance)
+                                                    .message("兑换成功：" + cfg.name())
+                                                    .build());
+                                        });
                                 });
                         });
                 });
@@ -318,69 +326,126 @@ public class PointsServiceImpl implements PointsService {
             .flatMap(id -> loadConfig()
                 .flatMap(config -> {
                     ensureEnabled(config);
-                    var publishRule = resolveExchangeRule(config, EXCHANGE_PUBLISH);
-                    return persistence.getOrCreateAccount(id)
-                        .flatMap(account -> persistence.listRecordsByOpenid(id)
-                            .map(records -> {
-                                var today = today();
-                                var publishCount = countRecordsToday(records, EXCHANGE_PUBLISH_ACTION, today);
-                                var dashboardCount = countRecordsToday(records, EXCHANGE_DASHBOARD_ACTION, today);
-                                return PointsExchangeResponse.builder()
-                                    .balance(safeBalance(account))
-                                    .publishTickets(safeTickets(account))
-                                    .freeQuota(publishRule == null ? 3 : publishRule.freeCount())
-                                    .remaining(publishRule == null
-                                        ? 5
-                                        : Math.max(0, publishRule.dailyMax() - publishCount))
-                                    .dashboardUnlockedToday(dashboardCount > 0)
-                                    .message("兑换中心状态")
-                                    .build();
-                            }));
+                    return loadExchangeItems()
+                        .flatMap(items -> persistence.getOrCreateAccount(id)
+                            .flatMap(account -> persistence.listRecordsByOpenid(id)
+                                .map(records -> {
+                                    var today = today();
+                                    var itemDTOs = items.stream()
+                                        .filter(ExchangeItem::enabled)
+                                        .map(item -> ExchangeItemDTO.builder()
+                                            .key(item.key())
+                                            .name(item.name())
+                                            .points(item.points())
+                                            .dailyMaxCount(item.dailyMax())
+                                            .description(item.description())
+                                            .todayCount(countRecordsToday(records,
+                                                exchangeActionOf(item.key()), today))
+                                            .build())
+                                        .toList();
+                                    return PointsExchangeResponse.builder()
+                                        .balance(safeBalance(account))
+                                        .items(itemDTOs)
+                                        .message("兑换中心状态")
+                                        .build();
+                                })));
                 }));
     }
 
-    @Override
-    public Mono<PointsExchangeResponse> spendPublishTicket(String openid) {
-        return requireOpenid(openid)
-            .flatMap(id -> persistence.getOrCreateAccount(id)
-                .flatMap(account -> {
-                    if (safeTickets(account) <= 0) {
-                        return Mono.error(new WxAuthException("发布券不足"));
+    private Mono<List<ExchangeItem>> loadExchangeItems() {
+        // 双源兼容：「积分商城」mallConfig.exchangeItems 优先，回落旧 exchangeConfig 分组
+        var mall = settingFetcher.get("mallConfig");
+        return (mall == null ? Mono.<JsonNode>empty() : mall)
+            .map(node -> parseExchangeItemsArray(node.path("exchangeItems")))
+            .flatMap(items -> items.isEmpty()
+                ? legacyExchangeItems()
+                : Mono.just(items))
+            .switchIfEmpty(legacyExchangeItems());
+    }
+
+    private Mono<List<ExchangeItem>> legacyExchangeItems() {
+        return settingFetcher.get(EXCHANGE_CONFIG_GROUP)
+            .map(this::parseExchangeItems)
+            .defaultIfEmpty(defaultExchangeItems());
+    }
+
+    /** 解析 mallConfig.exchangeItems 数组（权益 repeater） */
+    private List<ExchangeItem> parseExchangeItemsArray(JsonNode itemsNode) {
+        var items = new ArrayList<ExchangeItem>();
+        if (itemsNode != null && itemsNode.isArray()) {
+            itemsNode.forEach(itemNode -> {
+                var key = itemNode.path("key").asText("").trim();
+                var name = itemNode.path("name").asText("").trim();
+                var points = itemNode.path("points").asInt(0);
+                var dailyMax = itemNode.path("dailyMaxCount").asInt(0);
+                var description = itemNode.path("description").asText("").trim();
+                if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
+                    items.add(new ExchangeItem(key, name, points, dailyMax,
+                        StringUtils.hasText(description) ? description : name));
+                }
+            });
+        }
+        return items;
+    }
+
+    private List<ExchangeItem> parseExchangeItems(JsonNode node) {
+        var items = new ArrayList<ExchangeItem>();
+        // 简单文本格式：每行一个权益：key,名称,积分,每日次数[,说明]
+        var itemsText = node.path("itemsText").asText("").trim();
+        if (StringUtils.hasText(itemsText)) {
+            for (var line : itemsText.split("\n")) {
+                var parts = line.trim().split(",");
+                if (parts.length < 4) {
+                    continue;
+                }
+                var key = parts[0].trim();
+                var name = parts[1].trim();
+                var points = parseIntOr(parts[2].trim(), 0);
+                var dailyMax = parseIntOr(parts[3].trim(), 0);
+                var description = parts.length >= 5 ? parts[4].trim() : "";
+                if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
+                    items.add(new ExchangeItem(key, name, points, dailyMax,
+                        StringUtils.hasText(description) ? description : name));
+                }
+            }
+        } else {
+            // 兼容旧 repeater 配置
+            var itemsNode = node.get("items");
+            if (itemsNode != null && itemsNode.isArray()) {
+                itemsNode.forEach(itemNode -> {
+                    var key = itemNode.path("key").asText("").trim();
+                    var name = itemNode.path("name").asText("").trim();
+                    var points = itemNode.path("points").asInt(0);
+                    var dailyMax = itemNode.path("dailyMaxCount").asInt(0);
+                    var description = itemNode.path("description").asText("").trim();
+                    if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
+                        items.add(new ExchangeItem(key, name, points, dailyMax,
+                            StringUtils.hasText(description) ? description : name));
                     }
-                    account.setPublishTickets(safeTickets(account) - 1);
-                    return persistence.saveAccount(account)
-                        .thenReturn(PointsExchangeResponse.builder()
-                            .item(EXCHANGE_PUBLISH)
-                            .balance(safeBalance(account))
-                            .publishTickets(account.getPublishTickets())
-                            .message("已使用 1 张发布券")
-                            .build());
-                }));
+                });
+            }
+        }
+        return items.isEmpty() ? defaultExchangeItems() : List.copyOf(items);
     }
 
-    private record ExchangeRule(int points, int dailyMax, int freeCount, String description) {
+    private static int parseIntOr(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
     }
 
-    private static ExchangeRule resolveExchangeRule(PointsConfigDTO config, String item) {
-        var rules = config == null ? null : config.getRules();
-        if (rules == null || rules.getExchange() == null) {
-            return null;
-        }
-        if (EXCHANGE_PUBLISH.equals(item)) {
-            var rule = rules.getExchange().getPublishTicket();
-            return new ExchangeRule(rule.getPoints(), rule.getDailyMaxCount(), rule.getFreeCount(),
-                "瞬间发布券");
-        }
-        if (EXCHANGE_DASHBOARD.equals(item)) {
-            var rule = rules.getExchange().getDashboardAdvanced();
-            return new ExchangeRule(rule.getPoints(), rule.getDailyMaxCount(), rule.getFreeCount(),
-                "数据看板高级版");
-        }
-        return null;
+    private static List<ExchangeItem> defaultExchangeItems() {
+        return List.of(new ExchangeItem(EXCHANGE_DASHBOARD, "数据看板高级版", 30, 1,
+            "解锁当日数据看板高级版（30 日趋势与数据摘要导出）"));
     }
 
-    private static String exchangeActionOf(String item) {
-        return EXCHANGE_PUBLISH.equals(item) ? EXCHANGE_PUBLISH_ACTION : EXCHANGE_DASHBOARD_ACTION;
+    private record ExchangeItem(String key, String name, int points, int dailyMax,
+        String description) {
+        boolean enabled() {
+            return StringUtils.hasText(key) && points > 0 && dailyMax > 0;
+        }
     }
 
     private static int countRecordsToday(List<PointsRecord> records, String action, String date) {
@@ -399,8 +464,20 @@ public class PointsServiceImpl implements PointsService {
         return count;
     }
 
-    private static int safeTickets(UserPoints account) {
-        return account.getPublishTickets() == null ? 0 : Math.max(0, account.getPublishTickets());
+    private static String exchangeActionOf(String item) {
+        if (EXCHANGE_DASHBOARD.equals(item)) {
+            // 兼容历史版本动作码 exchange_dashboard
+            return EXCHANGE_DASHBOARD_ACTION;
+        }
+        var normalized = StringUtils.hasText(item) ? item.trim().toLowerCase() : "";
+        var sanitized = new StringBuilder();
+        for (var i = 0; i < normalized.length() && sanitized.length() < 32; i++) {
+            var ch = normalized.charAt(i);
+            if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_') {
+                sanitized.append(ch);
+            }
+        }
+        return sanitized.length() == 0 ? EXCHANGE_DASHBOARD_ACTION : "exchange_" + sanitized;
     }
 
     @Override
@@ -552,6 +629,7 @@ public class PointsServiceImpl implements PointsService {
             .wxOpenid(PointsRecordHelper.resolveOpenid(record))
             .nickname(PointsRecordHelper.resolveDisplayName(wxUser,
                 PointsRecordHelper.resolveOpenid(record)))
+            .avatarUrl(wxUser == null ? null : wxUser.getAvatarUrl())
             .haloUserName(wxUser != null ? wxUser.getHaloUserName() : null)
             .action(action)
             .actionLabel(PointsAction.labelOf(action))
@@ -753,6 +831,7 @@ public class PointsServiceImpl implements PointsService {
             case "browse" -> "浏览";
             case "comment" -> "评论";
             case "upvote" -> "点赞";
+            case "vote" -> "投票";
             default -> "";
         };
         return "该文章今日已领取" + label + "积分";
@@ -874,6 +953,7 @@ public class PointsServiceImpl implements PointsService {
             case "browse" -> "浏览";
             case "comment" -> "评论";
             case "upvote" -> "点赞";
+            case "vote" -> "投票";
             default -> "该行为";
         };
         if ("count".equals(type)) {

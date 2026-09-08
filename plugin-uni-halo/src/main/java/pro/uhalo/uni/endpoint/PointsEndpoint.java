@@ -104,10 +104,65 @@ public class PointsEndpoint implements CustomEndpoint {
                     .operationId("GetExchangeBalance")
                     .description("Get exchange center balance and today's quota.")
                     .tag(apiTag))
-            .POST(basePath + "/points/exchange/spend", pointsController::spendPublishTicket,
+            .GET(basePath + "/points/tasks/daily", pointsController::dailyTasks,
                 builder -> builder
-                    .operationId("SpendPublishTicket")
-                    .description("Spend one publish ticket.")
+                    .operationId("GetDailyTasks")
+                    .description("List today's daily tasks with progress.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/tasks/claim", pointsController::claimTask,
+                builder -> builder
+                    .operationId("ClaimDailyTask")
+                    .description("Claim today's reward for a completed daily task.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/level", pointsController::levelStatus,
+                builder -> builder
+                    .operationId("GetLevelStatus")
+                    .description("Get user level, worn title and title progress.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/level/title", pointsController::wearTitle,
+                builder -> builder
+                    .operationId("WearLevelTitle")
+                    .description("Wear an unlocked title.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/outfit", pointsController::outfitStatus,
+                builder -> builder
+                    .operationId("GetOutfitStatus")
+                    .description("Get outfit shop, owned items and active cosmetics.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/outfit/buy", pointsController::buyOutfit,
+                builder -> builder
+                    .operationId("BuyOutfit")
+                    .description("Buy an outfit item with points.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/outfit/equip", pointsController::equipOutfit,
+                builder -> builder
+                    .operationId("EquipOutfit")
+                    .description("Equip or unequip an outfit item.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/invite/info", pointsController::inviteInfo,
+                builder -> builder
+                    .operationId("GetInviteInfo")
+                    .description("Get invite code and reward config.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/lucky/config", pointsController::luckyConfig,
+                builder -> builder
+                    .operationId("GetLuckyDrawConfig")
+                    .description("Get lucky draw config for rule display.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/lucky/draw", pointsController::luckyDraw,
+                builder -> builder
+                    .operationId("DrawLuckyGift")
+                    .description("Draw once with points cost, weighted random prize.")
+                    .tag(apiTag))
+            .POST(basePath + "/points/lucky/submit", pointsController::luckySubmit,
+                builder -> builder
+                    .operationId("SubmitLuckyClaim")
+                    .description("Submit contact info for a won physical prize.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/lucky/mine", pointsController::luckyMine,
+                builder -> builder
+                    .operationId("GetMyLuckyClaims")
+                    .description("List my lucky winning orders with status.")
                     .tag(apiTag))
             .build();
     }

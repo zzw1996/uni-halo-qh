@@ -11,3 +11,6 @@ extensions/*.jar
 
 # 打包工作区快照时临时移开的子仓库 .git
 .git.bak/
+
+# 本地会话/工具目录
+.zcode/

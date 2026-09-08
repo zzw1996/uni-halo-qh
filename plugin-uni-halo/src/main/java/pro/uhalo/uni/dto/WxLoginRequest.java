@@ -10,4 +10,7 @@ public class WxLoginRequest {
     private String nickname;
 
     private String avatarUrl;
+
+    /** 邀请人的邀请码（可选，首次注册时生效） */
+    private String inviteCode;
 }

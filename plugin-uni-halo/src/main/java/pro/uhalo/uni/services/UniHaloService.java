@@ -3,6 +3,7 @@ package pro.uhalo.uni.services;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import pro.uhalo.uni.dto.InviteQRCodeDataDTO;
 import reactor.core.publisher.Mono;
 import java.util.Map;
 
@@ -32,6 +33,12 @@ public interface UniHaloService {
      * 解析并返回二维码图片 URL（不存在则生成）
      */
     Mono<String> resolveQRCodeImageUrl(String postId);
+
+    /**
+     * 生成邀请场景小程序码数据（scene = "inv:" + 邀请码，内存缓存）。
+     * imageUrl 为附件地址（上传失败可能为空），base64 始终返回。
+     */
+    Mono<InviteQRCodeDataDTO> resolveInviteQRCodeData(String inviteCode);
 
     /**
      * 获取二维码信息

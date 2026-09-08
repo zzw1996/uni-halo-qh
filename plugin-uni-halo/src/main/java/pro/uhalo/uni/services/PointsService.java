@@ -32,11 +32,8 @@ public interface PointsService {
     /** 积分兑换：item = publish_ticket | dashboard_advanced，扣除积分并发放权益 */
     Mono<PointsExchangeResponse> exchange(String openid, String item);
 
-    /** 兑换中心余额/配额/今日状态查询 */
+    /** 兑换中心余额/今日状态查询 */
     Mono<PointsExchangeResponse> exchangeStatus(String openid);
-
-    /** 消耗 1 张发布券（瞬间发布超免费配额时调用） */
-    Mono<PointsExchangeResponse> spendPublishTicket(String openid);
 
     Mono<PointsHistoryResponse> listHistory(String openid, int page, int size);
 

@@ -1,0 +1,14 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-dashboard
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 数据看板"
+    rbac.authorization.halo.run/display-name: "数据看板接口（UniHalo）"
+rules:
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources: [ "plugins/dashboard" ]
+    verbs: [ "get", "list" ]

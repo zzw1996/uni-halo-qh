@@ -40,6 +40,20 @@ public class WxUserServiceImpl implements WxUserService {
     }
 
     @Override
+    public Mono<WxUser> fetchByInviteCode(String inviteCode) {
+        var listOptions = new ListOptions();
+        listOptions.setFieldSelector(FieldSelector.of(equal("inviteCode", inviteCode)));
+        return client.listAll(WxUser.class, listOptions, null).next();
+    }
+
+    @Override
+    public Mono<Long> countByInviterOpenid(String inviterOpenid) {
+        var listOptions = new ListOptions();
+        listOptions.setFieldSelector(FieldSelector.of(equal("inviterOpenid", inviterOpenid)));
+        return client.listAll(WxUser.class, listOptions, null).count();
+    }
+
+    @Override
     public Mono<WxUser> create(WxUser wxUser) {
         var metadata = new Metadata();
         var name = StringUtils.hasText(wxUser.getId())

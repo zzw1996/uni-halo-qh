@@ -17,4 +17,7 @@ public class RecordUserActivityRequest {
     private String cover;
 
     private String excerpt;
+
+    /** 表情反馈类型（仅 type=reaction 时使用） */
+    private String reactionKind;
 }

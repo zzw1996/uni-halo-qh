@@ -28,6 +28,7 @@ public interface PointsEvidenceService {
             case "browse" -> "未检测到今日浏览记录，无法领取积分";
             case "comment" -> "未检测到该文章今日的评论记录，无法领取积分";
             case "upvote" -> "未检测到今日点赞记录，无法领取积分";
+            case "vote" -> "未检测到今日投票记录，无法领取积分";
             default -> "未检测到有效行为记录，无法领取积分";
         };
     }

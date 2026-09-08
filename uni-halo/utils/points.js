@@ -16,6 +16,7 @@ export const POINTS_ACTIONS = {
 	BROWSE: 'browse',
 	COMMENT: 'comment',
 	UPVOTE: 'upvote',
+	VOTE: 'vote',
 	SIGN_IN: 'sign_in'
 };
 
@@ -23,11 +24,16 @@ export const POINTS_ACTION_LABELS = {
 	browse: '浏览文章',
 	comment: '发表评论',
 	upvote: '点赞文章',
+	vote: '参与投票',
 	sign_in: '每日签到',
+	task: '每日任务',
 	recharge: '虚拟支付充值',
 	new_user: '新人见面礼',
 	draw: '翻牌中奖',
 	draw_cost: '翻牌消耗',
+	lucky_draw: '积分抽奖',
+	purchase_publish_ticket: '道具直购·发布券',
+	purchase_outfit: '道具直购·装扮',
 	exchange_publish: '积分兑换·发布券',
 	exchange_dashboard: '积分兑换·数据看板',
 	admin_adjust: '系统调整'
@@ -120,8 +126,19 @@ export const resolvePointsApiPaths = (configs) => {
 		drawStatus: custom.drawStatus || '/points/draw/status',
 		exchange: custom.exchange || '/points/exchange',
 		exchangeBalance: custom.exchangeBalance || '/points/exchange/balance',
-		exchangeSpend: custom.exchangeSpend || '/points/exchange/spend'
-	};
+		dailyTasks: custom.dailyTasks || '/points/tasks/daily',
+		claimTask: custom.claimTask || '/points/tasks/claim',
+		levelStatus: custom.levelStatus || '/points/level',
+		wearTitle: custom.wearTitle || '/points/level/title',
+		outfitStatus: custom.outfitStatus || '/points/outfit',
+		buyOutfit: custom.buyOutfit || '/points/outfit/buy',
+		equipOutfit: custom.equipOutfit || '/points/outfit/equip',
+	inviteInfo: custom.inviteInfo || '/points/invite/info',
+	luckyConfig: custom.luckyConfig || '/points/lucky/config',
+	luckyDraw: custom.luckyDraw || '/points/lucky/draw',
+	luckySubmit: custom.luckySubmit || '/points/lucky/submit',
+	luckyMine: custom.luckyMine || '/points/lucky/mine'
+};
 };
 
 const POINTS_API_FALLBACKS = {
@@ -135,7 +152,18 @@ const POINTS_API_FALLBACKS = {
 	drawStatus: ['/points/draw/status', '/getPointsDrawStatus'],
 	exchange: ['/points/exchange', '/exchangePointsItem'],
 	exchangeBalance: ['/points/exchange/balance', '/getExchangeBalance'],
-	exchangeSpend: ['/points/exchange/spend', '/spendPublishTicket']
+	dailyTasks: ['/points/tasks/daily', '/points/tasks', '/getDailyTasks'],
+	claimTask: ['/points/tasks/claim', '/points/claimTask', '/claimDailyTask'],
+	levelStatus: ['/points/level', '/getLevelStatus'],
+	wearTitle: ['/points/level/title', '/points/wearTitle'],
+	outfitStatus: ['/points/outfit', '/getOutfitStatus'],
+	buyOutfit: ['/points/outfit/buy', '/points/buyOutfit'],
+	equipOutfit: ['/points/outfit/equip', '/points/equipOutfit'],
+	inviteInfo: ['/points/invite/info', '/getInviteInfo'],
+	luckyConfig: ['/points/lucky/config', '/getLuckyDrawConfig'],
+	luckyDraw: ['/points/lucky/draw', '/drawLuckyGift'],
+	luckySubmit: ['/points/lucky/submit', '/submitLuckyClaim'],
+	luckyMine: ['/points/lucky/mine', '/getMyLuckyClaims']
 };
 
 export const getPointsApiPathCandidates = (key, configs) => {
@@ -414,13 +442,23 @@ export const fetchExchangeBalance = async (httpApi) => {
 		if (data?.error) {
 			return { ok: false, reason: data.error };
 		}
+		const items = Array.isArray(data.items)
+			? data.items.map((item) => ({
+				key: item.key || '',
+				name: item.name || '',
+				points: Number(item.points || 0) || 0,
+				dailyMaxCount: Number(item.dailyMaxCount || 0) || 0,
+				description: item.description || '',
+				todayCount: Number(item.todayCount || 0) || 0
+			}))
+			: [];
 		return {
 			ok: true,
 			balance: data.balance != null ? Number(data.balance) : null,
-			publishTickets: Number(data.publishTickets || 0) || 0,
-			freeQuota: Number(data.freeQuota ?? 3) || 0,
-			remaining: data.remaining != null ? Number(data.remaining) : null,
+			items,
+			// 兼容旧后端字段
 			dashboardUnlockedToday: data.dashboardUnlockedToday === true
+				|| items.some((item) => item.key === 'dashboard_advanced' && item.todayCount > 0)
 		};
 	} catch (err) {
 		return { ok: false, reason: normalizePointsApiError(err) };
@@ -447,29 +485,6 @@ export const exchangePointsItem = async (httpApi, item) => {
 			balance: data.balance != null ? Number(data.balance) : null,
 			publishTickets: Number(data.publishTickets || 0) || 0,
 			message: data.message || '兑换成功'
-		};
-	} catch (err) {
-		return { ok: false, reason: normalizePointsApiError(err) };
-	}
-};
-
-/**
- * 消耗 1 张发布券（瞬间发布超免费配额时）
- */
-export const spendPublishTicket = async (httpApi) => {
-	const api = httpApi?.v2 || httpApi;
-	if (!api?.spendPublishTicket) {
-		return { ok: false, reason: '兑换接口未就绪，请先更新插件' };
-	}
-	try {
-		const res = await api.spendPublishTicket();
-		const data = parseDirectApiBody(res);
-		if (data?.error) {
-			return { ok: false, reason: data.error };
-		}
-		return {
-			ok: true,
-			publishTickets: Number(data.publishTickets || 0) || 0
 		};
 	} catch (err) {
 		return { ok: false, reason: normalizePointsApiError(err) };
@@ -614,4 +629,69 @@ export const formatPointsHistoryItem = (item) => {
 		createTimeText: item.createTimeText || '',
 		createTime: item.createTime || item.recordTime || ''
 	};
+};
+
+/**
+ * 每日任务中心：拉取今日任务列表与进度
+ */
+export const fetchDailyTasks = async (httpApi) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!checkHasWxLogin()) {
+		return { ok: false, reason: '请先登录' };
+	}
+	if (!isPointsEnabled()) {
+		return { ok: false, reason: '积分功能未开启' };
+	}
+	if (!api?.getDailyTasks) {
+		return { ok: false, reason: '任务中心接口未就绪，请先更新插件' };
+	}
+	try {
+		const res = await api.getDailyTasks();
+		const data = parseDirectApiBody(res);
+		if (data?.error) {
+			return { ok: false, reason: data.error };
+		}
+		return {
+			ok: true,
+			date: data.date || '',
+			todayEarned: Number(data.todayEarned || 0) || 0,
+			balance: data.balance != null ? Number(data.balance) : null,
+			items: Array.isArray(data.items) ? data.items : []
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
+};
+
+/**
+ * 领取每日任务奖励（后端按天幂等）
+ * @returns {{ok:boolean, earned?:number, balance?:number, message?:string, reason?:string}}
+ */
+export const claimDailyTaskReward = async (httpApi, type) => {
+	const api = httpApi?.v2 || httpApi;
+	if (!checkHasWxLogin()) {
+		return { ok: false, reason: '请先登录' };
+	}
+	if (!isPointsEnabled()) {
+		return { ok: false, reason: '积分功能未开启' };
+	}
+	if (!api?.claimDailyTask) {
+		return { ok: false, reason: '任务中心接口未就绪，请先更新插件' };
+	}
+	try {
+		const res = await api.claimDailyTask(type);
+		const data = parseDirectApiBody(res);
+		if (data?.error && !data?.earned) {
+			return { ok: false, reason: data.error };
+		}
+		handlePointsEarnResponse(data);
+		return {
+			ok: true,
+			earned: Number(data.earned || 0) || 0,
+			balance: data.balance != null ? Number(data.balance) : null,
+			message: data.message || ''
+		};
+	} catch (err) {
+		return { ok: false, reason: normalizePointsApiError(err) };
+	}
 };

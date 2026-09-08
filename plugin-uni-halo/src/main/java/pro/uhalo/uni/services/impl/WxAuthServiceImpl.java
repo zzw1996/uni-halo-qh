@@ -25,6 +25,7 @@ import pro.uhalo.uni.dto.WxUserDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.scheme.WxUser;
 import pro.uhalo.uni.services.HaloUserSyncService;
+import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.WxAuthService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.WxAutoUsernameGenerator;
@@ -55,6 +56,7 @@ public class WxAuthServiceImpl implements WxAuthService {
     private final ReactiveSettingFetcher settingFetcher;
     private final WxUserService wxUserService;
     private final HaloUserSyncService haloUserSyncService;
+    private final InviteService inviteService;
     private final AttachmentService attachmentService;
     private final ExternalLinkProcessor externalLinkProcessor;
 
@@ -387,7 +389,9 @@ public class WxAuthServiceImpl implements WxAuthService {
             return saveCompletedProfile(wxUser, loginRequest, true);
         }
         return wxUserService.create(wxUser)
-            .map(this::toIncompleteUserDTO);
+            .map(this::toIncompleteUserDTO)
+            .flatMap(dto -> applyInvite(session.openid(), loginRequest.getInviteCode())
+                .thenReturn(dto));
     }
 
     private Mono<WxUserDTO> saveCompletedProfile(WxUser wxUser, WxLoginRequest loginRequest,
@@ -401,7 +405,20 @@ public class WxAuthServiceImpl implements WxAuthService {
             wxUser.setProfileModifyCount(0);
         }
         var saveMono = isNew ? wxUserService.create(wxUser) : wxUserService.update(wxUser);
-        return saveMono.map(this::toCompleteUserDTO);
+        return saveMono.map(this::toCompleteUserDTO)
+            .flatMap(dto -> isNew
+                ? applyInvite(wxUser.getOpenid(), loginRequest.getInviteCode()).thenReturn(dto)
+                : Mono.just(dto));
+    }
+
+    /** 带邀请码注册：仅首次进入小程序的新用户可绑定邀请关系并发放奖励（失败不影响登录） */
+    private Mono<Void> applyInvite(String openid, String inviteCode) {
+        return inviteService.grantInviteReward(openid, inviteCode, true)
+            .onErrorResume(ex -> {
+                log.warn("apply invite failed, openid={}: {}", openid, ex.getMessage());
+                return Mono.just(false);
+            })
+            .then();
     }
 
     private WxUser newStubUser(WechatSession session) {

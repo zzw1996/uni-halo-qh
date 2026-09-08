@@ -14,6 +14,8 @@ import pro.uhalo.uni.dto.AdminUserActivityItemDTO;
 import pro.uhalo.uni.dto.AdminUserActivityListResponse;
 import pro.uhalo.uni.dto.CancelUpvoteResponse;
 
+import pro.uhalo.uni.dto.ContentReactionStatusDTO;
+
 import pro.uhalo.uni.dto.RecordUserActivityRequest;
 
 import pro.uhalo.uni.dto.UpvoteStatusResponse;
@@ -220,6 +222,155 @@ public class UserActivityServiceImpl implements UserActivityService {
     }
 
 
+
+    @Override
+    public Mono<UserActivityItemDTO> recordReaction(String openid, RecordUserActivityRequest request) {
+        return Mono.fromCallable(() -> {
+            assertOpenid(openid);
+            return validateReactionRequest(request);
+        }).flatMap(reactionRequest -> {
+            var contentType = UserContentType.parse(reactionRequest.getContentType());
+            return wxUserService.fetchByOpenid(openid.trim())
+                .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
+                .flatMap(wxUser -> {
+                    var normalizedKind = reactionRequest.getReactionKind().trim();
+                    var reactionKey = buildReactionKey(wxUser.getOpenid(), contentType,
+                        reactionRequest.getArticleName(), normalizedKind);
+                    return fetchByActivityKey(reactionKey)
+                        .flatMap(existing -> {
+                            existing.setRecordTime(Instant.now());
+                            return client.update(existing);
+                        })
+                        .switchIfEmpty(Mono.defer(() -> deleteUserReactions(wxUser.getOpenid(),
+                                reactionRequest.getArticleName(), contentType)
+                            .then(createReaction(wxUser.getId(), wxUser.getOpenid(),
+                                reactionRequest, contentType, normalizedKind, reactionKey))));
+                });
+        }).map(activity -> toItemDto(activity, List.of()));
+    }
+
+    @Override
+    public Mono<CancelUpvoteResponse> cancelReaction(String openid, RecordUserActivityRequest request) {
+        return Mono.fromCallable(() -> {
+            assertOpenid(openid);
+            return validateReactionCancelRequest(request);
+        }).flatMap(cancelRequest -> {
+            var contentType = UserContentType.parse(cancelRequest.getContentType());
+            return wxUserService.fetchByOpenid(openid.trim())
+                .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
+                .flatMap(wxUser -> deleteUserReactions(wxUser.getOpenid(),
+                    cancelRequest.getArticleName(), contentType)
+                    .thenReturn(CancelUpvoteResponse.cancelled()));
+        });
+    }
+
+    @Override
+    public Mono<ContentReactionStatusDTO> getReactionStatus(String openid, String articleName,
+        UserContentType contentType) {
+        return Mono.fromCallable(() -> {
+            if (!StringUtils.hasText(articleName)) {
+                throw new WxAuthException("缺少 articleName 参数");
+            }
+            return new ReactionQuery(StringUtils.hasText(openid) ? openid.trim() : "",
+                articleName.trim(), contentType);
+        }).flatMap(query -> client.listAll(UserActivity.class, new ListOptions(), null)
+            .filter(activity -> UserActivityType.REACTION.value().equals(activity.getType()))
+            .filter(activity -> query.articleName().equals(activity.getArticleName()))
+            .filter(activity -> contentTypeMatches(activity, query.contentType()))
+            .collectList()
+            .map(activities -> {
+                var counts = new java.util.LinkedHashMap<String, Long>();
+                var mine = "";
+                for (var activity : activities) {
+                    var kind = StringUtils.hasText(activity.getReactionKind())
+                        ? activity.getReactionKind() : "unknown";
+                    counts.merge(kind, 1L, Long::sum);
+                    if (!query.openid().isEmpty() && query.openid().equals(activity.getWxOpenid())) {
+                        mine = activity.getReactionKind();
+                    }
+                }
+                return ContentReactionStatusDTO.builder()
+                    .counts(counts)
+                    .mine(StringUtils.hasText(mine) ? mine : null)
+                    .build();
+            }));
+    }
+
+    private static RecordUserActivityRequest validateReactionRequest(RecordUserActivityRequest request) {
+        if (request == null) {
+            throw new WxAuthException("请求体格式错误");
+        }
+        if (UserActivityType.parse(request.getType()) != UserActivityType.REACTION) {
+            throw new WxAuthException("type 须为 reaction");
+        }
+        if (!StringUtils.hasText(request.getArticleName())) {
+            throw new WxAuthException("缺少 articleName 参数");
+        }
+        if (!StringUtils.hasText(request.getReactionKind())) {
+            throw new WxAuthException("缺少 reactionKind 参数");
+        }
+        request.setArticleName(request.getArticleName().trim());
+        request.setReactionKind(request.getReactionKind().trim());
+        if (request.getReactionKind().length() > 20) {
+            throw new WxAuthException("reactionKind 过长");
+        }
+        UserContentType.parse(request.getContentType());
+        return request;
+    }
+
+    private static RecordUserActivityRequest validateReactionCancelRequest(
+        RecordUserActivityRequest request) {
+        if (request == null) {
+            throw new WxAuthException("请求体格式错误");
+        }
+        if (UserActivityType.parse(request.getType()) != UserActivityType.REACTION) {
+            throw new WxAuthException("type 须为 reaction");
+        }
+        if (!StringUtils.hasText(request.getArticleName())) {
+            throw new WxAuthException("缺少 articleName 参数");
+        }
+        request.setArticleName(request.getArticleName().trim());
+        UserContentType.parse(request.getContentType());
+        return request;
+    }
+
+    private Mono<Void> deleteUserReactions(String openid, String articleName,
+        UserContentType contentType) {
+        var listOptions = new ListOptions();
+        listOptions.setFieldSelector(FieldSelector.of(equal("wxOpenid", openid)));
+        return client.listAll(UserActivity.class, listOptions, null)
+            .filter(activity -> UserActivityType.REACTION.value().equals(activity.getType()))
+            .filter(activity -> articleName.equals(activity.getArticleName()))
+            .filter(activity -> contentTypeMatches(activity, contentType))
+            .concatMap(client::delete)
+            .then();
+    }
+
+    private Mono<UserActivity> createReaction(String wxUserId, String wxOpenid,
+        RecordUserActivityRequest request, UserContentType contentType, String kind,
+        String activityKey) {
+        var activity = new UserActivity();
+        activity.setWxUserId(wxUserId);
+        activity.setWxOpenid(wxOpenid);
+        activity.setType(UserActivityType.REACTION.value());
+        activity.setContentType(contentType.getValue());
+        activity.setArticleName(request.getArticleName());
+        activity.setActivityKey(activityKey);
+        activity.setReactionKind(kind);
+        applyMetadata(activity, request);
+        activity.setRecordTime(Instant.now());
+        if (activity.getVisit() == null) {
+            activity.setVisit(0);
+        }
+        var metadata = new Metadata();
+        metadata.setName("ua-" + UUID.randomUUID());
+        metadata.setCreationTimestamp(Instant.now());
+        activity.setMetadata(metadata);
+        return client.create(activity).onErrorMap(this::mapExtensionError);
+    }
+
+    private record ReactionQuery(String openid, String articleName, UserContentType contentType) {
+    }
 
     @Override
 
@@ -585,6 +736,8 @@ public class UserActivityServiceImpl implements UserActivityService {
 
             .nickname(PointsRecordHelper.resolveDisplayName(wxUser, activity.getWxOpenid()))
 
+            .avatarUrl(wxUser != null ? wxUser.getAvatarUrl() : null)
+
             .haloUserName(wxUser != null ? wxUser.getHaloUserName() : null)
 
             .type(activity.getType())
@@ -742,6 +895,13 @@ public class UserActivityServiceImpl implements UserActivityService {
 
             + ACTIVITY_KEY_SEP + articleName;
 
+    }
+
+    /** 表情反馈唯一键：始终带 contentType 与 kind，与旧行为记录 key 格式互不干扰 */
+    static String buildReactionKey(String openid, UserContentType contentType, String articleName,
+        String kind) {
+        return openid + ACTIVITY_KEY_SEP + UserActivityType.REACTION.value() + ACTIVITY_KEY_SEP
+            + contentType.getValue() + ACTIVITY_KEY_SEP + articleName + ACTIVITY_KEY_SEP + kind;
     }
 
 

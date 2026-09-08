@@ -343,7 +343,7 @@
 				{
 					"path": "points-recharge/points-recharge",
 					"style": {
-						"navigationBarTitleText": "积分充值",
+						"navigationBarTitleText": "权益直购",
 						"enablePullDownRefresh": false
 					}
 				},
@@ -358,6 +358,52 @@
 					"path": "points-exchange/points-exchange",
 					"style": {
 						"navigationBarTitleText": "积分兑换",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "task-center/task-center",
+					"style": {
+						"navigationBarTitleText": "每日任务",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#03a9f4",
+								"style": "circle"
+							}
+						}
+					}
+				},
+				{
+					"path": "identity/identity",
+					"style": {
+						"navigationBarTitleText": "身份中心",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#03a9f4",
+								"style": "circle"
+							}
+						}
+					}
+				},
+				{
+					"path": "invite/invite",
+					"style": {
+						"navigationBarTitleText": "邀请好友",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#03a9f4",
+								"style": "circle"
+							}
+						}
+					}
+				},
+				{
+					"path": "lucky-claim/lucky-claim",
+					"style": {
+						"navigationBarTitleText": "填写收货信息",
 						"enablePullDownRefresh": false
 					}
 				}

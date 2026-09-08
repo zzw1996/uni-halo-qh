@@ -1134,6 +1134,10 @@ spec:
               points: 2
               dailyMaxCount: 20
               dailyMaxPoints: 40
+            vote:
+              points: 10
+              dailyMaxCount: 10
+              dailyMaxPoints: 100
             signIn:
               points: 10
               consecutiveBonus:
@@ -1200,6 +1204,25 @@ spec:
                   name: dailyMaxPoints
                   label: 每日积分上限
                   value: 40
+                  min: 0
+            - $formkit: group
+              name: vote
+              label: 参与投票
+              children:
+                - $formkit: number
+                  name: points
+                  label: 单次积分
+                  value: 10
+                  min: 0
+                - $formkit: number
+                  name: dailyMaxCount
+                  label: 每日最多次数
+                  value: 10
+                  min: 0
+                - $formkit: number
+                  name: dailyMaxPoints
+                  label: 每日积分上限
+                  value: 100
                   min: 0
             - $formkit: group
               name: signIn
@@ -1287,67 +1310,407 @@ spec:
                   value: 10
                   min: 1
                   validation: required
-    - group: payConfig
-      label: 虚拟支付
+    - group: dailyTaskConfig
+      label: 每日任务
       formSchema:
         - $formkit: switch
           name: enabled
-          label: 开启虚拟支付（积分充值）
-          value: false
+          label: 开启每日任务
+          value: true
           onValue: true
           offValue: false
-          help: 开启后，小程序积分页展示充值入口，用户通过微信虚拟支付购买积分道具。仅支持道具直购（mode=short_series_goods）。
-        - $formkit: text
-          name: offerId
-          label: OfferID（虚拟支付商户号）
-          value: ""
-          help: 微信 MP 后台 → 虚拟支付 → 基本配置 中查看；开通虚拟支付后自动生成。
-        - $formkit: text
-          name: appKey
-          label: 现网 AppKey
-          value: ""
-          help: 微信 MP 后台 → 虚拟支付 → 基本配置 → 现网 AppKey（env=0 正式环境使用）。沙箱 AppKey 无需配置。
-        - $formkit: number
-          name: env
-          label: 支付环境
-          value: 0
-          min: 0
-          max: 1
-          help: 0-正式环境（现网，推荐）；1-沙箱环境。
+          help: 开启后，小程序用户可在任务中心查看并领取每日任务奖励（需同时开启积分系统）
         - $formkit: repeater
-          name: goods
-          label: 积分道具
+          name: tasks
+          label: 任务列表
           value:
-            - goodsId: ""
-              name: ""
-              price: 100
-              points: 100
-          help: 需与微信 MP 后台【虚拟支付 → 道具管理】创建并发布的道具保持一致（goodsId 即道具 ID）。
+            - type: sign_in
+              target: 1
+              points: 10
+              enabled: true
+            - type: browse
+              target: 3
+              points: 10
+              enabled: true
+            - type: comment
+              target: 1
+              points: 10
+              enabled: true
+            - type: upvote
+              target: 3
+              points: 8
+              enabled: true
+            - type: vote
+              target: 1
+              points: 10
+              enabled: true
+          help: 同一任务的进度按「当日该行为的积分记录条数」统计，每天每任务可领取一次奖励。注意：若某行为在积分规则中的单次积分为 0，该行为不产生记录，对应任务进度将统计不到。
+          children:
+            - $formkit: select
+              name: type
+              label: 任务类型
+              value: browse
+              options:
+                - value: sign_in
+                  label: 每日签到
+                - value: browse
+                  label: 浏览文章
+                - value: comment
+                  label: 发表评论
+                - value: upvote
+                  label: 点赞
+                - value: vote
+                  label: 参与投票
+              validation: required
+            - $formkit: number
+              name: target
+              label: 每日目标次数
+              value: 3
+              min: 1
+              validation: required
+            - $formkit: number
+              name: points
+              label: 奖励积分
+              value: 10
+              min: 1
+              validation: required
+            - $formkit: switch
+              name: enabled
+              label: 启用该任务
+              value: true
+              onValue: true
+              offValue: false
+    - group: mallConfig
+      label: 积分商城
+      formSchema:
+        - $formkit: repeater
+          name: exchangeItems
+          label: 兑换权益（积分免费兑换）
+          value:
+            - key: dashboard_advanced
+              name: 数据看板高级版
+              points: 30
+              dailyMaxCount: 1
+              description: 解锁当日数据看板高级版（30 日趋势与数据摘要导出）
+          help: 积分仅限站内权益兑换；key 唯一，功能页按 key 判断是否已开通。每日可兑次数受 dailyMaxCount 限制。
           children:
             - $formkit: text
-              name: goodsId
-              label: 道具 ID（productId）
+              name: key
+              label: 权益 key（唯一，小写字母/数字/下划线）
               value: ""
               validation: required
             - $formkit: text
               name: name
-              label: 商品名称
+              label: 权益名称
               value: ""
               validation: required
             - $formkit: number
-              name: price
-              label: 道具单价（分）
-              value: 100
+              name: points
+              label: 兑换消耗积分
+              value: 30
               min: 1
               validation: required
-              help: 单位为分，且需与微信后台道具价格完全一致（例如 1 元填 100）。
+            - $formkit: number
+              name: dailyMaxCount
+              label: 每日可兑换次数
+              value: 1
+              min: 1
+              validation: required
+            - $formkit: textarea
+              name: description
+              label: 权益说明（前端展示）
+              value: ""
+        - $formkit: switch
+          name: luckyEnabled
+          label: 开启幸运礼盒（抽奖）
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后积分兑换中心顶部展示抽奖卡；活动赠品性质，中奖由站长人工发放。
+        - $formkit: number
+          name: luckyCostPoints
+          label: 每次抽奖消耗积分
+          value: 20
+          min: 1
+          validation: required
+        - $formkit: repeater
+          name: luckyPrizes
+          label: 奖品池（按权重随机）
+          value:
+            - name: "再来一次"
+              emoji: "🎁"
+              weight: 50
+              needsAddress: false
+              desc: "未中奖，再接再厉"
+            - name: "定制周边小礼"
+              emoji: "🎀"
+              weight: 15
+              needsAddress: true
+              desc: "随机周边小件（帆布包/钥匙扣/贴纸等），中奖后填写收货信息"
+            - name: "感谢参与"
+              emoji: "🙏"
+              weight: 35
+              needsAddress: false
+              desc: "未中奖，下次好运"
+          help: 奖品在兑换中心「幸运礼盒」卡内展示（名称+说明），中奖用户可随时回填收货信息；中奖记录可在管理页查看：{站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/lucky-admin
+          children:
+            - $formkit: text
+              name: name
+              label: 奖品名称
+              value: ""
+              validation: required
+            - $formkit: text
+              name: emoji
+              label: 图标（emoji）
+              value: ""
+              validation: required
+            - $formkit: text
+              name: desc
+              label: 奖品说明（前端展示）
+              value: ""
+            - $formkit: number
+              name: weight
+              label: 权重
+              value: 10
+              min: 1
+              validation: required
+            - $formkit: switch
+              name: needsAddress
+              label: 中奖后需要填写收货信息
+              value: false
+              onValue: true
+              offValue: false
+              help: 开启后用户抽中将被引导填写收货人/电话/地址，中奖单在管理页可查。
+    - group: levelConfig
+      label: 等级与称号装扮
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 开启等级/称号/装扮
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，小程序「身份中心」与「我的」页展示等级、称号；装扮需消耗积分兑换。
+        - $formkit: repeater
+          name: levels
+          label: 等级表（按累计获得积分升级）
+          value:
+            - level: 1
+              minPoints: 0
+              title: 新手上路
+            - level: 2
+              minPoints: 100
+              title: 初露锋芒
+            - level: 3
+              minPoints: 300
+              title: 小有名气
+            - level: 4
+              minPoints: 600
+              title: 活跃达人
+            - level: 5
+              minPoints: 1000
+              title: 内容猎人
+            - level: 6
+              minPoints: 1600
+              title: 资深玩家
+            - level: 7
+              minPoints: 2400
+              title: 人气之星
+            - level: 8
+              minPoints: 3500
+              title: 社区传奇
+            - level: 9
+              minPoints: 5000
+              title: 积分大亨
+            - level: 10
+              minPoints: 7000
+              title: 至尊VIP
+          help: level 为展示序号，minPoints 为该级所需累计获得积分（取满足条件的最高级）。
+          children:
+            - $formkit: number
+              name: level
+              label: 等级（1 起）
+              value: 1
+              min: 1
+              validation: required
+            - $formkit: number
+              name: minPoints
+              label: 最低累计积分
+              value: 0
+              min: 0
+              validation: required
+            - $formkit: text
+              name: title
+              label: 等级名称
+              value: ""
+              validation: required
+        - $formkit: repeater
+          name: titles
+          label: 称号（达标自动解锁，可佩戴展示）
+          value:
+            - id: read_100
+              name: 百读不厌
+              type: total_browse
+              target: 100
+              desc: 累计浏览 100 篇文章
+            - id: sign_30
+              name: 风雨无阻
+              type: sign_in
+              target: 30
+              desc: 累计签到 30 天
+            - id: vote_50
+              name: 民意代表
+              type: vote
+              target: 50
+              desc: 累计参与 50 次投票
+            - id: comment_50
+              name: 妙语连珠
+              type: comment
+              target: 50
+              desc: 累计发表 50 条评论
+            - id: invite_3
+              name: 星火燎原
+              type: invite
+              target: 3
+              desc: 邀请 3 位好友注册
+            - id: points_5000
+              name: 积分大亨
+              type: total_points
+              target: 5000
+              desc: 累计获得 5000 积分
+          children:
+            - $formkit: text
+              name: id
+              label: 称号 ID（唯一，小写字母/数字/下划线）
+              value: ""
+              validation: required
+            - $formkit: text
+              name: name
+              label: 称号名称
+              value: ""
+              validation: required
+            - $formkit: select
+              name: type
+              label: 解锁条件类型
+              value: total_browse
+              options:
+                - value: total_browse
+                  label: 累计浏览篇数
+                - value: sign_in
+                  label: 累计签到天数
+                - value: vote
+                  label: 累计投票次数
+                - value: comment
+                  label: 累计评论条数
+                - value: invite
+                  label: 邀请注册人数
+                - value: total_points
+                  label: 累计获得积分
+              validation: required
+            - $formkit: number
+              name: target
+              label: 目标值
+              value: 10
+              min: 1
+              validation: required
+            - $formkit: text
+              name: desc
+              label: 达成说明（前端展示）
+              value: ""
+        - $formkit: repeater
+          name: outfits
+          label: 装扮商店（消耗积分兑换，0=永久）
+          value:
+            - key: avatar_gold
+              name: 金色头像框
+              type: avatar_frame
+              points: 200
+              durationDays: 0
+              style: gold
+            - key: avatar_rainbow
+              name: 彩虹头像框
+              type: avatar_frame
+              points: 500
+              durationDays: 0
+              style: rainbow
+            - key: nick_star
+              name: 星光辉映
+              type: nick_frame
+              points: 100
+              durationDays: 0
+              style: "⭐"
+            - key: nick_crown
+              name: 王者之冠
+              type: nick_frame
+              points: 300
+              durationDays: 0
+              style: "👑"
+            - key: theme_dusk
+              name: 蓝紫渐变主题
+              type: theme
+              points: 150
+              durationDays: 0
+              style: "#667eea,#764ba2"
+            - key: theme_sunset
+              name: 落日橙主题
+              type: theme
+              points: 150
+              durationDays: 0
+              style: "#f6d365,#fda085"
+          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（个人中心主题色）；style 为前端映射样式（头像框样式名/前缀文本/渐变色值）；durationDays 填 0 表示永久。
+          children:
+            - $formkit: text
+              name: key
+              label: 装扮 key（唯一，小写字母/数字/下划线）
+              value: ""
+              validation: required
+            - $formkit: text
+              name: name
+              label: 装扮名称
+              value: ""
+              validation: required
+            - $formkit: select
+              name: type
+              label: 装扮类型
+              value: avatar_frame
+              options:
+                - value: avatar_frame
+                  label: 头像框
+                - value: nick_frame
+                  label: 昵称前缀
+                - value: theme
+                  label: 主题色
+              validation: required
             - $formkit: number
               name: points
-              label: 到账积分
+              label: 兑换消耗积分
               value: 100
               min: 1
               validation: required
-        - $el: div
-          attrs:
-            class: "formkit-help text-xs mt-2 text-gray-500 flex items-center mb-1 cursor-pointer"
-          innerHTML: "发货推送 URL：在微信 MP 后台【虚拟支付 → 基本配置 → 基础配置 → 发货推送配置】填写：{站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/pay/notify（站点地址需与小程序请求域名一致并支持 HTTPS）"
+            - $formkit: number
+              name: durationDays
+              label: 有效天数（0=永久）
+              value: 0
+              min: 0
+              validation: required
+            - $formkit: text
+              name: style
+              label: 样式值（前端映射）
+              value: ""
+    - group: inviteConfig
+      label: 邀请奖励
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 开启邀请奖励
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，用户可在「邀请好友」页生成邀请码，好友通过分享首次登录注册即视为邀请成功，邀请人获得奖励积分（同一被邀请人仅一次）。
+        - $formkit: number
+          name: rewardPoints
+          label: 每邀请 1 人奖励积分
+          value: 30
+          min: 1
+          validation: required
+          help: 被邀请人注册后自动发放到邀请人账户；被邀请人自身仍可领取「新人见面礼」。

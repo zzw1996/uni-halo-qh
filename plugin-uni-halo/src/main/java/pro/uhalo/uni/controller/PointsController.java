@@ -9,10 +9,19 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import pro.uhalo.uni.constants.Constants;
+import pro.uhalo.uni.dto.ClaimDailyTaskRequest;
 import pro.uhalo.uni.dto.ExchangeRequest;
+import pro.uhalo.uni.dto.LuckyClaimRequest;
+import pro.uhalo.uni.dto.OutfitBuyRequest;
+import pro.uhalo.uni.dto.OutfitEquipRequest;
 import pro.uhalo.uni.dto.PointsEarnRequest;
 import pro.uhalo.uni.dto.PointsEarnStatusResponse;
+import pro.uhalo.uni.dto.WearTitleRequest;
 import pro.uhalo.uni.exception.WxAuthException;
+import pro.uhalo.uni.services.DailyTaskService;
+import pro.uhalo.uni.services.InviteService;
+import pro.uhalo.uni.services.LevelService;
+import pro.uhalo.uni.services.LuckyDrawService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.utils.WxRequestParser;
 import reactor.core.publisher.Mono;
@@ -26,6 +35,10 @@ import java.util.function.Function;
 public class PointsController {
 
     private final PointsService pointsService;
+    private final DailyTaskService dailyTaskService;
+    private final LevelService levelService;
+    private final InviteService inviteService;
+    private final LuckyDrawService luckyDrawService;
 
     public Mono<ServerResponse> overview(ServerRequest request) {
         return withOpenid(request, openid -> pointsService.getOverview(openid)
@@ -78,15 +91,85 @@ public class PointsController {
             .flatMap(this::jsonOk));
     }
 
-    public Mono<ServerResponse> spendPublishTicket(ServerRequest request) {
-        return withOpenid(request, openid -> pointsService.spendPublishTicket(openid)
-            .flatMap(this::jsonOk));
-    }
 
     public Mono<ServerResponse> history(ServerRequest request) {
         var page = parseIntParam(request, "page", 0);
         var size = parseIntParam(request, "size", 10);
         return withOpenid(request, openid -> pointsService.listHistory(openid, page, size)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> dailyTasks(ServerRequest request) {
+        return withOpenid(request, openid -> dailyTaskService.getDailyTasks(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> claimTask(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, ClaimDailyTaskRequest.class))
+            .flatMap(body -> dailyTaskService.claim(openid, body.getType()))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> levelStatus(ServerRequest request) {
+        return withOpenid(request, openid -> levelService.getLevelStatus(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> wearTitle(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, WearTitleRequest.class))
+            .flatMap(body -> levelService.wearTitle(openid, body.getTitleId()))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> outfitStatus(ServerRequest request) {
+        return withOpenid(request, openid -> levelService.getOutfitStatus(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> buyOutfit(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, OutfitBuyRequest.class))
+            .flatMap(body -> levelService.buyOutfit(openid, body.getKey()))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> equipOutfit(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, OutfitEquipRequest.class))
+            .flatMap(body -> levelService.equipOutfit(openid, body.getKey()))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> inviteInfo(ServerRequest request) {
+        return withOpenid(request, openid -> inviteService.getInviteInfo(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> luckyConfig(ServerRequest request) {
+        return luckyDrawService.getConfig()
+            .flatMap(this::jsonOk)
+            .onErrorResume(Exception.class, e -> {
+                log.warn("lucky config failed: {}", e.getMessage());
+                return badRequest("抽奖配置加载失败");
+            });
+    }
+
+    public Mono<ServerResponse> luckyDraw(ServerRequest request) {
+        return withOpenid(request, openid -> luckyDrawService.draw(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> luckySubmit(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, LuckyClaimRequest.class))
+            .flatMap(body -> luckyDrawService.submitClaim(openid, body))
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> luckyMine(ServerRequest request) {
+        return withOpenid(request, openid -> luckyDrawService.getMyClaims(openid)
             .flatMap(this::jsonOk));
     }
 

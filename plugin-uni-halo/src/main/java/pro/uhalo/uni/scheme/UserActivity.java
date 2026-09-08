@@ -41,4 +41,7 @@ public class UserActivity extends AbstractExtension {
 
     /** wxOpenid + type + articleName 唯一键，用于单字段索引查询 */
     private String activityKey;
+
+    /** 表情反馈类型（仅 type=reaction 时使用，如 love/haha/sad） */
+    private String reactionKind;
 }

@@ -22,6 +22,10 @@ public class PointsRulesDTO {
         .points(2).dailyMaxCount(20).dailyMaxPoints(40).build();
 
     @Builder.Default
+    private PointsActionRuleDTO vote = PointsActionRuleDTO.builder()
+        .points(10).dailyMaxCount(10).dailyMaxPoints(100).build();
+
+    @Builder.Default
     private PointsSignInRuleDTO signIn = PointsSignInRuleDTO.builder()
         .points(10)
         .consecutiveBonus(List.of(

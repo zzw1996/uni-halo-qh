@@ -17,6 +17,8 @@ public class AdminUserActivityItemDTO {
 
     private String nickname;
 
+    private String avatarUrl;
+
     private String haloUserName;
 
     private String type;

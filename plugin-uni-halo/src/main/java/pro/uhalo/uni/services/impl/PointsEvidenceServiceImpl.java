@@ -48,6 +48,7 @@ public class PointsEvidenceServiceImpl implements PointsEvidenceService {
                 .flatMap(exists -> exists ? activityToday(openid, "browse", normalizedName) : Mono.just(false));
             case "comment" -> commentToday(openid, normalizedName);
             case "upvote" -> activityToday(openid, "upvote", normalizedName);
+            case "vote" -> activityToday(openid, "vote", normalizedName);
             default -> Mono.just(false);
         };
     }

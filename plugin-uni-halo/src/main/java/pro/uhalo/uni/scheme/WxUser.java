@@ -31,4 +31,10 @@ public class WxUser extends AbstractExtension {
     private Integer profileModifyCount;
 
     private String haloUserName;
+
+    /** 本人邀请码（注册时惰性生成，供好友分享注册） */
+    private String inviteCode;
+
+    /** 邀请我注册的人（openid，未受邀则为空） */
+    private String inviterOpenid;
 }

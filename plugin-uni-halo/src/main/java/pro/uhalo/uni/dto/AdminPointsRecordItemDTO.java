@@ -15,6 +15,8 @@ public class AdminPointsRecordItemDTO {
 
     private String nickname;
 
+    private String avatarUrl;
+
     private String haloUserName;
 
     private String action;

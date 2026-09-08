@@ -10,9 +10,11 @@ public enum PointsAction {
     BROWSE("browse"),
     COMMENT("comment"),
     UPVOTE("upvote"),
-    SIGN_IN("sign_in");
+    VOTE("vote"),
+    SIGN_IN("sign_in"),
+    TASK("task");
 
-    private static final Set<String> EARN_ACTIONS = Set.of(BROWSE.value, COMMENT.value, UPVOTE.value);
+    private static final Set<String> EARN_ACTIONS = Set.of(BROWSE.value, COMMENT.value, UPVOTE.value, VOTE.value);
 
     private final String value;
 
@@ -45,6 +47,12 @@ public enum PointsAction {
             case "browse" -> "浏览文章";
             case "comment" -> "发表评论";
             case "upvote" -> "点赞文章";
+            case "vote" -> "参与投票";
+            case "task" -> "每日任务";
+            case "invite" -> "邀请奖励";
+            case "lucky_draw" -> "积分抽奖";
+            case "purchase_publish_ticket" -> "道具直购·发布券";
+            case "purchase_outfit" -> "道具直购·装扮";
             case "sign_in" -> "每日签到";
             case "recharge" -> "虚拟支付充值";
             case "new_user" -> "新人见面礼";

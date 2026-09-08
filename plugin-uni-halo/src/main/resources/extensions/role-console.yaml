@@ -12,5 +12,5 @@ metadata:
       ["plugin:plugin-uni-halo:users:view"]
 rules:
   - apiGroups: [ "console.api.uni.uhalo.pro" ]
-    resources: [ "wxUsers", "userActivities", "pointsRecords" ]
+    resources: [ "wxUsers", "userActivities", "pointsRecords", "luckyWinnings", "inviteRecords" ]
     verbs: [ "get", "list" ]

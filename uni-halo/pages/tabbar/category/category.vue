@@ -15,19 +15,37 @@
             </view>
             <block v-else>
                 <block v-if="calcAuditModeEnabled || calcShowType==='list'">
-                    <tm-translate v-for="(item, index) in dataList" :key="index"
-                                  style="box-sizing: border-box;width: 50%;padding: 0 8rpx;" animation-name="fadeUp"
-                                  :wait="calcAniWait(index)">
-                        <view class="catgory-card" :style="{backgroundImage:`url(${item.spec.cover})`}">
-                            <view class="content" @click="handleToCategory(item)">
-                                <view style="font-size: 32rpx;color: #ffffff;">{{ item.spec.displayName }}</view>
-                                <view v-if="!calcAuditModeEnabled"
-                                      style="font-size: 24rpx;color: #ffffff;margin-top: 6rpx;">
-                                    共 {{ item.postCount }} 篇文章
+                    <!-- 分类统计 -->
+                    <view class="category-stats">
+                        <text class="cs-item"><text class="cs-num">{{ dataList.length }}</text> 个分类</text>
+                        <text class="cs-divider">·</text>
+                        <text class="cs-item"><text class="cs-num">{{ totalPostCount }}</text> 篇文章</text>
+                        <text class="cs-tip">点击卡片查看</text>
+                    </view>
+                    <!-- 分类宫格 -->
+                    <view class="category-grid">
+                        <tm-translate v-for="(item, index) in dataList" :key="index"
+                                      style="height: 100%;" animation-name="fadeUp"
+                                      :wait="calcAniWait(index)">
+                            <view class="catgory-card" :class="{ 'catgory-card--featured': index === 0 }">
+                                <image
+                                    v-if="item.spec.cover"
+                                    class="cat-bg"
+                                    :src="item.spec.cover"
+                                    mode="aspectFill"
+                                    lazy-load
+                                ></image>
+                                <view v-else class="cat-bg cat-bg--fallback"></view>
+                                <view class="content" @click="handleToCategory(item)">
+                                    <text class="cat-title">{{ item.spec.displayName }}</text>
+                                    <text v-if="index === 0 && item.spec.description"
+                                          class="cat-desc">{{ item.spec.description }}</text>
+                                    <text v-if="!calcAuditModeEnabled"
+                                          class="cat-count">共 {{ item.postCount }} 篇</text>
                                 </view>
                             </view>
-                        </view>
-                    </tm-translate>
+                        </tm-translate>
+                    </view>
                     <view class="load-text">{{ loadMoreText }}</view>
                 </block>
                 <view v-else-if="calcShowType==='list-post'" class="fulled flex" style="min-height:100vh">
@@ -128,6 +146,9 @@ export default {
         },
         calcShowType() {
             return this.currentCategoryConfig.type
+        },
+        totalPostCount() {
+            return (this.dataList || []).reduce((sum, item) => sum + (Number(item.postCount) || 0), 0)
         }
     },
     watch: {
@@ -366,14 +387,14 @@ export default {
                 animationType: 'slide-in-right'
             });
         },
-        fnScrollTop() {
-            if (this.calcShowType === 'list') {
-                this.fnToTopPage()
-            } else {
-                this.fnToTopScroll()
-            }
-        }
-    }
+		fnScrollTop() {
+			if (this.calcShowType === 'list') {
+				this.fnToTopPage()
+			} else {
+				this.fnToTopScroll()
+			}
+		}
+	}
 };
 </script>
 
@@ -401,7 +422,7 @@ export default {
 .app-page-content {
     display: flex;
     flex-wrap: wrap;
-    padding: 0 12rpx;
+    padding: 0;
     gap: 20rpx 0;
 
     &.list-post {
@@ -410,6 +431,15 @@ export default {
     }
 }
 
+/* ===== 分类宫格 ===== */
+.category-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16rpx;
+    padding: 24rpx 24rpx 0;
+    width: 100%;
+    box-sizing: border-box;
+}
 
 .catgory-card {
     width: 100%;
@@ -418,24 +448,34 @@ export default {
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    border-radius: 12rpx;
-    background-color: #ffff;
-    box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+    border-radius: 20rpx;
+    background-color: #fff;
+    box-shadow: 0 6rpx 20rpx rgba(31, 41, 55, 0.08);
     overflow: hidden;
-    background-repeat: no-repeat;
-    background-size: cover;
+}
 
-    &:before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.15);
-		backdrop-filter: blur(3rpx);
-        z-index: 1;
+.cat-bg {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+
+    &--fallback {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
+}
+
+.catgory-card:before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.42) 100%);
+    z-index: 1;
+    border-radius: 20rpx;
 }
 
 .content {
@@ -447,11 +487,105 @@ export default {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    padding: 0 20rpx;
+    box-sizing: border-box;
+}
+
+.cat-title {
+    font-size: 30rpx;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.35);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.cat-count {
+    margin-top: 10rpx;
+    font-size: 20rpx;
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 999rpx;
+    padding: 6rpx 18rpx;
+    line-height: 1;
 }
 
 .load-text {
     width: 100%;
     text-align: center;
+    padding: 24rpx 0 16rpx;
+    font-size: 22rpx;
+    color: #909399;
+}
+
+/* ===== 分类统计条 ===== */
+.category-stats {
+    display: flex;
+    align-items: baseline;
+    padding: 20rpx 28rpx 4rpx;
+}
+
+.cs-item {
+    font-size: 24rpx;
+    color: #909399;
+}
+
+.cs-num {
+    font-size: 30rpx;
+    font-weight: 800;
+    color: #667eea;
+    margin-right: 6rpx;
+}
+
+.cs-divider {
+    margin: 0 14rpx;
+    color: #d0d3da;
+}
+
+.cs-tip {
+    margin-left: auto;
+    font-size: 20rpx;
+    color: #b0b5c0;
+}
+
+/* ===== 首卡大图 ===== */
+.catgory-card--featured {
+    grid-column: 1 / -1;
+    height: 260rpx;
+
+    .content {
+        align-items: flex-start;
+        padding: 0 32rpx;
+    }
+
+    .cat-title {
+        font-size: 36rpx;
+    }
+
+    .cat-count {
+        margin-top: 10rpx;
+    }
+}
+
+.cat-desc {
+    margin-top: 8rpx;
+    max-width: 82%;
+    font-size: 22rpx;
+    color: rgba(255, 255, 255, 0.88);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ===== 左右分栏模式 ===== */
+.right-content {
+    background: #fafafa;
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+    box-sizing: border-box;
 }
 
 .flot-buttons {

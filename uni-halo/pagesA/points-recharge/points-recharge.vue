@@ -11,14 +11,14 @@
 			</view>
 
 			<view v-if="goodsList.length === 0" class="empty">
-				<tm-empty icon="icon-shiliangzhinengduixiang-" label="暂无可购买的积分道具"></tm-empty>
+				<tm-empty icon="icon-shiliangzhinengduixiang-" label="暂无可购买的权益道具"></tm-empty>
 			</view>
 			<block v-else>
 				<view class="goods-list">
 					<view v-for="(item, index) in goodsList" :key="index" class="goods-card">
 						<view class="goods-main">
 							<text class="goods-name">{{ item.name }}</text>
-							<text class="goods-points">到账 {{ item.points }} 积分</text>
+							<text class="goods-points">{{ fnGoodsTip(item) }}</text>
 						</view>
 						<view class="goods-side">
 							<text class="goods-price">￥{{ Number(item.price) / 100 }}</text>
@@ -27,15 +27,15 @@
 								theme="primary"
 								:loading="payingIndex === index"
 								@click="fnBuy(item, index)"
-							>购买</tm-button>
+							>立即购买</tm-button>
 						</view>
 					</view>
 				</view>
 			</block>
 
 			<view class="footer-tip">
-				<text>说明：充值成功后积分自动到账，可在「积分明细」中查看。</text>
-				<text>虚拟支付由微信提供，费率以微信平台规则为准（Android 约 1%、iOS 约 12%，180 天内退款退还技术服务费）；个人主体小程序全终端月支付限额为 10 万元。</text>
+				<text>说明：已购买的道具权益在支付成功后立即到账（数据看板/发布券/装扮在对应页面生效），可在「积分明细」中查看购买记录。</text>
+				<text>虚拟支付由微信提供：个人主体小程序仅支持道具直购，不支持积分充值流转；Android 技术服务费约 1%、iOS 约 12%（180 天内退款退还技术服务费），月支付限额 10 万元。</text>
 			</view>
 		</block>
 	</view>
@@ -136,14 +136,7 @@
 				// 先用启动时缓存的插件配置（getConfigs 已含 payConfig 与商品）即时渲染
 				const cached = (getAppConfigs()?.payConfig) || {};
 				if (cached?.enabled === true && Array.isArray(cached?.goods)) {
-					this.goodsList = cached.goods
-						.filter((item) => item && item.goodsId)
-						.map((item) => ({
-							goodsId: item.goodsId,
-							name: item.name,
-							price: Number(item.price || 0),
-							points: Number(item.points || 0)
-						}));
+					this.goodsList = this.normalizeGoods(cached.goods);
 					this.loading = 'success';
 				}
 				try {
@@ -154,17 +147,12 @@
 					const res = await this.$httpApi.v2.getVirtualPayConfig();
 					const body = this.parseBody(res);
 					if (!body.enabled) {
-						uni.showToast({ title: '积分充值未开启', icon: 'none' });
+						uni.showToast({ title: '权益直购未开启', icon: 'none' });
 						setTimeout(() => uni.navigateBack(), 800);
 						return;
 					}
 					const goods = (body.goods && body.goods.length ? body.goods : cached?.goods) || [];
-					this.goodsList = goods.map((item) => ({
-						goodsId: item.goodsId,
-						name: item.name,
-						price: Number(item.price || 0),
-						points: Number(item.points || 0)
-					}));
+					this.goodsList = this.normalizeGoods(goods);
 					this.loading = 'success';
 				} catch (err) {
 					this.loading = 'success';
@@ -172,11 +160,36 @@
 						|| String(err?.error || '').includes('404');
 					uni.showToast({
 						title: notUpgraded
-							? '积分充值需要插件 v1.0.63+，请先更新插件'
-							: (err?.error || '充值页面加载失败，请稍后重试'),
+							? '权益直购需要插件 v1.0.78+，请先更新插件'
+							: (err?.error || '页面加载失败，请稍后重试'),
 						icon: 'none'
 					});
 				}
+			},
+			normalizeGoods(goods) {
+				return (Array.isArray(goods) ? goods : [])
+					.filter((item) => item && item.goodsId)
+					.map((item) => ({
+						goodsId: item.goodsId,
+						name: item.name,
+						price: Number(item.price || 0),
+						points: Number(item.points || 0),
+						type: item.type || '',
+						value: Number(item.value || 0),
+						style: item.style || ''
+					}));
+			},
+			fnGoodsTip(item) {
+				if (item.type === 'publish_ticket') {
+					return `发布券 x${item.value || 1}（瞬间发布可用）`;
+				}
+				if (item.type === 'dashboard') {
+					return '数据看板高级版（当日生效）';
+				}
+				if (item.type === 'outfit') {
+					return '解锁一枚装扮（在身份中心穿戴）';
+				}
+				return `到账 ${item.points} 积分（兼容旧商品）`;
 			},
 			async fnBuy(item, index) {
 				if (this.payingIndex >= 0) return;
@@ -201,17 +214,23 @@
 						uni.showToast({ title: payResult.reason || '支付已取消', icon: 'none' });
 						return;
 					}
-					// 支付成功（前端回调仅作展示，发货以服务器推送/查单为准）
-					uni.showLoading({ title: '确认到账中...' });
-					const delivered = await this.fnWaitDelivered(body.outTradeNo);
-					uni.hideLoading();
-					if (delivered.ok) {
-						uni.showToast({ title: `到账 ${delivered.points} 积分`, icon: 'success' });
-						this.balance = Number(delivered.balance != null ? delivered.balance : this.balance);
-						emitPointsUpdated({ balance: this.balance });
-					} else {
-						uni.showToast({ title: '支付成功，积分稍后自动到账', icon: 'none' });
-					}
+						// 支付成功（前端回调仅作展示，发货以服务器推送/查单为准）
+						uni.showLoading({ title: '确认到账中...' });
+						const delivered = await this.fnWaitDelivered(body.outTradeNo);
+						uni.hideLoading();
+						if (delivered.ok) {
+							const isPointsType = !item.type || item.type === 'points';
+							uni.showToast({
+								title: isPointsType
+									? `到账 ${delivered.points} 积分`
+									: (item.type === 'outfit' ? '道具已到账，可在身份中心穿戴' : '购买成功，权益已到账'),
+								icon: 'success'
+							});
+							this.balance = Number(delivered.balance != null ? delivered.balance : this.balance);
+							emitPointsUpdated({ balance: this.balance });
+						} else {
+							uni.showToast({ title: '支付成功，权益稍后自动到账', icon: 'none' });
+						}
 				} catch (err) {
 					uni.showToast({
 						title: err?.error || '购买失败，请稍后重试',

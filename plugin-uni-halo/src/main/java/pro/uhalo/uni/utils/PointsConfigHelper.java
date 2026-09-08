@@ -53,6 +53,7 @@ public final class PointsConfigHelper {
             .browse(parseActionRule(rulesNode.path("browse"), defaults.getBrowse()))
             .comment(parseActionRule(rulesNode.path("comment"), defaults.getComment()))
             .upvote(parseActionRule(rulesNode.path("upvote"), defaults.getUpvote()))
+            .vote(parseActionRule(rulesNode.path("vote"), defaults.getVote()))
             .signIn(parseSignInRule(rulesNode.path("signIn"), defaults.getSignIn()))
             .newUserGift(parseActionRule(rulesNode.path("newUserGift"), defaults.getNewUserGift()))
             .draw(parseDrawRule(rulesNode.path("draw"), defaults.getDraw()))
@@ -153,6 +154,7 @@ public final class PointsConfigHelper {
             case "browse" -> config.getRules().getBrowse();
             case "comment" -> config.getRules().getComment();
             case "upvote" -> config.getRules().getUpvote();
+            case "vote" -> config.getRules().getVote();
             default -> PointsActionRuleDTO.builder().build();
         };
     }

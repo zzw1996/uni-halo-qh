@@ -7,6 +7,7 @@
 <script>
 import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
 import PluginUnavailable from '@/components/plugin-unavailable/plugin-unavailable.vue';
+import { tryAutoWxLogin } from '@/utils/wxLogin.js';
 
 const homePagePath = '/pages/tabbar/home/home';
 const startPagePath = '/pagesA/start/start';
@@ -27,6 +28,33 @@ export default {
 		}
 	},
 	async onLoad(options) {
+		let pendingInvite = '';
+		// 保存分享卡片携带的邀请码，首次登录注册时由 wxLogin 消费
+		if (options && options.inviteCode) {
+			try {
+				pendingInvite = decodeURIComponent(options.inviteCode);
+				uni.setStorageSync('invite.pending', pendingInvite);
+			} catch (e) {
+				// 忽略存储异常
+			}
+		}
+
+		// 邀请海报小程序码：scene 形如 inv:邀请码，扫码进入即标记待消费邀请码
+		if (options && options.scene) {
+			try {
+				const scene = decodeURIComponent(options.scene);
+				if (typeof scene === 'string' && scene.startsWith('inv:')) {
+					const inviteCode = scene.substring(4).trim();
+					if (inviteCode) {
+						pendingInvite = inviteCode;
+						uni.setStorageSync('invite.pending', inviteCode);
+					}
+				}
+			} catch (e) {
+				// 忽略解析异常
+			}
+		}
+
 		// 本地开发，快速跳转页面，发布请设置 _DEV_ = false
 		if (_DEV_ && _DEV_TO_PATH_) {
 			if (_DEV_TO_TYPE_ == 'tabbar') {
@@ -50,14 +78,23 @@ export default {
 		uni.$tm.vx
 			.actions('config/fetchConfigs')
 			.then(async (res) => {
+				// 带邀请码进入：静默登录一次，首次进入小程序的用户将自动完成邀请绑定
+				if (pendingInvite) {
+					this.fnAutoLoginForInvite();
+				}
+
 				if (options.scene) {
 					if ('' !== options.scene) {
-						const postId = await this.getPostIdByQRCode(options.scene);
-						if (postId) {
-							uni.redirectTo({
-								url: articleDetailPath + `?name=${postId}`,
-								animationType: 'slide-in-right'
-							});
+						// 邀请海报场景码（inv: 前缀）已在上方作为邀请码处理，跳过文章码查询
+						const scene = decodeURIComponent(options.scene);
+						if (!scene.startsWith('inv:')) {
+							const postId = await this.getPostIdByQRCode(options.scene);
+							if (postId) {
+								uni.redirectTo({
+									url: articleDetailPath + `?name=${postId}`,
+									animationType: 'slide-in-right'
+								});
+							}
 						}
 					}
 				}
@@ -88,6 +125,18 @@ export default {
 			});
 	},
 	methods: {
+		/**
+		 * 带邀请码进入时静默登录：wx.login 用户无感知完成，
+		 * 首次进入（后端判断为新用户注册）自动绑定邀请关系并给邀请人发奖。
+		 * 静默失败不打扰用户，邀请码保留至下次登录成功时由 wxLogin 消费。
+		 */
+		async fnAutoLoginForInvite() {
+			try {
+				await tryAutoWxLogin(this.$httpApi.v2);
+			} catch (e) {
+				// 忽略静默登录失败
+			}
+		},
 		fnCheckShowStarted() {
 			if (!this.configs.appConfig.startConfig.enabled) {
 				uni.switchTab({

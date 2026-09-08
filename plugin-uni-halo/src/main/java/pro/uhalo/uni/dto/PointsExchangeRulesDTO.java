@@ -7,10 +7,10 @@ import lombok.Data;
 @Builder
 public class PointsExchangeRulesDTO {
 
-    /** 瞬间发布券 */
+    /** 瞬间发布券（已下线：个人主体 UGC 发布收费不合规，points=0 不可兑换） */
     @Builder.Default
     private PointsExchangeItemRuleDTO publishTicket = PointsExchangeItemRuleDTO.builder()
-        .points(50).dailyMaxCount(5).freeCount(3).build();
+        .points(0).dailyMaxCount(0).freeCount(0).build();
 
     /** 数据看板高级版（单次解锁，当日有效） */
     @Builder.Default

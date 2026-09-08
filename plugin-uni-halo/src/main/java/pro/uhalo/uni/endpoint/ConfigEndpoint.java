@@ -24,6 +24,7 @@ import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.services.UniHaloService;
 import pro.uhalo.uni.services.UserActivityService;
 import pro.uhalo.uni.services.WxAuthService;
+import pro.uhalo.uni.services.WxUserService;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.endpoint.CustomEndpoint;
 import run.halo.app.extension.GroupVersion;
@@ -42,15 +43,18 @@ public class ConfigEndpoint implements CustomEndpoint {
     private final UniHaloService uniHaloService;
     private final WxAuthService wxAuthService;
     private final UserActivityService userActivityService;
+    private final WxUserService wxUserService;
 
     public ConfigEndpoint(ReactiveExtensionClient client,
                           UniHaloService uniHaloService,
                           WxAuthService wxAuthService,
-                          UserActivityService userActivityService) {
+                          UserActivityService userActivityService,
+                          WxUserService wxUserService) {
         this.client = client;
         this.uniHaloService = uniHaloService;
         this.wxAuthService = wxAuthService;
         this.userActivityService = userActivityService;
+        this.wxUserService = wxUserService;
     }
 
     @Override
@@ -169,16 +173,60 @@ public class ConfigEndpoint implements CustomEndpoint {
                         .description("Cancel WeChat user activity such as upvote for an article.")
                         .tag(ApiTag);
                 })
+            .POST(Constants.END_POINT_API_BASE_PATH + "/userActivities/reactions",
+                this::recordUserReaction, builder -> {
+                    builder.operationId("RecordContentReaction")
+                        .description("Record an emoji reaction for a post or moment (switch replaces old).")
+                        .tag(ApiTag);
+                })
+            .DELETE(Constants.END_POINT_API_BASE_PATH + "/userActivities/reactions",
+                this::cancelUserReaction, builder -> {
+                    builder.operationId("CancelContentReaction")
+                        .description("Cancel all my emoji reactions for a post or moment.")
+                        .tag(ApiTag);
+                })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/userActivities/reactions/status",
+                this::getContentReactions, builder -> {
+                    builder.operationId("GetContentReactions")
+                        .description("Get emoji reaction counts and my current reaction.")
+                        .tag(ApiTag)
+                        .parameter(parameterBuilder()
+                            .name("articleName")
+                            .in(ParameterIn.QUERY)
+                            .description("Article or moment metadata name")
+                            .required(true)
+                            .implementation(String.class)
+                        )
+                        .parameter(parameterBuilder()
+                            .name("contentType")
+                            .in(ParameterIn.QUERY)
+                            .description("Content type: post (default) or moment")
+                            .required(false)
+                            .implementation(String.class)
+                        );
+                })
             .GET(Constants.END_POINT_API_BASE_PATH + "/getQRCodeImg/{postId}", this::getQRCodeImg,
                 builder -> {
                     builder.operationId("getQRCodeImg")
                         .description("getQRCodeImg")
                         .tag(ApiTag);
                 })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/getInviteQRCode/{inviteCode}", this::getInviteQRCode,
+                builder -> {
+                    builder.operationId("getInviteQRCode")
+                        .description("Generate mini program QR code for invite scene (scene=inv:code).")
+                        .tag(ApiTag);
+                })
             .GET(Constants.END_POINT_API_BASE_PATH + "/getQRCodeInfo/{key}", uniHaloService::getQRCodeInfo,
                 builder -> {
                     builder.operationId("getQRCodeInfo")
                         .description("getQRCodeInfo")
+                        .tag(ApiTag);
+                })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/lucky-admin", this::getLuckyAdmin,
+                builder -> {
+                    builder.operationId("LuckyWinningAdminPage")
+                        .description("Lucky winning management page (HTML shell, needs personal token).")
                         .tag(ApiTag);
                 })
             .build();
@@ -203,6 +251,52 @@ public class ConfigEndpoint implements CustomEndpoint {
             .onErrorResume(Exception.class, e -> {
                 log.warn("getQRCodeImg failed, postId={}: {}", postId, e.getMessage(), e);
                 return badRequest(resolveErrorMessage(e));
+            });
+    }
+
+    Mono<ServerResponse> getInviteQRCode(ServerRequest request) {
+        var inviteCode = request.pathVariable("inviteCode");
+        if (!StringUtils.hasText(inviteCode)) {
+            return badRequest("邀请码不能为空");
+        }
+        var normalized = inviteCode.trim().toUpperCase();
+        return wxUserService.fetchByInviteCode(normalized)
+            .hasElement()
+            .flatMap(exists -> {
+                if (!exists) {
+                    return badRequest("邀请码不存在");
+                }
+                return uniHaloService.resolveInviteQRCodeData(normalized)
+                    .flatMap(data -> ServerResponse.ok().bodyValue(data))
+                    .switchIfEmpty(Mono.defer(() -> badRequest("二维码生成失败，请稍后重试")))
+                    .onErrorResume(ExtensionException.class, e -> {
+                        log.warn("getInviteQRCode extension error, code={}: {}", normalized, e.getMessage(), e);
+                        return badRequest(resolveErrorMessage(e));
+                    })
+                    .onErrorResume(ResponseStatusException.class, e -> {
+                        log.warn("getInviteQRCode status error, code={}: {}", normalized, e.getMessage(), e);
+                        return badRequest(resolveErrorMessage(e));
+                    })
+                    .onErrorResume(Exception.class, e -> {
+                        log.warn("getInviteQRCode failed, code={}: {}", normalized, e.getMessage(), e);
+                        return badRequest(resolveErrorMessage(e));
+                    });
+            });
+    }
+
+    Mono<ServerResponse> getLuckyAdmin(ServerRequest request) {
+        return Mono.fromCallable(() -> {
+                var resource = new org.springframework.core.io.ClassPathResource("static/lucky-admin.html");
+                try (var in = resource.getInputStream()) {
+                    return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            })
+            .flatMap(html -> ServerResponse.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .bodyValue(html))
+            .onErrorResume(ex -> {
+                log.warn("lucky-admin page failed: {}", ex.getMessage());
+                return badRequest("中奖记录管理页加载失败");
             });
     }
 
@@ -416,6 +510,59 @@ public class ConfigEndpoint implements CustomEndpoint {
             .onErrorResume(Exception.class, e -> {
                 log.warn("cancelUserActivity failed: {}", e.getMessage(), e);
                 return badRequest("取消行为失败");
+            });
+    }
+
+    Mono<ServerResponse> recordUserReaction(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        if (!StringUtils.hasText(openid)) {
+            return badRequest("缺少 Wechat-Session-Id");
+        }
+        return WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, RecordUserActivityRequest.class))
+            .flatMap(body -> userActivityService.recordReaction(openid, body)
+                .flatMap(dto -> ServerResponse.ok().bodyValue(dto)))
+            .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+            .onErrorResume(ExtensionException.class, e -> {
+                log.warn("recordUserReaction extension error: {}", e.getMessage());
+                return badRequest("表情反馈失败");
+            })
+            .onErrorResume(Exception.class, e -> {
+                log.warn("recordUserReaction failed: {}", e.getMessage(), e);
+                return badRequest("表情反馈失败");
+            });
+    }
+
+    Mono<ServerResponse> cancelUserReaction(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        if (!StringUtils.hasText(openid)) {
+            return badRequest("缺少 Wechat-Session-Id");
+        }
+        return WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, RecordUserActivityRequest.class))
+            .flatMap(body -> userActivityService.cancelReaction(openid, body)
+                .flatMap(response -> jsonOk(response)))
+            .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+            .onErrorResume(ExtensionException.class, e -> {
+                log.warn("cancelUserReaction extension error: {}", e.getMessage());
+                return badRequest("取消表情失败");
+            })
+            .onErrorResume(Exception.class, e -> {
+                log.warn("cancelUserReaction failed: {}", e.getMessage(), e);
+                return badRequest("取消表情失败");
+            });
+    }
+
+    Mono<ServerResponse> getContentReactions(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        var articleName = request.queryParam("articleName").orElse(null);
+        var contentType = UserContentType.parse(request.queryParam("contentType").orElse(null));
+        return userActivityService.getReactionStatus(openid, articleName, contentType)
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("getContentReactions failed: {}", e.getMessage());
+                return badRequest("查询表情失败，请稍后重试");
             });
     }
 

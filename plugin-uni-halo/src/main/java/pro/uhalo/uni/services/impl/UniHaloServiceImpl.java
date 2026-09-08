@@ -16,6 +16,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import pro.uhalo.uni.dto.InviteQRCodeDataDTO;
 import pro.uhalo.uni.scheme.QRCodeInfo;
 import pro.uhalo.uni.services.QRCodeInfoService;
 import pro.uhalo.uni.services.UniHaloService;
@@ -59,6 +60,9 @@ public class UniHaloServiceImpl implements UniHaloService {
     private final AttachmentService attachmentService;
     private final ExternalLinkProcessor externalLinkProcessor;
     private final ConcurrentHashMap<String, Mono<String>> qrCodeGenerating = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Mono<InviteQRCodeDataDTO>> inviteQRCodeGenerating = new ConcurrentHashMap<>();
+
+    private static final String INVITE_SCENE_PREFIX = "inv:";
 
     public static String TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
     public static String GET_WXA_CODE_URL = "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=";
@@ -99,6 +103,47 @@ public class UniHaloServiceImpl implements UniHaloService {
                     .switchIfEmpty(Mono.error(new IllegalStateException("二维码记录创建失败，请稍后重试")))
                     .flatMap(info -> generateAndPersistQRCode(postId, info));
             }));
+    }
+
+    @Override
+    public Mono<InviteQRCodeDataDTO> resolveInviteQRCodeData(String inviteCode) {
+        if (!StringUtils.hasText(inviteCode)) {
+            return Mono.error(new IllegalStateException("邀请码不能为空"));
+        }
+        var normalized = inviteCode.trim().toUpperCase();
+        Mono<InviteQRCodeDataDTO> generating = inviteQRCodeGenerating.computeIfAbsent(normalized, code ->
+            generateInviteQRCodeData(code)
+                .cache()
+                .doFinally(signal -> inviteQRCodeGenerating.remove(code))
+        );
+        return generating;
+    }
+
+    private Mono<InviteQRCodeDataDTO> generateInviteQRCodeData(String inviteCode) {
+        var sceneKey = INVITE_SCENE_PREFIX + inviteCode;
+        return ensureAccessToken()
+            .flatMap(token -> requestWxacode(token, sceneKey))
+            .flatMap(bytes -> {
+                var base64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                return getMediaUrl("invite_" + inviteCode, bytes)
+                    .map(url -> externalLinkProcessor.processLink(url))
+                    .map(url -> InviteQRCodeDataDTO.builder()
+                        .inviteCode(inviteCode)
+                        .imageUrl(url)
+                        .base64(base64)
+                        .build())
+                    .switchIfEmpty(Mono.defer(() -> Mono.just(InviteQRCodeDataDTO.builder()
+                        .inviteCode(inviteCode)
+                        .base64(base64)
+                        .build())))
+                    .onErrorResume(ex -> {
+                        log.warn("invite QR upload failed, code={}: {}", inviteCode, ex.getMessage());
+                        return Mono.just(InviteQRCodeDataDTO.builder()
+                            .inviteCode(inviteCode)
+                            .base64(base64)
+                            .build());
+                    });
+            });
     }
 
     private Mono<String> generateAndPersistQRCode(String postId, QRCodeInfo info) {
@@ -247,7 +292,16 @@ public class UniHaloServiceImpl implements UniHaloService {
                 return Mono.error(new IllegalStateException("请先在插件配置中填写小程序 appId 和 appSecret"));
             }
             String url = TOKEN_URL + "?grant_type=client_credential&appid=" + appId + "&secret=" + appSecret;
-            return WEB_CLIENT.get().uri(url).retrieve().bodyToMono(JsonNode.class);
+            // 使用 String + 手动解析，避开部分 Spring/Jackson 组合下 bodyToMono(JsonNode.class) 的
+            // "Type definition error: [simple type, class com.fasterxml.jackson.databind.JsonNode]" 崩溃
+            return WEB_CLIENT.get().uri(url).retrieve().bodyToMono(String.class)
+                .map(raw -> {
+                    try {
+                        return OBJECT_MAPPER.readTree(raw);
+                    } catch (Exception ex) {
+                        throw new IllegalStateException("微信 access_token 响应解析失败", ex);
+                    }
+                });
         }).onErrorMap(this::mapWxApiError);
     }
 

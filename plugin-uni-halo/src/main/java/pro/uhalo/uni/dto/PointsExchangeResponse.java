@@ -3,6 +3,8 @@ package pro.uhalo.uni.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 @Builder
 public class PointsExchangeResponse {
@@ -16,16 +18,10 @@ public class PointsExchangeResponse {
     /** 当前余额 */
     private Long balance;
 
-    /** 发布券余额 */
-    private Integer publishTickets;
+    /** 可兑换权益列表（含今日已兑换次数），由插件后台 exchangeConfig 配置 */
+    private java.util.List<ExchangeItemDTO> items;
 
-    /** 每日免费发布数量 */
-    private Integer freeQuota;
-
-    /** 今日可再兑换次数 limit / 已用 dailyLimit：remaining = 剩余可兑换 */
-    private Integer remaining;
-
-    /** 今日是否已解锁数据看板高级版 */
+    /** 兼容字段：今日是否已解锁数据看板高级版（由 items 中 dashboard_advanced 推导，保留旧前端兼容） */
     private Boolean dashboardUnlockedToday;
 
     private Boolean alreadyExchanged;

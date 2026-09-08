@@ -9,9 +9,11 @@ public enum UserActivityType {
 
     COMMENT("comment"),
     BROWSE("browse"),
-    UPVOTE("upvote");
+    UPVOTE("upvote"),
+    VOTE("vote"),
+    REACTION("reaction");
 
-    private static final Set<String> VALUES = Set.of("comment", "browse", "upvote");
+    private static final Set<String> VALUES = Set.of("comment", "browse", "upvote", "vote", "reaction");
 
     private final String value;
 
@@ -29,7 +31,7 @@ public enum UserActivityType {
         }
         var type = raw.trim().toLowerCase();
         if (!VALUES.contains(type)) {
-            throw new WxAuthException("type 须为 comment、browse 或 upvote");
+            throw new WxAuthException("type 须为 comment、browse、upvote、vote 或 reaction");
         }
         return UserActivityType.valueOf(type.toUpperCase());
     }
