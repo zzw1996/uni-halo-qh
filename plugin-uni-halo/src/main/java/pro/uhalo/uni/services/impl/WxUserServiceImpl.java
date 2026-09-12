@@ -92,6 +92,11 @@ public class WxUserServiceImpl implements WxUserService {
             .map(tuple -> WxUserLookup.from(tuple.getT1(), tuple.getT2(), tuple.getT3()));
     }
 
+    @Override
+    public Mono<java.util.List<WxUser>> listAllUsers() {
+        return client.listAll(WxUser.class, new ListOptions(), null).collectList();
+    }
+
     private static boolean matchesKeyword(WxUser user, String keyword) {
         if (keyword == null) {
             return true;

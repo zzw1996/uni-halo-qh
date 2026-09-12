@@ -206,16 +206,63 @@ class LevelServiceImplTest {
     }
 
     @Test
-    void equipOutfitShouldRequireOwnershipFirst() throws Exception {
+    void buyOutfitShouldAllowRepurchaseWhenExpired() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        var now = java.time.Instant.now().getEpochSecond();
+        account.setBalance(1000L);
+        account.setOutfitOwned("[{\"key\":\"avatar_gold\",\"boughtAt\":"
+            + (now - 100000) + ",\"expireAt\":" + (now - 100) + "}]");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(persistence.appendRecord(any(PointsRecord.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        StepVerifier.create(levelService.buyOutfit(OPENID, "avatar_gold"))
+            .consumeNextWith(response -> {
+                assertThat(response.getBalance()).isEqualTo(800L);
+                assertThat(response.getMessage()).contains("已获得");
+            })
+            .verifyComplete();
+        verify(persistence).appendRecord(any(PointsRecord.class));
+    }
+
+    @Test
+    void equipOutfitShouldFallbackWhenNotOwned() throws Exception {
         stubConfig(DEFAULT_CONFIG);
         when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
         StepVerifier.create(levelService.equipOutfit(OPENID, "avatar_gold"))
-            .expectErrorSatisfies(ex -> assertThat(ex)
-                .isInstanceOf(WxAuthException.class)
-                .hasMessageContaining("请先购买"))
-            .verify();
-        verify(persistence, never()).saveAccount(any());
+            .consumeNextWith(response -> {
+                assertThat(response.getAvatarFrame()).isNull();
+                assertThat(response.getMessage()).contains("过期");
+            })
+            .verifyComplete();
+        verify(persistence).saveAccount(any(UserPoints.class));
+    }
+
+    @Test
+    void equipOutfitShouldFallbackWhenExpired() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        // 已拥有但已过期：佩戴应回退脱装扮（而非提示"请先购买"）。
+        var now = java.time.Instant.now().getEpochSecond();
+        account.setOutfitOwned("[{\"key\":\"avatar_gold\",\"boughtAt\":"
+            + (now - 100000) + ",\"expireAt\":" + (now - 100) + "}]");
+        account.setActiveAvatarFrame("gold");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        StepVerifier.create(levelService.equipOutfit(OPENID, "avatar_gold"))
+            .consumeNextWith(response -> {
+                assertThat(response.getAvatarFrame()).isNull();
+                assertThat(account.getActiveAvatarFrame()).isNull();
+                assertThat(response.getMessage()).contains("过期");
+            })
+            .verifyComplete();
+        verify(persistence).saveAccount(any(UserPoints.class));
     }
 
     @Test
@@ -233,5 +280,82 @@ class LevelServiceImplTest {
             })
             .verifyComplete();
         verify(persistence).saveAccount(any(UserPoints.class));
+    }
+
+    // ==================== 装扮状态下发：到期明细与已下架装扮 ====================
+    //
+    // 两个都必须下发给前端：限时装扮不显示剩余天数，用户会在到期后以为权益凭空消失；
+    // 已下架装扮不单独列出，用户会「买过的东西在列表里消失」，同样只能来投诉。
+
+    @Test
+    void getOutfitStatusShouldHideExpiredOutfitFromOwned() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        var now = Instant.now().getEpochSecond();
+        account.setOutfitOwned("[{\"key\":\"avatar_gold\",\"boughtAt\":"
+            + (now - 100000) + ",\"expireAt\":" + (now - 100) + "}]");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+
+        StepVerifier.create(levelService.getOutfitStatus(OPENID))
+            .consumeNextWith(status -> {
+                // 过期项不下发为「已拥有」，用户可重新购买
+                assertThat(status.getOwned()).isEmpty();
+                assertThat(status.getOwnedDetails()).isEmpty();
+                assertThat(status.getItems()).hasSize(1);
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void getOutfitStatusShouldExposeExpiryDetailForLimitedOutfit() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        var expireAt = Instant.now().getEpochSecond() + 3 * 86400L;
+        account.setOutfitOwned("[{\"key\":\"avatar_gold\",\"boughtAt\":1,\"expireAt\":"
+            + expireAt + "}]");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+
+        StepVerifier.create(levelService.getOutfitStatus(OPENID))
+            .consumeNextWith(status -> {
+                assertThat(status.getOwned()).containsExactly("avatar_gold");
+                assertThat(status.getOwnedDetails()).hasSize(1);
+                var detail = status.getOwnedDetails().get(0);
+                assertThat(detail.getKey()).isEqualTo("avatar_gold");
+                assertThat(detail.isPermanent()).isFalse();
+                assertThat(detail.getExpireAt()).isEqualTo(expireAt);
+                assertThat(status.getOrphanOwned()).isEmpty();
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void getOutfitStatusShouldListOrphanOwnedOutfits() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        // DEFAULT_CONFIG 只登记了 avatar_gold；avatar_removed 是站长后来删掉的装扮
+        account.setOutfitOwned("[{\"key\":\"avatar_gold\",\"boughtAt\":1,\"expireAt\":null},"
+            + "{\"key\":\"avatar_removed\",\"boughtAt\":1,\"expireAt\":null}]");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+
+        StepVerifier.create(levelService.getOutfitStatus(OPENID))
+            .consumeNextWith(status -> {
+                assertThat(status.getOwned()).containsExactly("avatar_gold", "avatar_removed");
+                assertThat(status.getOrphanOwned()).containsExactly("avatar_removed");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void getOutfitStatusShouldTreatLegacyKeyArrayAsPermanent() throws Exception {
+        stubConfig(DEFAULT_CONFIG);
+        // v1.0.96 及之前的旧格式（纯 key 数组）：按永久处理，惰性迁移不主动改写存量数据
+        account.setOutfitOwned("[\"avatar_gold\"]");
+        when(persistence.getOrCreateAccount(OPENID)).thenReturn(Mono.just(account));
+
+        StepVerifier.create(levelService.getOutfitStatus(OPENID))
+            .consumeNextWith(status -> {
+                assertThat(status.getOwned()).containsExactly("avatar_gold");
+                assertThat(status.getOwnedDetails()).hasSize(1);
+                assertThat(status.getOwnedDetails().get(0).isPermanent()).isTrue();
+                assertThat(status.getOwnedDetails().get(0).getExpireAt()).isNull();
+            })
+            .verifyComplete();
     }
 }

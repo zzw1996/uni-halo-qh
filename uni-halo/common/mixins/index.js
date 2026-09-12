@@ -23,9 +23,6 @@ export default {
                 haloConfig() {
                     return this.$tm.vx.getters().getConfigs;
                 },
-                haloPluginsConfig() {
-                    return this.$tm.vx.getters().getConfigs?.pluginConfig;
-                },
                 // 获取全局应用设置
                 globalAppSettings() {
                     return uni.$tm.vx.getters().getSettings;

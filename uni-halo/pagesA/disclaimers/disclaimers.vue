@@ -6,17 +6,11 @@
         <!-- 静态写法 -->
         <block v-else>
             <view class="text-weight-b text-size-lg text-align-center">《 本博客免责声明 》</view>
-            <view v-if="false" class="text-size-s text-align-center mt-12 text-grey-darken-1">—— 博主：{{ bloggerInfo.nickname }} ——</view>
             <view class="mt-32">1、本博客属于个人非盈利性质的网站，所有转载的文章都以遵循原作者的版权声明注明了文章来源。</view>
             <view class="mt-24">2、如果原文没有版权声明，按照目前互联网开放的原则，本博客将在不通知作者的情况下转载文章。</view>
             <view class="mt-24">3、如果原文明确注明“禁止转载”，本博客将不会转载。</view>
             <view class="mt-24">
-                4、如果本博客转载的文章不符合作者的版权声明或者作者不想让本博客转载您的文章，请邮件告知
-                <text class="text-bg-gradient-light-blue-accent ml-12 mr-12 " @click="$utils.copyText(bloggerInfo.email, '电子邮箱已复制到剪贴板！')">
-                    <text class="iconfont icon-mail-fill text-size-m mr-6"></text>
-                    {{ bloggerInfo.email }}
-                </text>
-                ，博主将会在第一时间删除相关信息！
+                4、如果本博客转载的文章不符合作者的版权声明或者作者不想让本博客转载您的文章，请邮件告知博主，博主将会在第一时间删除相关信息！
             </view>
             <view class="mt-24">5、本博客转载文章仅为留作备份和知识点分享的目的。</view>
             <view class="mt-24">
@@ -40,11 +34,6 @@ export default {
         disclaimersContent() {
             const basicConfig = this.haloConfigs.basicConfig;
             return basicConfig?.disclaimers.content
-        },
-        bloggerInfo() {
-            const blogger = this.haloConfigs.authorConfig.blogger;
-            blogger.avatar = this.$utils.checkAvatarUrl(blogger.avatar)
-            return blogger;
         },
     }
 };

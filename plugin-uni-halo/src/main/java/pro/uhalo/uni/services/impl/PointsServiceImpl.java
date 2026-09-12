@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -68,11 +69,41 @@ public class PointsServiceImpl implements PointsService {
     private static final int SIGN_IN_RATE_LIMIT_PER_MINUTE = 10;
     private static final int MAX_REF_KEY_LENGTH = 150;
     private static final String NEW_USER_ACTION = "new_user";
+    /** 榜单奖励（周榜结算发放），幂等 ref 为「年-周」 */
+    static final String RANK_REWARD_ACTION = "rank_reward";
     private static final String DRAW_ACTION = "draw";
     private static final String DRAW_COST_ACTION = "draw_cost";
     private static final String EXCHANGE_CONFIG_GROUP = "exchangeConfig";
     private static final String EXCHANGE_DASHBOARD = "dashboard_advanced";
     private static final String EXCHANGE_DASHBOARD_ACTION = "exchange_dashboard";
+    /**
+     * 虚拟支付道具直购发放数据看板高级版时写入的动作码。
+     *
+     * <p>与积分兑换的 {@code exchange_dashboard} 区分，使「积分明细」能如实显示
+     * 该权益是花钱买的还是积分兑换的；但两者在「当日是否已开通」判定中合并计数，
+     * 见 {@code exchangeActionsOf}。</p>
+     */
+    static final String PURCHASE_DASHBOARD_ACTION = "purchase_dashboard";
+
+    /**
+     * 积分商城里属于「券」类的兑换项 key。
+     *
+     * <p>这些 key 兑换成功后必须真正给账户加券，否则用户扣了积分却拿不到券。
+     * 此前 {@code exchange()} 只扣积分写流水、从不修改券字段，
+     * 券类兑换等于「花了积分什么都没拿到」。
+     * key 与虚拟支付道具类型同名，便于站长理解「同一个东西既能买也能换」。</p>
+     */
+    private static final String EXCHANGE_PUBLISH_TICKET = "publish_ticket";
+    private static final String EXCHANGE_CONTENT_TICKET = "content_ticket";
+
+    /**
+     * 每次兑换券类权益发放的张数。
+     *
+     * <p>兑换项 repeater 目前没有「数量」字段，固定发 1 张。
+     * 站长若要一次发多张，需要新增字段（见方案文档的后续优化项）。</p>
+     */
+    private static final int TICKETS_PER_EXCHANGE = 1;
+
     private static final SecureRandom PRIZE_RANDOM = new SecureRandom();
 
     private final PointsPersistence persistence;
@@ -207,7 +238,43 @@ public class PointsServiceImpl implements PointsService {
                 }));
     }
 
+    @Override
+    public Mono<PointsEarnResponse> grantRankReward(String openid, int points, String weekKey,
+        String description) {
+        if (points <= 0) {
+            return Mono.just(PointsEarnResponse.builder()
+                .earned(0)
+                .balance(0)
+                .message("该名次无奖励")
+                .build());
+        }
+        return requireOpenid(openid)
+            .flatMap(id -> {
+                var earnKey = buildEarnKey(id, RANK_REWARD_ACTION, weekKey);
+                return persistence.findRecordByEarnKey(earnKey)
+                    .flatMap(existing -> Mono.just(PointsEarnResponse.builder()
+                        .earned(0)
+                        .balance(existing.getBalance())
+                        .message("该周奖励已发放")
+                        .build()))
+                    .switchIfEmpty(Mono.defer(() -> grantPoints(id, RANK_REWARD_ACTION, points,
+                        description, weekKey, earnKey, "该周奖励已发放")));
+            });
+    }
+
     private Mono<PointsEarnResponse> grantNewUserGift(String openid, int points, String earnKey) {
+        return grantPoints(openid, NEW_USER_ACTION, points, "新用户见面礼", "新人礼", earnKey,
+            "新人礼已领取");
+    }
+
+    /**
+     * 直接发放积分（不走每日上限校验，用于「新人礼 / 榜单奖励」这类一次性奖励）。
+     *
+     * <p>{@code earnKey} 是唯一的幂等锚点：同一用户同一锚点只产生一条流水，
+     * 并发发放时唯一约束失败按「已发放」处理。</p>
+     */
+    private Mono<PointsEarnResponse> grantPoints(String openid, String action, int points,
+        String description, String refName, String earnKey, String duplicateMessage) {
         return persistence.getOrCreateAccount(openid)
             .flatMap(account -> resolveWxUserId(openid, account)
                 .flatMap(wxUserId -> {
@@ -216,8 +283,8 @@ public class PointsServiceImpl implements PointsService {
                     if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
                         account.setWxUserId(wxUserId);
                     }
-                    var record = persistence.newRecord(openid, NEW_USER_ACTION, points, newBalance,
-                        "新用户见面礼", "新人礼", earnKey, wxUserId);
+                    var record = persistence.newRecord(openid, action, points, newBalance,
+                        description, refName, earnKey, wxUserId);
                     return persistence.saveAccount(account)
                         .then(persistence.appendRecord(record))
                         .thenReturn(PointsEarnResponse.builder()
@@ -227,13 +294,13 @@ public class PointsServiceImpl implements PointsService {
                             .build());
                 }))
             .onErrorResume(ex -> {
-                // 并发领取时唯一流水创建失败视为已领取
+                // 并发发放时唯一流水创建失败视为已发放
                 if (isDuplicateRecordError(ex)) {
                     return persistence.findRecordByEarnKey(earnKey)
                         .flatMap(existing -> Mono.just(PointsEarnResponse.builder()
                             .earned(0)
                             .balance(existing.getBalance())
-                            .message("新人礼已领取")
+                            .message(duplicateMessage)
                             .build()));
                 }
                 return Mono.error(ex);
@@ -286,7 +353,7 @@ public class PointsServiceImpl implements PointsService {
                             }
                             var action = exchangeActionOf(itemKey);
                             return persistence.listRecordsByOpenid(id)
-                                .map(records -> countRecordsToday(records, action, today()))
+                                .map(records -> countRecordsToday(records, exchangeActionsOf(itemKey), today()))
                                 .flatMap(todayCount -> {
                                     if (cfg.dailyMax() > 0 && todayCount >= cfg.dailyMax()) {
                                         return Mono.error(new WxAuthException("今日兑换次数已达上限"));
@@ -298,21 +365,44 @@ public class PointsServiceImpl implements PointsService {
                                                     "积分不足，需要 " + cfg.points() + " 积分"));
                                             }
                                             var newBalance = safeBalance(account) - cfg.points();
-                                            account.setBalance(newBalance);
                                             var earnKey = buildEarnKey(id, action,
                                                 today() + "-" + (todayCount + 1));
                                             var record = persistence.newRecord(id, action,
                                                 -cfg.points(), newBalance,
                                                 cfg.name(), cfg.description(), earnKey,
                                                 account.getWxUserId());
-                                            return persistence.saveAccount(account)
-                                                .then(persistence.appendRecord(record))
-                                                .thenReturn(PointsExchangeResponse.builder()
-                                                    .item(itemKey)
-                                                    .points(cfg.points())
-                                                    .balance(newBalance)
-                                                    .message("兑换成功：" + cfg.name())
-                                                    .build());
+                                            // 顺序要求：**先写幂等流水，成功后再改账户**。
+                                            // 流水资源名由 earnKey 派生故唯一，并发兑换同一权益时
+                                            // 只有一个 create 能成功；若先改账户，两个并发请求会读到
+                                            // 相同的 todayCount 与余额、各自扣一次积分，
+                                            // 结果是一个兑换扣了积分却既没记账也没发券。
+                                            return persistence.appendRecord(record)
+                                                .onErrorResume(ex -> {
+                                                    if (isDuplicateNameError(ex)) {
+                                                        log.info("兑换流水已存在，跳过重复兑换：earnKey={}", earnKey);
+                                                        return Mono.empty();
+                                                    }
+                                                    return Mono.error(ex);
+                                                })
+                                                .flatMap(saved -> {
+                                                    // 拿到幂等位后才允许改账户：扣积分 + 按权益类型发券
+                                                    account.setBalance(newBalance);
+                                                    applyTicketGrant(account, itemKey);
+                                                    return persistence.saveAccount(account)
+                                                        .thenReturn(PointsExchangeResponse.builder()
+                                                            .item(itemKey)
+                                                            .points(cfg.points())
+                                                            .balance(newBalance)
+                                                            .message("兑换成功：" + cfg.name())
+                                                            .build());
+                                                })
+                                                .switchIfEmpty(Mono.defer(() -> Mono.just(
+                                                    PointsExchangeResponse.builder()
+                                                        .item(itemKey)
+                                                        .points(0)
+                                                        .balance(safeBalance(account))
+                                                        .message("请勿重复提交")
+                                                        .build())));
                                         });
                                 });
                         });
@@ -340,7 +430,7 @@ public class PointsServiceImpl implements PointsService {
                                             .dailyMaxCount(item.dailyMax())
                                             .description(item.description())
                                             .todayCount(countRecordsToday(records,
-                                                exchangeActionOf(item.key()), today))
+                                                exchangeActionsOf(item.key()), today))
                                             .build())
                                         .toList();
                                     return PointsExchangeResponse.builder()
@@ -449,12 +539,23 @@ public class PointsServiceImpl implements PointsService {
     }
 
     private static int countRecordsToday(List<PointsRecord> records, String action, String date) {
-        if (records == null || records.isEmpty()) {
+        return countRecordsToday(records, Set.of(action), date);
+    }
+
+    /**
+     * 统计当日命中任一动作码的流水条数。
+     *
+     * <p>同一权益可能有多条获取路径（积分兑换 / 现金道具直购），
+     * 判定「当日是否已开通」时必须把这些路径合并计数，
+     * 否则现金购买的用户看板不会解锁，或会重复消耗积分再兑换一次。</p>
+     */
+    private static int countRecordsToday(List<PointsRecord> records, Set<String> actions, String date) {
+        if (records == null || records.isEmpty() || actions == null || actions.isEmpty()) {
             return 0;
         }
         var count = 0;
         for (var record : records) {
-            if (record == null || !action.equals(record.getAction())) {
+            if (record == null || !actions.contains(record.getAction())) {
                 continue;
             }
             if (isSameDay(record.getCreateTime(), date)) {
@@ -478,6 +579,21 @@ public class PointsServiceImpl implements PointsService {
             }
         }
         return sanitized.length() == 0 ? EXCHANGE_DASHBOARD_ACTION : "exchange_" + sanitized;
+    }
+
+    /**
+     * 某权益在「当日已开通」判定中应计入的全部动作码。
+     *
+     * <p>数据看板高级版有两条获取路径：积分兑换写 {@code exchange_dashboard}，
+     * 虚拟支付道具直购写 {@code purchase_dashboard}。两者都表示当日已开通，
+     * 必须一并计入，否则现金购买的用户看板不生效、或会再消耗积分重复兑换。</p>
+     */
+    private static Set<String> exchangeActionsOf(String item) {
+        var primary = exchangeActionOf(item);
+        if (EXCHANGE_DASHBOARD.equals(item)) {
+            return Set.of(primary, PURCHASE_DASHBOARD_ACTION);
+        }
+        return Set.of(primary);
     }
 
     @Override
@@ -577,10 +693,11 @@ public class PointsServiceImpl implements PointsService {
     }
 
     @Override
-    public Mono<PointsHistoryResponse> listHistory(String openid, int page, int size) {
+    public Mono<PointsHistoryResponse> listHistory(String openid, String action, int page, int size) {
+        var normalizedAction = StringUtils.hasText(action) ? action.trim().toLowerCase(Locale.ROOT) : null;
         return requireOpenid(openid)
             .flatMap(id -> persistence.listRecordsByOpenid(id)
-                .map(records -> toHistoryPage(records, page, size)));
+                .map(records -> toHistoryPage(records, normalizedAction, page, size)));
     }
 
     @Override
@@ -913,14 +1030,29 @@ public class PointsServiceImpl implements PointsService {
             });
     }
 
-    private PointsHistoryResponse toHistoryPage(List<PointsRecord> records, int page, int size) {
+    /**
+     * 明细分页。
+     *
+     * <p>过滤（action）必须在排序与分页<b>之前</b>：否则会出现「筛选后第一页是空的、
+     * 但后面几页其实有记录」这种分页错乱。原实现已是全量加载后内存分页，
+     * 因此这里过滤不引入额外查询成本。</p>
+     */
+    private PointsHistoryResponse toHistoryPage(List<PointsRecord> records, String action, int page,
+        int size) {
         var normalizedPage = Math.max(page, DEFAULT_PAGE);
         var normalizedSize = Math.min(Math.max(size, 1), MAX_SIZE);
-        var sorted = records.stream()
+        var filtered = action == null ? records : records.stream()
+            .filter(record -> action.equals(record.getAction()))
+            .toList();
+        var sorted = filtered.stream()
             .sorted(Comparator.comparing(PointsRecord::getCreateTime,
                 Comparator.nullsLast(Comparator.naturalOrder())).reversed())
             .toList();
         var total = sorted.size();
+        // 本次查询范围内的积分合计（正负相加）：给「抽奖消耗明细」这类页面直接展示累计值
+        var totalPoints = sorted.stream()
+            .mapToLong(record -> record.getPoints() == null ? 0L : record.getPoints())
+            .sum();
         var from = Math.min(normalizedPage * normalizedSize, total);
         var to = Math.min(from + normalizedSize, total);
         var items = sorted.subList(from, to).stream()
@@ -929,6 +1061,7 @@ public class PointsServiceImpl implements PointsService {
         return PointsHistoryResponse.builder()
             .items(items)
             .total(total)
+            .totalPoints(totalPoints)
             .hasNext(to < total)
             .build();
     }
@@ -1066,6 +1199,60 @@ public class PointsServiceImpl implements PointsService {
 
     static long safeBalance(UserPoints account) {
         return account.getBalance() == null ? 0L : Math.max(0L, account.getBalance());
+    }
+
+    /**
+     * 券数量兜底：null 与负数一律按 0 处理。
+     *
+     * <p>阅读券、发布券都是后来加入的可空字段，存量账户读到的值必然为 null，
+     * 不兜底会在累加时抛 NPE 导致兑换失败。</p>
+     */
+    static int safeTickets(Integer tickets) {
+        return tickets == null ? 0 : Math.max(0, tickets);
+    }
+
+    /**
+     * 券类兑换项的实际发放：把券加到账户上。
+     *
+     * <p>⚠️ 这一步不能省。{@code exchange()} 原本只扣积分写流水，
+     * 对券类兑换项来说用户「积分被扣、券没到手」，是实打实的资损。
+     * 看板高级版（dashboard_advanced）不在此列——它的生效依据是流水本身
+     * （{@code exchangeActionsOf} 统计当日动作码），不需要改账户字段。</p>
+     *
+     * <p>调用时机必须在幂等流水写入成功之后，与扣积分在同一次 saveAccount 内完成，
+     * 保证「扣积分」与「发券」要么都成功、要么都不发生。</p>
+     */
+    private static void applyTicketGrant(UserPoints account, String itemKey) {
+        if (account == null || !StringUtils.hasText(itemKey)) {
+            return;
+        }
+        switch (itemKey.trim().toLowerCase()) {
+            case EXCHANGE_PUBLISH_TICKET -> account.setPublishTickets(
+                safeTickets(account.getPublishTickets()) + TICKETS_PER_EXCHANGE);
+            case EXCHANGE_CONTENT_TICKET -> account.setContentTickets(
+                safeTickets(account.getContentTickets()) + TICKETS_PER_EXCHANGE);
+            default -> {
+                // 其余兑换项（如看板高级版）靠流水判定生效，不改账户字段
+            }
+        }
+    }
+
+    /**
+     * 是否为「资源名已存在」类冲突错误。
+     *
+     * <p>积分流水的 metadata.name 由 earnKey 派生、全局唯一，
+     * create 冲突即代表这笔流水已写过（并发或重复提交），
+     * 调用方据此判定幂等而不是把错误抛给用户。</p>
+     */
+    private static boolean isDuplicateNameError(Throwable ex) {
+        var message = ex.getMessage();
+        if (message == null || message.isEmpty()) {
+            return false;
+        }
+        var normalized = message.toLowerCase();
+        return normalized.contains("already exists")
+            || normalized.contains("duplicate")
+            || normalized.contains("已存在");
     }
 
     static String today() {

@@ -496,187 +496,6 @@ spec:
                   value: false
               help: 底部的波浪效果
           help: 配置项中，提到的内置 类样式 相关的内容，请查阅 https://uni-halo.925i.cn/ 相关文档
-    - group: pageConfig
-      label: 页面配置
-      formSchema:
-        - $formkit: group
-          name: homeConfig
-          label: 首页配置
-          value:
-            pageTitle: "首页"
-            useCategory: true
-          children:
-            - $formkit: text
-              validation: required
-              name: pageTitle
-              label: 页面标题
-              value: "首页"
-            - $formkit: select
-              name: useCategory
-              label: 是否显示分类
-              value: true
-              options:
-                - label: 是
-                  value: true
-                - label: 否
-                  value: false
-              help: 是否显示精品文章分类
-        - $formkit: group
-          name: galleryConfig
-          label: 图库配置
-          value:
-            pageTitle: "图库"
-            useWaterfall: true
-          children:
-            - $formkit: text
-              validation: required
-              name: pageTitle
-              label: 页面标题
-              value: "图库"
-            - $formkit: select
-              name: useWaterfall
-              label: 是否使用瀑布流
-              value: true
-              options:
-                - label: 是
-                  value: true
-                - label: 否
-                  value: false
-              help: 是否使用瀑布流布局，否则使用列表布局
-        - $formkit: group
-          name: aboutConfig
-          label: 关于配置
-          value:
-            pageTitle: "关于博主"
-            bgImageUrl: "https://uni-halo.925i.cn/uni_halo/uni_halo_profile_bg.jpg"
-            waveImageUrl: "https://uni-halo.925i.cn/uni_halo/uni_halo_about_wave.gif"
-          children:
-            - $formkit: text
-              validation: required
-              name: pageTitle
-              label: 页面标题
-              value: "关于博主"
-            - $formkit: attachment
-              name: bgImageUrl
-              label: 页面背景图
-              value: "https://uni-halo.925i.cn/uni_halo/uni_halo_profile_bg.jpg"
-              validation: required
-              help: 资料卡背景图
-            - $formkit: attachment
-              name: waveImageUrl
-              label: 页面波浪图
-              value: "https://uni-halo.925i.cn/uni_halo/uni_halo_about_wave.gif"
-              validation: required
-              help: 资料卡波浪图
-    - group: authorConfig
-      label: 我的配置
-      formSchema:
-        - $formkit: group
-          name: blogger
-          label: 博主信息
-          value:
-            nickname: ""
-            avatar: ""
-            email: ""
-            description: ""
-          children:
-            - $formkit: text
-              validation: required
-              name: nickname
-              label: 昵称
-              value: "uni-halo"
-            - $formkit: attachment
-              validation: required
-              name: avatar
-              label: 头像
-              value: ""
-            - $formkit: text
-              validation: required
-              name: email
-              label: 邮箱
-              value: ""
-            - $formkit: text
-              validation: required
-              name: description
-              label: 简介
-              value: ""
-        - $formkit: group
-          name: social
-          label: 社交信息
-          value:
-            enabled: true
-            qq: ""
-            wechat: ""
-            weibo: ""
-            email: ""
-            juejin: ""
-            bilibili: ""
-            gitee: ""
-            github: ""
-            csdn: ""
-          help: 我的社交信息页面显示的内容
-          children:
-            - $formkit: select
-              name: enabled
-              id: socialEnabled
-              label: 是否启用
-              value: true
-              options:
-                - label: 是
-                  value: true
-                - label: 否
-                  value: false
-              help: 是否启用社交信息页面
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: qq
-              label: QQ号
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: wechat
-              label: 微信号
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: weibo
-              label: 微博地址
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: email
-              label: 邮箱
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: blog
-              label: 博客
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: bilibili
-              label: B站
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: juejin
-              label: 掘金B站
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: csdn
-              label: CSDN
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: gitee
-              label: Gitee
-              value: ""
-            - $formkit: text
-              if: "$get(socialEnabled).value === true"
-              name: github
-              label: Github
-              value: ""
     - group: imagesConfig
       label: 图片配置
       formSchema:
@@ -721,314 +540,6 @@ spec:
           label: 空图片
           value: ""
           help: 图片资源为空时显示的图片，请选择较小的图片
-    - group: loveConfig
-      label: 恋爱配置
-      formSchema:
-        - $formkit: select
-          name: loveEnabled
-          id: loveEnabled
-          label: 是否启用
-          value: false
-          options:
-            - label: 是
-              value: true
-            - label: 否
-              value: false
-          validation: required
-          help: 启用恋爱日记功能后，可以在我的页面导航找到相关入口
-        - $formkit: text
-          if: "$get(loveEnabled).value === true"
-          name: loveDateTitle
-          label: 纪念日标题
-          value: 这是我们一起走过的
-          validation: required
-        - $formkit: date
-          if: "$get(loveEnabled).value === true"
-          name: loveDate
-          label: 恋爱纪念日
-          value: ""
-          validation: required
-          help: 恋爱纪念日，用于计算恋爱天数，同时这可是一个非常重要的节日呢，可不能忘记哦~
-        - $formkit: group
-          if: "$get(loveEnabled).value === true"
-          name: pageImages
-          label: 图片配置
-          value:
-            bgImageUrl: "https://uni-halo.925i.cn/uni_halo_love/love_bg1.png"
-            waveImageUrl: "https://uni-halo.925i.cn/uni_halo/uni_halo_about_wave.gif"
-            heartImageUrl: "https://uni-halo.925i.cn/uni_halo_love/like.png"
-          children:
-            - $formkit: attachment
-              name: bgImageUrl
-              label: 背景图片
-              value: ""
-              validation: required
-            - $formkit: attachment
-              name: waveImageUrl
-              label: 波浪图片
-              value: ""
-              validation: required
-            - $formkit: attachment
-              name: heartImageUrl
-              label: 爱心图片
-              value: ""
-              validation: required
-        - $formkit: group
-          if: "$get(loveEnabled).value === true"
-          name: loveInfo
-          label: 恋人信息
-          value:
-            boyNickname: ""
-            boyAvatar: ""
-            girlNickname: ""
-            girlAvatar: ""
-            loveDate: ""
-          children:
-            - $formkit: text
-              name: boyNickname
-              label: 男生昵称
-              value: ""
-              validation: required
-            - $formkit: attachment
-              name: boyAvatar
-              label: 男生头像
-              value: ""
-              validation: required
-            - $formkit: text
-              name: girlNickname
-              label: 女生昵称
-              value: ""
-              validation: required
-            - $formkit: attachment
-              name: girlAvatar
-              label: 女生头像
-              value: ""
-              validation: required
-        - $formkit: group
-          if: "$get(loveEnabled).value === true"
-          name: ourStory
-          label: 我们的故事
-          value:
-            enabled: true
-            iconUrl: ""
-            content: ""
-          children:
-            - $formkit: select
-              name: enabled
-              id: ourStoryEnabled
-              label: 是否启用
-              value: false
-              options:
-                - label: 是
-                  value: true
-                - label: 否
-                  value: false
-              validation: required
-            - $formkit: attachment
-              name: iconUrl
-              label: 图标地址
-              value: ""
-              validation: required
-              help: 功能图标图片地址
-            - $formkit: code
-              if: "$get(ourStoryEnabled).value === true"
-              name: content
-              label: 故事经历
-              value: ""
-              language: html
-              height: 200px
-              help: 可以写下彼此的恋爱经过哦，支持 html 语法。
-        - $formkit: group
-          if: "$get(loveEnabled).value === true"
-          name: lovePhoto
-          label: 恋爱相册
-          value:
-            enabled: false
-            iconUrl: ""
-            groupName: ""
-          children:
-            - $formkit: select
-              name: enabled
-              id: lovePhotoEnabled
-              label: 是否启用
-              value: false
-              options:
-                - label: 启用
-                  value: true
-                - label: 关闭
-                  value: false
-              validation: required
-              help: 启用恋爱相册后，可以在恋爱日记中查看恋爱相册
-            - $formkit: attachment
-              name: iconUrl
-              label: 图标地址
-              value: ""
-              validation: required
-              help: 功能图标图片地址
-            - $formkit: text
-              if: "$get(lovePhotoEnabled).value === true"
-              name: groupName
-              label: 相册标识
-              value: ""
-              validation: required
-              help: 相册标识（从图库中获取），具体获取方式请参考 uni-halo（v2） 官方文档。
-        - $formkit: group
-          if: "$get(loveEnabled).value === true"
-          name: loveDaily
-          label: 恋爱清单
-          value:
-            enabled: false
-            iconUrl: ""
-            list: [ ]
-          children:
-            - $formkit: select
-              name: enabled
-              id: loveListEnabled
-              label: 是否启用
-              value: false
-              options:
-                - label: 启用
-                  value: true
-                - label: 关闭
-                  value: false
-              validation: required
-            - $formkit: attachment
-              name: iconUrl
-              label: 图标地址
-              value: ""
-              validation: required
-              help: 功能图标图片地址
-            - $formkit: repeater
-              if: "$get(loveListEnabled).value === true"
-              name: list
-              label: 恋爱清单
-              value: [ ]
-              children:
-                - $formkit: text
-                  name: title
-                  label: 标题
-                  value: ""
-                  validation: required
-                - $formkit: text
-                  name: content
-                  label: 内容
-                  value: ""
-                - $formkit: select
-                  name: status
-                  label: 状态
-                  value: wait
-                  options:
-                    - label: 未开始
-                      value: wait
-                    - label: 进行中
-                      value: doing
-                    - label: 已完成
-                      value: complete
-                  validation: required
-                - $formkit: date
-                  if: "$value.status === 'complete'"
-                  name: completeDate
-                  label: 完成时间
-                  value: ""
-                  validation: required
-    - group: pluginConfig
-      label: 插件配置
-      formSchema:
-        - $formkit: group
-          name: submitLink
-          label: 友链提交插件
-          value:
-            enabled: false
-            pluginId: ""
-            blogName: ""
-            blogDesc: ""
-            blogLogo: ""
-            blogUrl: ""
-          help: 说明：来自【作者：柳意无情】的友链自动提交插件，用于用于支持小程序内主动提交友链。
-          children:
-            - $formkit: select
-              name: enabled
-              id: submitLinkEnabled
-              label: 是否启用
-              value: false
-              options:
-                - label: 启用
-                  value: true
-                - label: 关闭
-                  value: false
-              validation: required
-            - $formkit: text
-              if: "$get(submitLinkEnabled).value === true"
-              name: pluginId
-              label: 插件ID
-              value: "LinksSubmit"
-              validation: required
-              help: 请在插件市场搜索「友链提交」插件，然后复制插件 ID
-            - $formkit: text
-              if: "$get(submitLinkEnabled).value === true"
-              name: blogName
-              label: 博客名称
-              value: ""
-              validation: required
-            - $formkit: text
-              if: "$get(submitLinkEnabled).value === true"
-              name: blogDesc
-              label: 博客描述
-              value: ""
-              validation: required
-            - $formkit: attachment
-              if: "$get(submitLinkEnabled).value === true"
-              name: blogLogo
-              label: 博客Logo
-              value: ""
-              validation: required
-            - $formkit: text
-              if: "$get(submitLinkEnabled).value === true"
-              name: blogUrl
-              label: 博客地址
-              value: ""
-              validation: required
-        - $formkit: group
-          name: toolsPlugin
-          label: 工具箱插件
-          value:
-            enabled: false
-            pluginId: ""
-            Authorization: ""
-            rewardedVideoAdId: ""
-          help: 说明：来自【作者：柳意无情】的工具箱插件，用于开启支持文章加密访问。
-          children:
-            - $formkit: select
-              name: enabled
-              id: toolsPluginEnabled
-              label: 是否启用
-              value: false
-              options:
-                - label: 启用
-                  value: true
-                - label: 关闭
-                  value: false
-              validation: required
-            - $formkit: text
-              if: "$get(toolsPluginEnabled).value === true"
-              name: pluginId
-              label: 插件ID
-              value: "PluginTools"
-              validation: required
-              help: 请在插件市场搜索「工具箱」插件，然后复制插件 ID
-            - $formkit: text
-              if: "$get(toolsPluginEnabled).value === true"
-              name: Authorization
-              label: 授权Token
-              value: ""
-              validation: required
-              help: Tools工具箱插件设置的认证token
-            - $formkit: text
-              if: "$get(toolsPluginEnabled).value === true"
-              name: rewardedVideoAdId
-              label: 视频广告ID
-              value: ""
-              help: 广告ID，请在 UniApp 广告管理中获取。
     - group: shareConfig
       label: 分享配置
       formSchema:
@@ -1646,18 +1157,18 @@ spec:
               durationDays: 0
               style: "👑"
             - key: theme_dusk
-              name: 蓝紫渐变主题
+              name: 静谧蓝紫主题
               type: theme
               points: 150
               durationDays: 0
-              style: "#667eea,#764ba2"
+              style: primary
             - key: theme_sunset
               name: 落日橙主题
               type: theme
               points: 150
               durationDays: 0
-              style: "#f6d365,#fda085"
-          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（个人中心主题色）；style 为前端映射样式（头像框样式名/前缀文本/渐变色值）；durationDays 填 0 表示永久。
+              style: deep-orange
+          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（全局主题皮肤）。style 含义随 type 不同：头像框填样式名（gold/rainbow/silver，需与前端注册表一致）、昵称前缀直接填前缀文本（如 ⭐、👑，建议 2 个字符以内，超长会被前端忽略）、theme 必须填框架登记的主题名（light-blue/primary/blue/cyan/green/orange/deep-orange/blue-grey），不是 CSS 渐变值——填错会导致用户付费后界面无变化（身份中心会显示「未登记」提示）。durationDays 填 0 表示永久；大于 0 为限时，到期后自动失效、需重新购买，身份中心会显示剩余天数。
           children:
             - $formkit: text
               name: key
@@ -1695,7 +1206,7 @@ spec:
               validation: required
             - $formkit: text
               name: style
-              label: 样式值（前端映射）
+              label: 样式值（头像框填 gold/rainbow/silver；昵称前缀填前缀文本；主题填主题名）
               value: ""
     - group: inviteConfig
       label: 邀请奖励
@@ -1714,3 +1225,422 @@ spec:
           min: 1
           validation: required
           help: 被邀请人注册后自动发放到邀请人账户；被邀请人自身仍可领取「新人见面礼」。
+    - group: payConfig
+      label: 虚拟支付（权益直购）
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "微信虚拟支付（个人主体）仅支持「道具直购」：现金直接购买具体权益（发布券 / 阅读券 / 装扮），不支持充值积分、代币等流转功能。数据看板高级版已调整为纯积分兑换权益，不再作为付费道具售卖。开通前提：小程序主体为个人、服务类目含「工具」、已完成认证与备案，并在 MP 后台【支付与交易 - 虚拟支付】开通签约。限额与费率：月支付限额 10 万元；Android 技术服务费约 1%、iOS 苹果佣金约 12%。"
+        - $formkit: switch
+          name: enabled
+          id: payEnabled
+          label: 开启权益直购
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时小程序不展示「权益直购」入口、接口也不下发商品。请确认 MP 后台虚拟支付已开通并完成签约后再开启。
+        - $formkit: text
+          if: "$get(payEnabled).value === true"
+          name: offerId
+          label: OfferID（虚拟支付商户号）
+          value: ""
+          validation: required
+          help: MP 后台【虚拟支付 - 基本配置】中的 OfferID；未填写时用户下单会提示「虚拟支付 OfferID 未配置」。
+        - $formkit: password
+          if: "$get(payEnabled).value === true"
+          name: appKey
+          label: 现网 AppKey（支付密钥）
+          value: ""
+          validation: required
+          help: MP 后台【虚拟支付 - 基本配置】中的现网 AppKey，用于服务端计算 paySig 签名。仅保存在服务端、不会下发到小程序；填错会导致支付报 -15006。
+        - $formkit: number
+          if: "$get(payEnabled).value === true"
+          name: env
+          label: 支付环境
+          value: 0
+          min: 0
+          max: 1
+          help: 0 = 正式环境（现网），1 = 沙箱环境。小程序正式版只能填 0，填 1 会报 -15011。
+        - $formkit: number
+          if: "$get(payEnabled).value === true"
+          name: zoneId
+          label: 分区 ID（zoneId）
+          value: 1
+          min: 1
+          help: 道具直购（short_series_goods）当前不使用该参数，保留默认值 1 即可。
+        - $formkit: repeater
+          if: "$get(payEnabled).value === true"
+          name: goods
+          label: 权益道具（现金直购商品）
+          value:
+            - goodsId: ""
+              name: 阅读券 x5
+              price: 600
+              type: content_ticket
+              value: 5
+              style: ""
+          help: 每个道具需先在 MP 后台【虚拟支付 - 道具管理】创建并完成发布（发布后约 10 分钟生效，未发布会报 -15010 / -15014）。道具 ID 与价格必须与微信后台完全一致，价格不一致会报 -15013。个人主体不支持「积分充值」类道具，即使配置了也不会下发到小程序。数据看板高级版与发布券均已下架，不再作为付费道具售卖，配置 dashboard 或 publish_ticket 类型同样不会下发。<br /><b>装扮类商品（type=outfit）的展示位置</b>：不再出现在小程序的「权益直购」页，而是作为「我的 → 身份中心 → 装扮商店」中该装扮的<b>现金价</b>，与积分价并列展示，用户可自行选择用积分兑换或直接付款；因此 style 仍必须填写装扮的 key（详见下方说明）。订单与退款清单（需管理员令牌）：{站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/refund-admin —— 用户重复购买已拥有的装扮时，订单会停在「待退款」状态且不会自动重试，需按该页的微信平台单号人工退款。
+          children:
+            - $formkit: text
+              name: goodsId
+              label: 道具 ID（productId）
+              value: ""
+              validation: required
+              help: 需与 MP 后台【道具管理】中创建的道具 ID 完全一致，下单时作为 productId 传给微信。
+            - $formkit: text
+              name: name
+              label: 道具名称（前端展示）
+              value: ""
+              validation: required
+            - $formkit: number
+              name: price
+              label: 单价（单位：分）
+              value: 600
+              min: 1
+              validation: required
+              help: 单位为「分」，全程不做换算，例如 6 元填 600。必须与 MP 后台道具价格一致，否则支付报 -15013。
+            - $formkit: select
+              name: type
+              label: 道具类型
+              value: content_ticket
+              options:
+                - value: content_ticket
+                  label: 阅读券（解锁付费文章）
+                - value: outfit
+                  label: 装扮（在身份中心穿戴）
+              validation: required
+              help: 仅限以上两种权益直购类型，不支持积分充值。数据看板高级版已改为纯积分兑换权益（见「积分商城」分组）；发布券已下架——普通用户当前不能发表瞬间（仅博主可发），该券没有消费点，卖出去用户也用不上，故不再作为付费道具售卖；类型非法或缺失的商品不会下发。
+            - $formkit: number
+              name: value
+              label: 道具数量
+              value: 1
+              min: 1
+              help: 类型为「阅读券」时表示发放的券张数（如买 5 张阅读券填 5）；装扮类型保持 1 即可。
+            - $formkit: text
+              name: style
+              label: 装扮 key（类型为装扮时必填）
+              value: ""
+              help: 必须填写「等级与称号装扮 → 装扮商店」中对应装扮的 key（如 avatar_gold、nick_star、theme_dusk），不是样式值（如 gold、⭐）。该 key 决定这笔现金商品对应哪一枚装扮——用户在身份中心的装扮卡片上会看到「￥价格 购买」按钮。填错或缺失时该商品不会下发到小程序（插件日志会告警），用户点现金购买也会被拦下并提示配置错误——不会出现「付了钱拿不到」的情况。展示名称自动取装扮商店里的名称，此处填的名称不生效。
+
+    - group: contentConfig
+      label: 付费内容（阅读券）
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "用「阅读券」解锁付费文章。付费文章<b>不在本插件里维护清单</b>，而是在 Halo 后台给文章打上指定 slug 的标签（默认 paid）即可，站长无需重复配置。<br /><b>⚠️ 生效范围</b>：拦截点在文章详情 API，因此付费墙<b>只保护小程序端</b>；Halo 网页版主题通过 permalink 直接渲染内容、不走该 API，博客网站本身仍可阅读全文。若需网页端也付费，需另行改造主题或使用 Halo 原生「私有/内部」可见性。<br /><b>合规提示</b>：券可累积、可跨文章通用，语义上接近代币，个人主体下能否通过审核取决于审核判断，建议小额试探后再放量。"
+        - $formkit: switch
+          name: enabled
+          id: contentEnabled
+          label: 开启付费内容
+          value: false
+          help: 关闭时所有文章均可自由阅读，不会拦截任何请求。默认关闭，需显式开启。
+        - $formkit: text
+          name: paidTagSlug
+          label: 付费标记标签 slug
+          value: "paid"
+          validation: required
+          help: 文章只要带有该 slug 的标签即视为付费文章。请先在 Halo 后台【文章 - 标签】创建该标签（slug 需完全一致，区分大小写时以本插件按小写比较为准）。填了不存在的 slug 会导致付费功能静默失效——所有文章都不拦截，插件日志会输出告警。
+        - $formkit: number
+          name: costTickets
+          label: 解锁消耗券张数
+          value: 1
+          min: 1
+          help: 解锁一篇付费文章消耗的阅读券张数，至少为 1（填 0 或负数会被强制回落为 1，避免变成免费解锁）。
+        - $formkit: switch
+          name: freeForOwner
+          label: 博主本人免费
+          value: true
+          help: 开启后，文章作者本人（微信用户已绑定的 Halo 账号与文章 owner 一致）阅读自己的付费文章时不拦截、不扣券。建议保持开启。
+        - $formkit: switch
+          name: permanent
+          label: 解锁永久有效
+          value: true
+          help: 解锁记录永久保存，同一篇文章不会重复扣券。关闭暂不支持限时解锁，仅作语义占位，请勿关闭。
+
+    - group: rankConfig
+      label: 榜单
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "小程序「榜单」页由「文章榜（按浏览/点赞）」与「用户榜（累计积分 / 近 7 日活跃 / 邀请）」两部分组成，榜单对未登录用户同样可见。用户榜依赖积分系统，积分系统关闭时用户榜不展示。"
+        - $formkit: switch
+          name: enabled
+          label: 开启榜单功能
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后小程序「榜单」页不展示任何榜单数据（用户榜与互动动态接口同时停止下发，页面提示榜单未开启）。文章榜接口只返回公开的浏览量排行，不随该开关停用，但关闭后小程序端不会再请求它。
+        - $formkit: switch
+          name: showScore
+          label: 公开榜单分值
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后用户榜只显示名次、等级与称号，不显示具体积分与邀请人数（适用于不希望公开用户分值的站点）。
+        - $formkit: switch
+          name: enableInviteBoard
+          label: 展示邀请榜
+          value: true
+          onValue: true
+          offValue: false
+          help: 邀请榜按成功邀请的人数排名，数据来自邀请关系；关闭后用户榜只剩「总积分 / 近 7 日」两个榜单。
+        - $formkit: switch
+          name: wallEnabled
+          label: 展示互动动态
+          value: true
+          onValue: true
+          offValue: false
+          help: 展示最近用户的评论、点赞、投票动态（仅昵称、头像与内容标题，内容均为站点上已公开的信息）。浏览量不上墙。
+        - $formkit: number
+          name: wallLimit
+          label: 互动动态条数
+          value: 10
+          min: 1
+          max: 30
+          help: 一次下发的动态条数，最大 30。
+        - $formkit: switch
+          name: wallIncludeUpvote
+          label: 动态中包含「点赞」
+          value: false
+          onValue: true
+          offValue: false
+          help: 默认不包含：点赞是轻量动作，默认把「谁赞了哪篇」公开给其他访问者对用户偏侵扰。开启后动态会更活跃。评论与投票本就是公开行为，始终展示。
+        - $formkit: switch
+          name: weeklyRewardEnabled
+          label: 开启周榜奖励
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后，每周一自动结算上一自然周（周一 00:00 ~ 周日 24:00）的活跃榜并发放积分，同一周同一用户只发一次。发放记录可在用户「积分明细」中查看（类型：榜单奖励）。默认关闭。
+        - $formkit: number
+          name: weeklyRewardTopN
+          label: 奖励名次数量
+          value: 3
+          min: 1
+          max: 10
+          help: 只给活跃榜前 N 名发奖，最多 10 名。
+        - $formkit: number
+          name: weeklyRewardPoints
+          label: 第 1 名奖励积分
+          value: 60
+          min: 0
+          help: 第 1 名的积分奖励。填 0 或递减到 0 的名次不发放（该名次不产生流水）。
+        - $formkit: number
+          name: weeklyRewardStep
+          label: 名次递减积分
+          value: 20
+          min: 0
+          help: 每往后一名少发多少积分（第 2 名 = 第 1 名 - 递减值，依此类推），减到 0 为止。
+    - group: aiDigestConfig
+      label: AI 日报
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "从 Karpathy 推荐的 92 个顶级技术博客抓取最新文章，用 AI 评分筛选后生成一份 Markdown 日报，并通过 Halo 官方接口上传头图、建稿并发布。每次运行需要约 1-3 分钟、若干次大模型调用，会产生 API 费用；定时执行依赖服务器对境外站点的出网能力。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "当前插件版本：<b>1.0.121</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
+        - $formkit: switch
+          name: enabled
+          id: aiDigestEnabled
+          label: 开启 AI 日报
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭后定时任务与后台「立即生成」都不执行。默认关闭：日报会自动发布文章，需站长确认 AI Key 与发布参数后主动开启。
+        - $formkit: switch
+          name: scheduleEnabled
+          if: "$get(aiDigestEnabled).value === true"
+          label: 开启定时生成
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后仍可在插件后台「AI 日报」页面手动生成。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: scheduleTimes
+          label: 每天执行时刻
+          value: "07:00"
+          validation: required
+          help: 24 小时制，格式 HH:mm，例如 07:00 表示每天凌晨 7 点执行。需要一天多次时用逗号分隔，例如 07:00,19:00。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: timezone
+          label: 时区
+          value: "Asia/Shanghai"
+          validation: required
+          help: 执行时刻按该时区计算，填错会退回 Asia/Shanghai。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: aiApiBase
+          label: 主模型 API Base
+          value: "https://api.deepseek.com/v1"
+          validation: required
+          help: 需要兼容 OpenAI 的 chat/completions 协议。DeepSeek 填 https://api.deepseek.com/v1，通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1。
+        - $formkit: password
+          if: "$get(aiDigestEnabled).value === true"
+          name: aiApiKey
+          label: 主模型 API Key
+          value: ""
+          validation: required
+          help: 仅保存在服务端、不会下发到小程序。DeepSeek 可在 platform.deepseek.com 创建。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: aiModel
+          label: 主模型名称
+          value: "deepseek-chat"
+          validation: required
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: fallbackApiBase
+          label: 兜底 API Base（可选）
+          value: ""
+          help: 主模型调用失败时自动切换，留空则不启用兜底。同样需要兼容 OpenAI 协议。
+        - $formkit: password
+          if: "$get(aiDigestEnabled).value === true"
+          name: fallbackApiKey
+          label: 兜底 API Key（可选）
+          value: ""
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: fallbackModel
+          label: 兜底模型名称（可选）
+          value: ""
+          help: 留空时按兜底端点自动推断（含 deepseek 用 deepseek-chat，否则用 gpt-4o-mini）。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: hours
+          label: 抓取时间范围（小时）
+          value: 48
+          min: 1
+          max: 720
+          validation: required
+          help: 只保留该时间窗内发布的文章，48 小时通常刚好覆盖一个完整工作日。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: topN
+          label: 精选篇数
+          value: 15
+          min: 1
+          max: 50
+          validation: required
+          help: AI 评分后保留的篇数，10 篇偏精简、20 篇偏扩展。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: words
+          label: 每篇目标字数
+          value: 600
+          min: 80
+          max: 2000
+          validation: required
+          help: 概述 + 核心论点合计字数。实测 300-800 字能贴合目标，超过 1000 后模型会明显欠稿；想加长建议增加篇数而不是继续调高单篇字数。要发博客建议 600 以上。
+        - $formkit: select
+          if: "$get(aiDigestEnabled).value === true"
+          name: language
+          label: 摘要语言
+          value: "zh"
+          options:
+            - label: 中文
+              value: "zh"
+            - label: English
+              value: "en"
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: imageEnabled
+          label: 抓取并上传文章头图
+          value: true
+          onValue: true
+          offValue: false
+          help: 头图取自 RSS 正文内嵌图片或文章页的 og:image，通过 Halo 官方附件接口上传到附件库后在正文中引用。实测约六成文章能配上图，抓不到的直接跳过。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: attachmentPolicyName
+          label: 附件存储策略名（可选）
+          value: ""
+          help: 留空则复用「应用配置」里的附件策略，与小程序二维码/头像上传保持一致。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: attachmentGroupName
+          label: 附件分组名（可选）
+          value: ""
+          help: 留空则复用「应用配置」里的附件分组。
+        - $formkit: select
+          if: "$get(aiDigestEnabled).value === true"
+          name: publishMode
+          label: 发布方式
+          value: "per-article"
+          options:
+            - label: 逐篇发布精选文章（每篇一篇独立文章）
+              value: "per-article"
+            - label: 合并为一篇 AI 日报
+              value: "digest"
+            - label: 两者都发
+              value: "both"
+          help: 默认「逐篇」：精选 N 篇就发 N 篇独立文章，每篇含中文标题、原文出处、头图、概述、核心论点与推荐理由。选「合并」则只发一篇含今日看点、数据概览与分类列表的日报；选「两者都发」会同时产出日报和每篇精选。任何模式都支持在后台「重新发布」，且逐篇模式下一篇失败不影响其它篇。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: publishEnabled
+          label: 生成后自动发布文章
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后只生成日报并保存在后台，不发布文章（可随时在后台点「重新发布」）。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: haloBaseUrl
+          label: Halo 接口地址（可选）
+          value: ""
+          help: 留空即用 http://127.0.0.1:服务端口（插件与 Halo 同进程，走本机回环）。若「后台能发文、插件发不了」，可在这里填站点地址（如 https://www.lxfzzw.com），让插件的请求与后台浏览器走完全一致的链路，以排除中间层差异。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: postOwner
+          label: 文章作者
+          value: "admin"
+          validation: required
+          help: Halo 用户名（不是昵称），默认 admin。填写的用户必须已存在，否则建稿会失败。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: postTitleTemplate
+          label: 文章标题模板
+          value: "AI 日报 · {date}"
+          validation: required
+          help: "{date} 会替换为日报日期（yyyy-MM-dd）；同时作为文章 slug 的来源。仅用于「合并为一篇 AI 日报」和「两者都发」模式——逐篇发布时每篇文章用各自的中文标题。" 
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: postCategories
+          label: 文章分类
+          value: ""
+          help: 填 Halo 已有的分类名（显示名或别名），多个用逗号分隔。匹配不到的会被忽略，不会导致发布失败。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: postTags
+          label: 文章标签
+          value: ""
+          help: 填 Halo 已有的标签名（显示名或别名），多个用逗号分隔。匹配不到的会被忽略。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: mermaidEnabled
+          label: 输出 Mermaid 图表
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后「数据概览」包含分类饼图与关键词柱状图（博客主题原生渲染）。若主题不支持 Mermaid，关闭后会退化为纯文本图。
+        - $formkit: text
+          if: "$get(aiDigestEnabled).value === true"
+          name: footerNote
+          label: 文末署名
+          value: ""
+          help: 追加在文章末尾的斜体署名行；留空则不输出任何署名（默认留空）。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: publishWaitSeconds
+          label: 发布确认最长等待（秒）
+          value: 600
+          min: 60
+          max: 3600
+          help: 发布走异步接口后，插件会轮询确认服务端是否已生成发布快照。日报正文较长时给足等待时间，默认 600 秒；超过仍未确认会记录为待发布，可在后台点「重新发布」。

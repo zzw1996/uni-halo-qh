@@ -20,7 +20,7 @@
 		</view>
 		<view v-else-if="loading === 'error'" class="empty-wrap">
 			<tm-empty icon="icon-wind-cry" label="数据加载失败"></tm-empty>
-			<tm-button class="mt-16" size="s" theme="grey" @click="fnGetData">重新加载</tm-button>
+			<tm-button class="mt-16" size="s" theme="grey" :fllowTheme="false" @click="fnGetData">重新加载</tm-button>
 			<text class="empty-tip">若仍失败，请确认插件已升级到 v1.0.75+</text>
 		</view>
 		<view v-else>

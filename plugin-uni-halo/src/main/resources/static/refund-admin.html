@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>虚拟支付 · 订单与退款清单</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6fa; color: #303133; padding: 20px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.04); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input, select, button { font-size: 14px; border-radius: 8px; border: 1px solid #dcdfe6; padding: 8px 12px; outline: none; }
+  input:focus, select:focus { border-color: #667eea; }
+  button { background: #667eea; color: #fff; border: none; cursor: pointer; }
+  button:hover { opacity: .9; }
+  .token { width: 320px; }
+  .tip { font-size: 12px; color: #b0b5c0; margin-top: 6px; }
+  .banner { background: #fff7e6; color: #b3800a; font-size: 13px; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; line-height: 1.7; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f1f5; vertical-align: top; }
+  th { color: #909399; font-weight: 600; white-space: nowrap; }
+  td { word-break: break-all; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+  .tag-refund { background: #fdecec; color: #d9534f; }
+  .tag-pending { background: #fff3e0; color: #e8862b; }
+  .tag-delivered { background: #e6f7e6; color: #3a9e3a; }
+  .tag-closed { background: #f0f1f5; color: #909399; }
+  .money { font-weight: 600; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .empty { color: #b0b5c0; text-align: center; padding: 40px 0; }
+  .pager { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>💳 虚拟支付 · 订单与退款清单</h1>
+  <p class="sub">凭 Personal Token 查看订单，默认只列「待退款」单。Token 仅保存在本机浏览器。</p>
+
+  <div class="card">
+    <div class="row">
+      <input class="token" id="token" type="password" placeholder="Personal Token（Halo 后台 → 个人资料 → 个人令牌）">
+      <select id="status">
+        <option value="needs_refund">待退款（重复购买）</option>
+        <option value="">全部状态</option>
+        <option value="pending">待发货</option>
+        <option value="delivered">已发货</option>
+        <option value="closed">已关闭</option>
+      </select>
+      <button onclick="load(0)">查询</button>
+    </div>
+    <p class="tip">按「微信平台单号」在微信侧对该笔订单发起退款；退款完成后本页无需改动（状态保持 needs_refund，便于留痕）。</p>
+  </div>
+
+  <div class="card">
+    <div class="banner" id="banner">
+      待退款 = 用户<b>已付款</b>，但权益已拥有（重复购买）无法重复发放。此类订单不会自动重试，需要人工退款，
+      否则用户既拿不到权益也收不到钱。插件日志中同时有 ERROR 记录（含单号），可作为第二处留痕。
+    </div>
+    <div id="list"><div class="empty">请先输入 Personal Token 并点击查询</div></div>
+    <div class="pager" id="pager"></div>
+  </div>
+</div>
+
+<script>
+  var page = 0, size = 20;
+  function token() { return document.getElementById('token').value.trim(); }
+  function saveToken() {
+    try { localStorage.setItem('refundAdminToken', token()); } catch (e) {}
+  }
+  async function load(p) {
+    page = p;
+    saveToken();
+    var t = token();
+    if (!t) { document.getElementById('list').innerHTML = '<div class="empty">请先输入 Personal Token</div>'; return; }
+    var status = document.getElementById('status').value;
+    var params = new URLSearchParams({ page: page, size: size });
+    if (status) params.set('status', status);
+    var url = location.origin + '/apis/console.api.uni.uhalo.pro/v1alpha1/payOrders?' + params.toString();
+    try {
+      var res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + t } });
+      if (res.status === 401 || res.status === 403) {
+        document.getElementById('list').innerHTML = '<div class="empty">鉴权失败：Token 无效或权限不足（需管理员令牌）</div>';
+        return;
+      }
+      if (!res.ok) {
+        document.getElementById('list').innerHTML = '<div class="empty">请求失败：HTTP ' + res.status + '</div>';
+        return;
+      }
+      render(await res.json());
+    } catch (err) {
+      document.getElementById('list').innerHTML = '<div class="empty">请求失败：' + ((err && err.message) || err) + '</div>';
+    }
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function statusTag(st) {
+    if (st === 'needs_refund') return '<span class="tag tag-refund">待退款</span>';
+    if (st === 'delivered') return '<span class="tag tag-delivered">已发货</span>';
+    if (st === 'pending') return '<span class="tag tag-pending">待发货</span>';
+    return '<span class="tag tag-closed">' + esc(st || '未知') + '</span>';
+  }
+  function render(data) {
+    var items = (data && data.items) || [];
+    if (!items.length) {
+      document.getElementById('list').innerHTML = '<div class="empty">没有符合条件的订单</div>';
+      document.getElementById('pager').innerHTML = '';
+      return;
+    }
+    var html = '<table><thead><tr>' +
+      '<th>商品</th><th>用户</th><th>金额</th><th>状态</th>' +
+      '<th>微信平台单号</th><th>商家单号</th><th>下单时间</th><th>付款时间</th><th>备注</th>' +
+      '</tr></thead><tbody>';
+    items.forEach(function (it) {
+      var amount = (it.price == null) ? '-' : ('¥' + (Number(it.price) / 100).toFixed(2) + '（' + it.price + '分）');
+      html += '<tr>' +
+        '<td>' + esc(it.goodsName || it.goodsId || '') +
+          '<br><span style="color:#b0b5c0;font-size:12px">' + esc(it.goodsType || '') +
+          (it.goodsStyle ? ' · ' + esc(it.goodsStyle) : '') + '</span></td>' +
+        '<td>' + esc(it.nickname || '') +
+          '<br><span style="color:#b0b5c0;font-size:12px">' + esc(it.openid || '') + '</span></td>' +
+        '<td class="money">' + esc(amount) + '</td>' +
+        '<td>' + statusTag(it.status) + '</td>' +
+        '<td class="mono">' + esc(it.wxOrderId || '-') + '</td>' +
+        '<td class="mono">' + esc(it.outTradeNo || '-') + '</td>' +
+        '<td>' + esc(fmt(it.createTime)) + '</td>' +
+        '<td>' + esc(fmt(it.paidTime)) + '</td>' +
+        '<td style="max-width:220px">' + esc(it.remark || '-') + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('list').innerHTML = html;
+    var total = (data && data.total) || 0;
+    document.getElementById('pager').innerHTML = total
+      ? '<button onclick="load(0)" ' + (page === 0 ? 'disabled style="opacity:.5"' : '') + '>上一页</button>' +
+        '<span style="font-size:13px;color:#909399">第 ' + (page + 1) + ' 页 · 共 ' + total + ' 条</span>' +
+        '<button onclick="load(' + (page + 1) + ')">下一页</button>'
+      : '';
+  }
+  function fmt(str) {
+    if (!str) return '';
+    var d = new Date(str);
+    if (isNaN(d.getTime())) return str;
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  (function () {
+    try { var t = localStorage.getItem('refundAdminToken'); if (t) { document.getElementById('token').value = t; } } catch (e) {}
+  })();
+</script>
+</body>
+</html>

@@ -9,20 +9,22 @@ export const DefaultAppConfigs = {
 			personalToken: "",
 		}
 	},
-	loveConfig: {},
 	imagesConfig: {},
-	authorConfig: {},
 	appConfig: {},
-	pluginConfig: {
-		votePlugin: {},
-		toolsPlugin: {},
-		linksPlugin:{},
-		linksSubmitPlugin: {},
-		doubanPlugin: {
+	/**
+	 * 第三方 Halo 插件页面的开关（纯前端，后台已无对应配置组）。
+	 * vote   = 投票中心入口
+	 * links  = 友情链接入口
+	 * douban = 文章内豆瓣卡片位置
+	 */
+	pluginIntegrations: {
+		vote: false,
+		links: false,
+		douban: {
 			position: 'bottom'
 		},
 	},
-		wxAppConfig: {
+	wxAppConfig: {
 			appId: '',
 			loginEnabled: true,
 			/** 是否开启 Halo 账号关联（验证码绑定 / 一键创建） */
@@ -31,27 +33,6 @@ export const DefaultAppConfigs = {
 			ownerOpenid: '',
 			profileModifyLimit: 0,
 		},
-	pageConfig: {
-		homeConfig: {
-			pageTitle: "首页",
-			useCategory: true,
-			bannerConfig: {
-				enabled: true,
-				showTitle: true,
-				showIndicator: true,
-				height: "400rpx",
-				dotPosition: "right",
-				type: "post",
-				list: []
-			}
-		},
-		categoryConfig: {
-			type: "list"
-		},
-		momentConfig: {
-			useTagRandomColor: true
-		}
-	},
 	auditConfig: {
 		auditModeEnabled: false,
 		auditModeData: {
@@ -84,6 +65,19 @@ export const DefaultAppConfigs = {
 	inviteConfig: {
 		enabled: true,
 		rewardPoints: 30
+	},
+	/** 榜单配置（由插件后台 rankConfig 下发） */
+	rankConfig: {
+		enabled: true,
+		showScore: true,
+		enableInviteBoard: true,
+		wallEnabled: true,
+		wallLimit: 10,
+		wallIncludeUpvote: false,
+		weeklyRewardEnabled: false,
+		weeklyRewardTopN: 3,
+		weeklyRewardPoints: 60,
+		weeklyRewardStep: 20
 	}
 }
 

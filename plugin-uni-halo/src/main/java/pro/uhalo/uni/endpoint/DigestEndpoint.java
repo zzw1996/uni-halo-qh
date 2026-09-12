@@ -1,0 +1,94 @@
+package pro.uhalo.uni.endpoint;
+
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import lombok.RequiredArgsConstructor;
+import org.springdoc.webflux.core.fn.SpringdocRouteBuilder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.reactive.function.server.ServerResponse;
+import pro.uhalo.uni.constants.Constants;
+import pro.uhalo.uni.controller.DigestController;
+import run.halo.app.core.extension.endpoint.CustomEndpoint;
+import run.halo.app.extension.GroupVersion;
+
+import static org.springdoc.core.fn.builders.parameter.Builder.parameterBuilder;
+
+/**
+ * AI 日报后台接口路由表。
+ *
+ * <p>只挂在 console 分组下：这是站长的运维入口，小程序端不消费这些数据。</p>
+ */
+@Component
+@RequiredArgsConstructor
+public class DigestEndpoint implements CustomEndpoint {
+
+    private final DigestController digestController;
+
+    @Override
+    public GroupVersion groupVersion() {
+        return GroupVersion.parseAPIVersion(Constants.CONSOLE_CUSTOM_API_GROUP_NAME);
+    }
+
+    @Override
+    public RouterFunction<ServerResponse> endpoint() {
+        final String apiTag = Constants.CONSOLE_CUSTOM_API_GROUP_NAME + "/Digest";
+        return SpringdocRouteBuilder.route()
+            .GET("/digest/overview", digestController::overview, builder -> builder
+                .operationId("GetDigestOverview")
+                .description("AI digest overview: enable flags, next scheduled run and the last run.")
+                .tag(apiTag))
+            .GET("/digest/reports", digestController::listReports, builder -> builder
+                .operationId("ListDigestReports")
+                .description("List AI digest run records, newest first.")
+                .tag(apiTag)
+                .parameter(parameterBuilder()
+                    .name("limit")
+                    .in(ParameterIn.QUERY)
+                    .description("Max records to return, 1-200, default 30")
+                    .required(false)
+                    .implementation(Integer.class)))
+            .GET("/digest/reports/{name}", digestController::getReport, builder -> builder
+                .operationId("GetDigestReport")
+                .description("Digest run detail including the generated markdown.")
+                .tag(apiTag)
+                .parameter(parameterBuilder()
+                    .name("name")
+                    .in(ParameterIn.PATH)
+                    .description("DigestReport metadata.name")
+                    .required(true)
+                    .implementation(String.class)))
+            .GET("/digest/preflight", digestController::preflight, builder -> builder
+                .operationId("GetDigestPreflight")
+                .description("Preflight check for the publish environment: personal token, "
+                    + "post owner user and category/tag matching.")
+                .tag(apiTag))
+            .POST("/digest/cleanup", digestController::cleanupResidues, builder -> builder
+                .operationId("CleanupDigestResidues")
+                .description("Preview (?dryRun=true, default) or purge posts written by the plugin "
+                    + "that never published successfully. Finalizers are removed before deleting.")
+                .tag(apiTag)
+                .parameter(parameterBuilder()
+                    .name("dryRun")
+                    .in(ParameterIn.QUERY)
+                    .description("true = preview only, false = delete")
+                    .required(false)
+                    .implementation(Boolean.class)))
+            .POST("/digest/run", digestController::run, builder -> builder
+                .operationId("RunDigest")
+                .description("Trigger a digest run in background. Body: {\"publish\": true|false}. "
+                    + "The pipeline takes 1-3 minutes; poll the overview endpoint for progress.")
+                .tag(apiTag))
+            .POST("/digest/reports/{name}/publish", digestController::publishReport,
+                builder -> builder
+                    .operationId("PublishDigestReport")
+                    .description("Publish an already generated digest as a Halo post.")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("name")
+                        .in(ParameterIn.PATH)
+                        .description("DigestReport metadata.name")
+                        .required(true)
+                        .implementation(String.class)))
+            .build();
+    }
+}

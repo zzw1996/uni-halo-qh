@@ -395,8 +395,14 @@ public class LuckyDrawServiceImpl implements LuckyDrawService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
-    /** 权重随机：总权重 <= 0 时返回第一个 */
-    private static LuckyPrizeDTO pickPrize(java.util.List<LuckyPrizeDTO> prizes) {
+    /**
+     * 权重随机：总权重 <= 0 时返回第一个。
+     *
+     * <p>抽取口径为 {@code RANDOM.nextInt(总权重)} 后逐个累加权重命中，
+     * 因此单个奖品的真实概率就是 {@code weight / 总权重}，
+     * 与 {@code LuckyDrawConfigHelper.withProbabilities} 公示的概率一致。</p>
+     */
+    static LuckyPrizeDTO pickPrize(java.util.List<LuckyPrizeDTO> prizes) {
         if (prizes == null || prizes.isEmpty()) {
             return null;
         }

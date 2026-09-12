@@ -6,7 +6,7 @@
 		<view v-else-if="!canPublish" class="denied-wrap flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="暂无发表权限"></tm-empty>
 			<text class="denied-tip">仅与插件 personalToken 对应的博主微信账号可发表瞬间</text>
-			<tm-button class="mt-24" plan theme="grey" :shadow="0" @click="fnBack">返回</tm-button>
+			<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBack">返回</tm-button>
 		</view>
 		<view v-else class="publish-body">
 			<view class="publish-card">

@@ -17,13 +17,23 @@ public class PayGoodsDTO {
     /** 单价（分），与微信后台道具价格一致 */
     private Long price;
 
-    /** 到账积分（仅 type=points 旧模式使用，建议改用道具直购） */
-    private Integer points;
-
-    /** 道具类型：points（积分充值，旧模式）| dashboard（数据看板当日高级版）| publish_ticket（发布券）| outfit（装扮） */
+    /**
+     * 道具类型：publish_ticket（发布券）| content_ticket（阅读券）| outfit（装扮）。
+     *
+     * <p>dashboard（数据看板当日高级版）已降级为纯积分兑换权益，不再作为付费道具下发；
+     * 订单模型中仍可能出现该值，用于履约升级前的历史已支付订单。</p>
+     *
+     * <p>个人主体小程序仅允许「道具直购」，官方明确不引入代币等额外功能，
+     * 因此不支持 points（现金充值积分）类型。</p>
+     */
     private String type;
 
-    /** 道具数量（publish_ticket 为发布券张数；其余默认 1） */
+    /**
+     * 道具数量。
+     *
+     * <p>publish_ticket = 发放的发布券张数；content_ticket = 发放的阅读券张数；
+     * outfit 固定为 1。</p>
+     */
     private Integer value;
 
     /** 装扮 key（type=outfit 时必填，对应 levelConfig.outfits.key） */

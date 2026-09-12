@@ -38,8 +38,14 @@ public class PointsEndpoint implements CustomEndpoint {
             .GET(basePath + "/points/history", pointsController::history,
                 builder -> builder
                     .operationId("ListPointsHistory")
-                    .description("List user points history with pagination.")
+                    .description("List user points history with pagination, optionally filtered by action.")
                     .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("action")
+                        .in(ParameterIn.QUERY)
+                        .description("Optional action filter, e.g. lucky_draw (lottery spending) or sign_in")
+                        .required(false)
+                        .implementation(String.class))
                     .parameter(parameterBuilder()
                         .name("page")
                         .in(ParameterIn.QUERY)
@@ -144,6 +150,16 @@ public class PointsEndpoint implements CustomEndpoint {
                     .operationId("GetInviteInfo")
                     .description("Get invite code and reward config.")
                     .tag(apiTag))
+            .POST(basePath + "/points/invite/poster/generate", pointsController::invitePosterGenerate,
+                builder -> builder
+                    .operationId("MarkInvitePosterGenerated")
+                    .description("Report that the user generated the invite poster (for admin summary).")
+                    .tag(apiTag))
+            .POST(basePath + "/points/invite/poster/upload", pointsController::invitePosterUpload,
+                builder -> builder
+                    .operationId("UploadInvitePoster")
+                    .description("Upload invite poster image to attachments (multipart field: file).")
+                    .tag(apiTag))
             .GET(basePath + "/points/lucky/config", pointsController::luckyConfig,
                 builder -> builder
                     .operationId("GetLuckyDrawConfig")
@@ -163,6 +179,28 @@ public class PointsEndpoint implements CustomEndpoint {
                 builder -> builder
                     .operationId("GetMyLuckyClaims")
                     .description("List my lucky winning orders with status.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/content/status", pointsController::contentStatus,
+                builder -> builder
+                    .operationId("GetContentLockStatus")
+                    .description("Check whether an article is paid and unlocked for current user. "
+                        + "Callable without login (returns locked state).")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("articleName")
+                        .in(ParameterIn.QUERY)
+                        .description("Article metadata.name (not slug)")
+                        .required(true)
+                        .implementation(String.class)))
+            .POST(basePath + "/points/content/unlock", pointsController::contentUnlock,
+                builder -> builder
+                    .operationId("UnlockPaidContent")
+                    .description("Unlock a paid article with reading tickets (idempotent).")
+                    .tag(apiTag))
+            .GET(basePath + "/points/content/tickets", pointsController::contentTickets,
+                builder -> builder
+                    .operationId("GetContentTicketBalance")
+                    .description("Get current user's reading ticket balance.")
                     .tag(apiTag))
             .build();
     }

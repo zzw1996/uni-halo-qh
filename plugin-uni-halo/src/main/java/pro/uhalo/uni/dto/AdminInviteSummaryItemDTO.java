@@ -28,4 +28,13 @@ public class AdminInviteSummaryItemDTO {
 
     /** 最近一次邀请时间（可读） */
     private String lastInviteTime;
+
+    /** 是否生成过邀请海报 */
+    private boolean posterGenerated;
+
+    /** 最近生成邀请海报时间（可读） */
+    private String posterGeneratedAt;
+
+    /** 邀请海报图片地址（已上传后台附件时返回） */
+    private String posterImageUrl;
 }

@@ -1,5 +1,6 @@
 package pro.uhalo.uni.services;
 
+import pro.uhalo.uni.dto.AdminPayOrderListResponse;
 import pro.uhalo.uni.dto.CreatePayOrderRequest;
 import pro.uhalo.uni.dto.CreatePayOrderResponse;
 import pro.uhalo.uni.dto.PayPublicConfigDTO;
@@ -23,4 +24,13 @@ public interface VirtualPayService {
 
     /** 定时兜底：每 5 分钟查单，发现已支付但未发货的订单补发货。 */
     void syncPendingOrders();
+
+    /**
+     * 后台订单列表（人工退款 / 对账用）。
+     *
+     * @param status 状态筛选（pending / delivered / closed / needs_refund）；为空默认只看 needs_refund
+     * @param page   页码，从 0 开始
+     * @param size   每页条数
+     */
+    Mono<AdminPayOrderListResponse> listOrdersForAdmin(String status, int page, int size);
 }

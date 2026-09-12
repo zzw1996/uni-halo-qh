@@ -6,7 +6,7 @@
 			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
-			<tm-button class="mt-16" plan theme="grey" :shadow="0" @click="fnBackHome">返回首页</tm-button>
+			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
 		</view>
 		<template v-else>
 			<view v-if="loading === 'loading'" class="loading-wrap">
@@ -15,7 +15,7 @@
 			</view>
 			<view v-else-if="loading === 'error'" class="content-empty flex flex-center flex-col" style="min-height: 60vh;">
 				<tm-empty icon="icon-shiliangzhinengduixiang-" label="加载失败"></tm-empty>
-				<tm-button class="mt-24" plan theme="grey" :shadow="0" @click="fnLoad">重新加载</tm-button>
+				<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnLoad">重新加载</tm-button>
 			</view>
 			<view v-else class="content">
 				<view class="summary-card">
@@ -31,10 +31,10 @@
 					</view>
 				</view>
 
-				<view v-if="items.length === 0" class="tool-card">
+				<view v-if="displayItems.length === 0" class="tool-card">
 					<text class="tool-card-tip">暂无每日任务，请联系站长在插件后台「每日任务」中配置。</text>
 				</view>
-				<view v-for="item in items" :key="item.type" class="task-card">
+				<view v-for="item in displayItems" :key="item.type" class="task-card">
 					<view class="task-main">
 						<view class="task-title-row">
 							<text class="task-icon">{{ taskIcon(item.type) }}</text>
@@ -66,6 +66,7 @@
 						<tm-button
 							size="s"
 							:theme="actionTheme(item)"
+							:fllowTheme="actionTheme(item) !== 'grey'"
 							:disabled="item.claimed || claimingType === item.type"
 							:loading="claimingType === item.type"
 							@click="fnDoTask(item)"
@@ -100,12 +101,11 @@
 	import { checkHasWxLogin } from '@/utils/auth.js';
 	import {
 		fetchDailyTasks,
-		claimDailyTaskReward,
-		performPointsSignIn
+		claimDailyTaskReward
 	} from '@/utils/points.js';
 
+	// 每日签到入口在「我的」页面，每日任务列表不展示签到任务
 	const TASK_ICONS = {
-		sign_in: '📅',
 		browse: '📖',
 		comment: '💬',
 		upvote: '❤️',
@@ -142,6 +142,12 @@
 		onPullDownRefresh() {
 			this.fnLoad().finally(() => uni.stopPullDownRefresh());
 		},
+		computed: {
+			/** 每日签到入口在「我的」页面，此处过滤掉签到任务 */
+			displayItems() {
+				return (this.items || []).filter((item) => item.type !== 'sign_in');
+			}
+		},
 		methods: {
 			taskIcon(type) {
 				return TASK_ICONS[type] || '⭐';
@@ -153,7 +159,6 @@
 			actionText(item) {
 				if (item.claimed) return '已领取';
 				if (item.done) return '领取奖励';
-				if (item.type === 'sign_in') return '去签到';
 				return '去完成';
 			},
 			actionTheme(item) {
@@ -187,10 +192,6 @@
 			async fnDoTask(item) {
 				if (this.claimingType || !item) return;
 				if (item.claimed) return;
-				if (item.type === 'sign_in' && !item.done) {
-					await this.fnDoSignIn();
-					return;
-				}
 				if (!item.done) {
 					uni.showToast({ title: '先完成该任务再来领取吧', icon: 'none' });
 					return;
@@ -209,15 +210,6 @@
 				} finally {
 					this.claimingType = '';
 				}
-			},
-			async fnDoSignIn() {
-				const result = await performPointsSignIn(this.$httpApi.v2);
-				if (!result.ok) {
-					uni.showToast({ title: result.reason || '签到失败，请稍后重试', icon: 'none' });
-					return;
-				}
-				uni.showToast({ title: '签到成功', icon: 'success' });
-				await this.fnLoad();
 			},
 			fnOnLoginSuccess() {
 				this.isLoggedIn = true;

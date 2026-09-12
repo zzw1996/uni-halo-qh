@@ -12,7 +12,7 @@ metadata:
       ["plugin:plugin-uni-halo:config:view"]
 rules:
   - apiGroups: [ "api.uni.uhalo.pro" ]
-    resources: [ "plugins/*" ,"plugins/getConfigs","plugins/getConfigs/*","plugins/getQRCodeImg","plugins/getQRCodeImg/*","plugins/getQRCodeInfo","plugins/getQRCodeInfo/*","plugins/getWxAppConfig","plugins/lucky-admin","plugins/plugin-uni-halo/lucky-admin","plugins/getInviteQRCode","plugins/getInviteQRCode/*","plugins/plugin-uni-halo/getInviteQRCode","plugins/plugin-uni-halo/getInviteQRCode/*" ]
+    resources: [ "plugins/*" ,"plugins/getConfigs","plugins/getConfigs/*","plugins/getQRCodeImg","plugins/getQRCodeImg/*","plugins/getQRCodeInfo","plugins/getQRCodeInfo/*","plugins/getWxAppConfig","plugins/lucky-admin","plugins/plugin-uni-halo/lucky-admin","plugins/refund-admin","plugins/plugin-uni-halo/refund-admin","plugins/ai-digest-admin","plugins/plugin-uni-halo/ai-digest-admin","plugins/getInviteQRCode","plugins/getInviteQRCode/*","plugins/plugin-uni-halo/getInviteQRCode","plugins/plugin-uni-halo/getInviteQRCode/*" ]
     verbs: [ "get", "list" ]
   - apiGroups: [ "api.uni.uhalo.pro" ]
     resources: [ "uni-halo/login", "plugins/plugin-uni-halo/login", "plugins/login" ]

@@ -2,6 +2,8 @@ package pro.uhalo.uni;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import pro.uhalo.uni.scheme.ContentUnlock;
+import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.scheme.LuckyWinning;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.PayOrder;
@@ -124,6 +126,30 @@ public class UniHaloPlugin extends BasePlugin {
             log.info("【UniHalo】LuckyWinning scheme 注册成功");
         });
 
+        schemeManager.register(ContentUnlock.class, indexSpecs -> {
+            indexSpecs.add(new IndexSpec()
+                .setName("unlockKey")
+                .setIndexFunc(simpleAttribute(ContentUnlock.class, ContentUnlock::getUnlockKey)));
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(ContentUnlock.class, ContentUnlock::getWxOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("articleName")
+                .setIndexFunc(simpleAttribute(ContentUnlock.class, ContentUnlock::getArticleName)));
+            log.info("【UniHalo】ContentUnlock scheme 注册成功");
+        });
+
+        schemeManager.register(DigestReport.class, indexSpecs -> {
+            // date 是定时任务的幂等键（按天查已有记录），status 供后台筛选
+            indexSpecs.add(new IndexSpec()
+                .setName("date")
+                .setIndexFunc(simpleAttribute(DigestReport.class, DigestReport::getDate)));
+            indexSpecs.add(new IndexSpec()
+                .setName("status")
+                .setIndexFunc(simpleAttribute(DigestReport.class, DigestReport::getStatus)));
+            log.info("【UniHalo】DigestReport scheme 注册成功");
+        });
+
         log.info("【UniHalo】插件启动成功！");
     }
 
@@ -137,6 +163,8 @@ public class UniHaloPlugin extends BasePlugin {
         schemeManager.unregister(schemeManager.get(PointsRecord.class));
         schemeManager.unregister(schemeManager.get(PayOrder.class));
         schemeManager.unregister(schemeManager.get(LuckyWinning.class));
+        schemeManager.unregister(schemeManager.get(ContentUnlock.class));
+        schemeManager.unregister(schemeManager.get(DigestReport.class));
 
         log.info("【UniHalo】插件停止！");
     }

@@ -196,11 +196,62 @@ class PointsServiceImplTest {
         record.setCreateTime(Instant.now());
         when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of(record)));
 
-        StepVerifier.create(pointsService.listHistory("openid-123", 0, 10))
+        StepVerifier.create(pointsService.listHistory("openid-123", null, 0, 10))
             .consumeNextWith(response -> {
                 assertThat(response.getTotal()).isEqualTo(1);
                 assertThat(response.getItems()).hasSize(1);
                 assertThat(response.getItems().get(0).getAction()).isEqualTo("browse");
+                assertThat(response.getTotalPoints()).isEqualTo(1);
+            })
+            .verifyComplete();
+    }
+
+    /**
+     * 按动作码过滤明细（抽奖消耗明细页依赖它）。
+     *
+     * <p>关键点是**过滤发生在分页之前**——否则会出现「筛选后首页为空、后面几页才有记录」
+     * 的分页错乱；同时合计必须只统计过滤后的记录。</p>
+     */
+    @Test
+    void listHistoryShouldFilterByActionBeforePagination() {
+        var draw1 = PointsPersistence.newRecord("openid-123", "lucky_draw", -20, 980L,
+            "积分抽奖 · 定制周边", "定制周边", "k1", null);
+        draw1.setCreateTime(Instant.now().minusSeconds(60));
+        var browse = PointsPersistence.newRecord("openid-123", "browse", 5, 1000L,
+            "浏览文章", "post-1", "k2", null);
+        browse.setCreateTime(Instant.now().minusSeconds(30));
+        var draw2 = PointsPersistence.newRecord("openid-123", "lucky_draw", -20, 975L,
+            "积分抽奖 · 再来一次", "再来一次", "k3", null);
+        draw2.setCreateTime(Instant.now());
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of(draw1, browse, draw2)));
+
+        // 第一页：过滤后只有 2 条抽奖记录，非抽奖记录不得占位
+        StepVerifier.create(pointsService.listHistory("openid-123", "lucky_draw", 0, 1))
+            .consumeNextWith(response -> {
+                assertThat(response.getTotal()).isEqualTo(2);
+                assertThat(response.getItems()).hasSize(1);
+                assertThat(response.getItems().get(0).getAction()).isEqualTo("lucky_draw");
+                // 合计只统计过滤后的记录（-20 + -20）
+                assertThat(response.getTotalPoints()).isEqualTo(-40);
+                assertThat(response.isHasNext()).isTrue();
+            })
+            .verifyComplete();
+
+        // 第二页：过滤后仍有记录（若过滤发生在分页之后，这里会是空的）
+        StepVerifier.create(pointsService.listHistory("openid-123", "lucky_draw", 1, 1))
+            .consumeNextWith(response -> {
+                assertThat(response.getItems()).hasSize(1);
+                assertThat(response.getItems().get(0).getAction()).isEqualTo("lucky_draw");
+                assertThat(response.isHasNext()).isFalse();
+            })
+            .verifyComplete();
+
+        // 不过滤时总数与合计包含全部记录（行为与改动前一致）
+        StepVerifier.create(pointsService.listHistory("openid-123", null, 0, 10))
+            .consumeNextWith(response -> {
+                assertThat(response.getTotal()).isEqualTo(3);
+                assertThat(response.getTotalPoints()).isEqualTo(-35);
             })
             .verifyComplete();
     }
@@ -438,6 +489,231 @@ class PointsServiceImplTest {
         when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
             "{\"enabled\":true,\"rules\":{\"draw\":{\"cost\":" + cost
                 + ",\"prizes\":[{\"points\":50,\"weight\":1}]}}}")));
+    }
+
+    // ========== 看板高级版：现金直购与积分兑换的当日开通合并计数 ==========
+    //
+    // 数据看板高级版有两条获取路径：积分兑换写 exchange_dashboard，
+    // 虚拟支付道具直购写 purchase_dashboard。exchangeStatus 返回的 todayCount
+    // 是前端判定「今日已解锁」的唯一依据（data-visual.vue 据此放开高级功能），
+    // 两者必须合并计数，否则现金购买的用户看板不生效。
+
+    /** 现金直购看板后，兑换状态应把当日已开通计为 1，前端据此显示「今日已解锁」。 */
+    @Test
+    void exchangeStatusShouldCountPurchasedDashboardAsUnlockedToday() throws Exception {
+        stubEnabledConfig();
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of(pointsRecord("purchase_dashboard", Instant.now()))));
+
+        StepVerifier.create(pointsService.exchangeStatus("openid-123"))
+            .consumeNextWith(res -> assertThat(todayCountOf(res.getItems(), "dashboard_advanced"))
+                .isEqualTo(1))
+            .verifyComplete();
+    }
+
+    /** 回归保护：积分兑换路径的 exchange_dashboard 仍需计入当日开通。 */
+    @Test
+    void exchangeStatusShouldCountExchangedDashboardAsUnlockedToday() throws Exception {
+        stubEnabledConfig();
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of(pointsRecord("exchange_dashboard", Instant.now()))));
+
+        StepVerifier.create(pointsService.exchangeStatus("openid-123"))
+            .consumeNextWith(res -> assertThat(todayCountOf(res.getItems(), "dashboard_advanced"))
+                .isEqualTo(1))
+            .verifyComplete();
+    }
+
+    /** 当天已现金开通（dailyMax=1）时，不应再允许消耗积分重复兑换。 */
+    @Test
+    void exchangeShouldRejectWhenDashboardAlreadyPurchasedToday() throws Exception {
+        stubEnabledConfig();
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of(pointsRecord("purchase_dashboard", Instant.now()))));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "dashboard_advanced"))
+            .expectErrorSatisfies(ex -> assertThat(ex)
+                .isInstanceOf(WxAuthException.class)
+                .hasMessageContaining("上限"))
+            .verify();
+
+        // 未通过上限校验前不得扣分
+        verify(persistence, never()).saveAccount(any());
+    }
+
+    /** 昨天的现金直购不应影响今日开通判定。 */
+    @Test
+    void exchangeStatusShouldNotCountYesterdayPurchase() throws Exception {
+        stubEnabledConfig();
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123"))
+            .thenReturn(Mono.just(List.of(
+                pointsRecord("purchase_dashboard", Instant.now().minusSeconds(86_400)))));
+
+        StepVerifier.create(pointsService.exchangeStatus("openid-123"))
+            .consumeNextWith(res -> assertThat(todayCountOf(res.getItems(), "dashboard_advanced"))
+                .isZero())
+            .verifyComplete();
+    }
+
+    // ==================== 券类兑换：扣积分必须真正发券 ====================
+    //
+    // 资损背景：exchange() 原本只扣积分写流水、从不修改券字段，
+    // 站长若在积分商城配置 content_ticket / publish_ticket 兑换项，
+    // 用户会「积分被扣、券没到手」。以下用例锁定该防线。
+
+    /** 兑换阅读券：扣积分的同时必须把券加到账户上。 */
+    @Test
+    void exchangeShouldGrantContentTicket() throws Exception {
+        stubMallExchangeItems("content_ticket", "阅读券", 50, 2);
+        userPoints.setBalance(100L);
+        userPoints.setContentTickets(0);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "content_ticket"))
+            .consumeNextWith(res -> {
+                assertThat(res.getPoints()).isEqualTo(50);
+                assertThat(res.getBalance()).isEqualTo(50L);
+            })
+            .verifyComplete();
+
+        // 关键断言：券必须真的发放，否则就是「扣积分什么都没拿到」
+        assertThat(userPoints.getContentTickets()).isEqualTo(1);
+        verify(persistence).saveAccount(any());
+    }
+
+    /** 兑换发布券同样必须发券（修复前 publishTickets 只由现金直购写入，兑换是死路）。 */
+    @Test
+    void exchangeShouldGrantPublishTicket() throws Exception {
+        stubMallExchangeItems("publish_ticket", "发布券", 50, 2);
+        userPoints.setBalance(100L);
+        userPoints.setPublishTickets(null);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "publish_ticket"))
+            .expectNextCount(1)
+            .verifyComplete();
+
+        // 存量账户该字段为 null，必须按 0 兜底后再加，不得抛 NPE
+        assertThat(userPoints.getPublishTickets()).isEqualTo(1);
+    }
+
+    /** 已有券时应在原数量上累加，而不是覆盖为 1。 */
+    @Test
+    void exchangeShouldAccumulateExistingTickets() throws Exception {
+        stubMallExchangeItems("content_ticket", "阅读券", 50, 5);
+        userPoints.setBalance(200L);
+        userPoints.setContentTickets(7);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "content_ticket"))
+            .expectNextCount(1)
+            .verifyComplete();
+
+        assertThat(userPoints.getContentTickets()).isEqualTo(8);
+    }
+
+    /**
+     * 幂等流水冲突时不得扣积分、也不得发券。
+     *
+     * <p>这是「先写流水、后改账户」顺序的价值：并发或重复提交时只有一个请求
+     * 能写入流水，另一个必须原样返回且不产生任何账户变更。</p>
+     */
+    @Test
+    void exchangeShouldNotGrantTicketOnDuplicateRecord() throws Exception {
+        stubMallExchangeItems("content_ticket", "阅读券", 50, 2);
+        userPoints.setBalance(100L);
+        userPoints.setContentTickets(3);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.error(
+            new RuntimeException("already exists")));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "content_ticket"))
+            .consumeNextWith(res -> {
+                assertThat(res.getPoints()).isZero();
+                assertThat(res.getBalance()).isEqualTo(100L);
+                assertThat(res.getMessage()).contains("重复");
+            })
+            .verifyComplete();
+
+        // 未拿到幂等位：积分与券都不能变
+        assertThat(userPoints.getBalance()).isEqualTo(100L);
+        assertThat(userPoints.getContentTickets()).isEqualTo(3);
+        verify(persistence, never()).saveAccount(any());
+    }
+
+    /** 看板高级版靠流水判定生效，不应改动任何券字段（避免误加券）。 */
+    @Test
+    void exchangeShouldNotTouchTicketsForDashboard() throws Exception {
+        stubEnabledConfig();
+        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        userPoints.setBalance(100L);
+        userPoints.setContentTickets(5);
+        userPoints.setPublishTickets(5);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(pointsService.exchange("openid-123", "dashboard_advanced"))
+            .expectNextCount(1)
+            .verifyComplete();
+
+        assertThat(userPoints.getContentTickets()).isEqualTo(5);
+        assertThat(userPoints.getPublishTickets()).isEqualTo(5);
+        assertThat(userPoints.getBalance()).isEqualTo(70L);
+    }
+
+    /** 用 mallConfig.exchangeItems（当前生效分组）配置一个兑换项。 */
+    private void stubMallExchangeItems(String key, String name, int points, int dailyMax)
+        throws Exception {
+        when(settingFetcher.get("mallConfig")).thenReturn(Mono.just(MAPPER.readTree("""
+            {
+              "exchangeItems": [
+                {
+                  "key": "%s",
+                  "name": "%s",
+                  "points": %d,
+                  "dailyMaxCount": %d,
+                  "description": "测试用兑换项"
+                }
+              ]
+            }
+            """.formatted(key, name, points, dailyMax))));
+        lenient().when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.empty());
+        stubEnabledConfig();
+    }
+
+    private static int todayCountOf(List<pro.uhalo.uni.dto.ExchangeItemDTO> items, String key) {
+        return items.stream()
+            .filter(item -> key.equals(item.getKey()))
+            .findFirst()
+            .map(pro.uhalo.uni.dto.ExchangeItemDTO::getTodayCount)
+            .orElse(-1);
+    }
+
+    private static PointsRecord pointsRecord(String action, Instant createTime) {
+        var record = new PointsRecord();
+        record.setWxOpenid("openid-123");
+        record.setAction(action);
+        record.setCreateTime(createTime);
+        return record;
     }
 
     private PointsRecord signInRecord(String date) {

@@ -1,0 +1,29 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-role-digest-manage
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-super-admin: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo AI 日报"
+    rbac.authorization.halo.run/display-name: "AI 日报管理"
+rules:
+  # 「AI 日报」页面复用与其它页面相同的 UI 权限（plugin:plugin-uni-halo:users:view），
+  # 所以这里不再单独声明 ui-permissions：新增 UI 权限串需要用户重新登录才会聚合，
+  # 复用已有权限能保证菜单装完即可见。
+  #
+  # Halo 对不同层级的路径会推导出不同粒度的 resource，这里把常见形式都放行，
+  # 避免因为资源名推导差异导致后台接口 403（与 role-anonymous 里 plugins/* 的写法同一思路）。
+  - apiGroups: [ "console.api.uni.uhalo.pro" ]
+    resources:
+      - "digest"
+      - "digest/*"
+      - "digest/overview"
+      - "digest/preflight"
+      - "digest/reports"
+      - "digest/run"
+      - "digest/cleanup"
+      - "plugins/digest"
+      - "plugins/digest/*"
+    verbs: [ "get", "list", "create", "update" ]

@@ -118,6 +118,7 @@
 					block
 					plan
 					theme="grey"
+					:fllowTheme="false"
 					:shadow="0"
 					class="wx-login-cancel-btn"
 					@click="fnClose"

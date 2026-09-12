@@ -59,7 +59,7 @@ public class PayOrderPersistence {
     }
 
     public static PayOrder newOrder(String openid, String wxUserId, String outTradeNo,
-        String goodsId, String goodsName, long price, int points, int quantity, int env,
+        String goodsId, String goodsName, long price, int quantity, int env,
         String attach) {
         var order = new PayOrder();
         order.setOpenid(openid);
@@ -68,7 +68,6 @@ public class PayOrderPersistence {
         order.setGoodsId(goodsId);
         order.setGoodsName(goodsName);
         order.setPrice(price);
-        order.setPoints(points);
         order.setQuantity(quantity);
         order.setEnv(env);
         order.setAttach(attach);

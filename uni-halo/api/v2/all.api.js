@@ -16,9 +16,6 @@ import {
 import HttpHandler from '@/common/http/request.js'
 import qs from 'qs'
 
-import {
-	getAppConfigs
-} from '@/config/index.js'
 import { getNologinEmail, getOpenid } from "@/utils/auth";
 import { getPointsApiPathCandidates, isPointsApiError } from '@/utils/points.js';
 import UHaloBaseConfig from '@/config/uhalo.config.js'
@@ -357,6 +354,68 @@ const requestPointsApi = async ({ apiKey, method = 'GET', data, params }) => {
 	});
 };
 
+/**
+ * 阅读券（付费内容）API 请求，支持多路径 fallback。
+ *
+ * <p>不复用 requestPointsApi 的原因：那个函数在缺少 openid 时直接 reject「请先登录」，
+ * 而付费文章的状态查询<b>必须允许未登录调用</b>——否则未登录用户打开付费文章时
+ * 页面只能显示登录错误态，拿不到「本文需阅读券」的引导信息。</p>
+ *
+ * @param {object}  options        { apiKey, method, data, params }
+ * @param {boolean} allowAnonymous true 时无 openid 也发请求（状态/余额查询用）
+ */
+const requestContentApi = async ({ apiKey, method = 'GET', data, params }, allowAnonymous = false) => {
+	const openid = getOpenid();
+	if (!openid && !allowAnonymous) {
+		return Promise.reject({ error: '请先登录' });
+	}
+	const candidates = getPointsApiPathCandidates(apiKey);
+	let lastError = null;
+	for (const path of candidates) {
+		let url = buildUniHaloUrl(path);
+		if (params && method === 'GET') {
+			const query = qs.stringify(params);
+			if (query) {
+				url = `${url}?${query}`;
+			}
+		}
+		try {
+			const res = await directRequest({
+				url,
+				method,
+				data,
+				header: openid ? { 'Wechat-Session-Id': openid } : {}
+			});
+			// directRequest 对 400 也按 resolve 返回（项目约定：业务错误交给调用方判断）。
+			// 但解锁/兑换失败（券不足、功能未开启、文章不存在）若原样 resolve，
+			// 页面 .then() 会误报「解锁成功」。这里统一转成 reject，让页面 .catch() 正确提示。
+			if (isDirectRequestSuccess(res?.statusCode)) {
+				return res;
+			}
+			if (res?.statusCode === 400) {
+				throw {
+					error: extractResponseError(res.data) || '操作失败',
+					message: extractResponseError(res.data) || '操作失败',
+					statusCode: 400,
+					data: res.data
+				};
+			}
+			return res;
+		} catch (err) {
+			lastError = err;
+			// 404/被拦截说明该路径不可用，继续尝试下一个候选；
+			// 其余错误（如 400 业务错误）直接抛出，避免无意义的重复请求
+			if (!isPointsApiError(err)) {
+				throw err;
+			}
+		}
+	}
+	return Promise.reject(lastError || {
+		error: '阅读券接口未部署或未开放访问，请确认插件已升级并重启 Halo',
+		isHtml: true
+	});
+};
+
 export default {
 	// ==================== Halo v2 核心 API ====================
 
@@ -373,6 +432,13 @@ export default {
 		try {
 			return await requestPostDetail(postName, hasOpenid);
 		} catch (err) {
+			// 付费文章锁定（插件 ContentTicketFilter 返回 403 + ContentLockedDTO）
+			// 必须原样抛给页面渲染解锁卡片，绝不能走下面的降级重试：
+			// 降级会去掉 Wechat-Session-Id，插件因此无法识别用户身份与解锁状态，
+			// 已解锁用户会被当成未登录再次收到 403，表现为文章永远打不开。
+			if (err?.statusCode === 403 && err?.data && err.data.locked === true) {
+				throw Object.assign({}, err, { isContentLocked: true });
+			}
 			if (!hasOpenid) {
 				throw err;
 			}
@@ -697,40 +763,6 @@ export default {
 		return HttpHandler.Get(`/apis/api.link.halo.run/v1alpha1/links`, params)
 	},
 
-	requestRestrictReadCheck: (restrictType, code, keyId) => {
-		const params = {
-			code: code,
-			templateType: 'post',
-			restrictType: restrictType,
-			keyId: keyId
-		}
-		return HttpHandler.Post(`/apis/tools.muyin.site/v1alpha1/restrict-read/check`, params, {
-			header: {
-				'Authorization': getAppConfigs().pluginConfig.toolsPlugin?.Authorization,
-				'Wechat-Session-Id': getOpenid(),
-				'nologin-email': getNologinEmail()
-			}
-		})
-	},
-
-	createVerificationCode: () => {
-		return HttpHandler.Get(`/apis/tools.muyin.site/v1alpha1/restrict-read/create`, null, {
-			header: {
-				'Authorization': getAppConfigs().pluginConfig.toolsPlugin?.Authorization,
-				'Wechat-Session-Id': getOpenid(),
-			}
-		})
-	},
-
-	submitLink(form) {
-		return HttpHandler.Post(`/apis/linkssubmit.muyin.site/v1alpha1/submit`, form, {
-			header: {
-				'Authorization': getAppConfigs().pluginConfig.linksSubmitPlugin?.Authorization,
-				'Wechat-Session-Id': getOpenid(),
-			}
-		})
-	},
-
 	submitUpvote(data) {
 		return HttpHandler.Post(`/apis/api.halo.run/v1alpha1/trackers/upvote`, data, {})
 	},
@@ -793,7 +825,7 @@ export default {
 	 * 获取全部配置
 	 * 接口：GET /getConfigs
 	 * 鉴权：无需鉴权（公开接口）
-	 * 返回：所有配置分组（basicConfig, appConfig, pageConfig, shareConfig, wxAppConfig 等）
+	 * 返回：所有配置分组（basicConfig, appConfig, shareConfig, wxAppConfig 等）
 	 */
 	getAppConfigs: () => {
 		return HttpHandler.Get(`/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/getConfigs`, {})
@@ -1510,6 +1542,60 @@ export default {
 	},
 
 	/**
+	 * 上报邀请海报已生成（管理端汇总展示用）
+	 * POST /points/invite/poster/generate
+	 */
+	markInvitePosterGenerated: async () => {
+		return requestPointsApi({ apiKey: 'invitePosterGenerate', method: 'POST', data: {} });
+	},
+
+	/**
+	 * 上传邀请海报到后台附件（multipart，字段名 file）
+	 * POST /points/invite/poster/upload
+	 * 鉴权：Header Wechat-Session-Id: {openid}
+	 * 返回：{ imageUrl: string }
+	 */
+	uploadInvitePoster: (filePath) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录后再上传邀请海报' });
+		}
+		return new Promise((resolve, reject) => {
+			uni.uploadFile({
+				url: buildUniHaloUrl('/points/invite/poster/upload'),
+				filePath,
+				name: 'file',
+				header: {
+					'Wechat-Session-Id': openid
+				},
+				success: (res) => {
+					let data = res.data;
+					if (typeof data === 'string') {
+						try {
+							data = JSON.parse(data);
+						} catch (e) {
+							reject({ error: '邀请海报上传响应解析失败', statusCode: res.statusCode });
+							return;
+						}
+					}
+					if (res.statusCode === 200 && data?.imageUrl) {
+						resolve({ statusCode: 200, data });
+						return;
+					}
+					reject({
+						error: data?.error || '邀请海报上传失败',
+						statusCode: res.statusCode,
+						data
+					});
+				},
+				fail: (err) => {
+					reject({ error: err.errMsg || '邀请海报上传失败', detail: err });
+				}
+			});
+		});
+	},
+
+	/**
 	 * 幸运抽奖配置（规则公示）
 	 * GET /points/lucky/config
 	 */
@@ -1565,6 +1651,32 @@ export default {
 	getRankArticles: async (limit = 10) => {
 		return directRequest({
 			url: `${buildUniHaloUrl('/rank/articles')}?limit=${limit || 10}`,
+			method: 'GET'
+		});
+	},
+
+	/**
+	 * 用户榜（榜单公开可读）
+	 * GET /rank/users?type=points|active|invite&range=all|week&limit=20
+	 * 带 Wechat-Session-Id 时额外返回 me（我的排名）
+	 */
+	getUserRank: async ({ type = 'points', range = 'all', limit = 20 } = {}) => {
+		const openid = getOpenid();
+		const query = `type=${encodeURIComponent(type)}&range=${encodeURIComponent(range)}&limit=${limit || 20}`;
+		return directRequest({
+			url: `${buildUniHaloUrl('/rank/users')}?${query}`,
+			method: 'GET',
+			header: openid ? { 'Wechat-Session-Id': openid } : {}
+		});
+	},
+
+	/**
+	 * 互动动态（最近用户的评论/点赞/投票，榜单公开可读）
+	 * GET /rank/activities?limit=10
+	 */
+	getRankActivities: async (limit = 10) => {
+		return directRequest({
+			url: `${buildUniHaloUrl('/rank/activities')}?limit=${limit || 10}`,
 			method: 'GET'
 		});
 	},
@@ -1629,5 +1741,46 @@ export default {
 				'Wechat-Session-Id': openid
 			}
 		});
+	},
+
+	// ==================== 阅读券（付费内容） ====================
+
+	/**
+	 * 查询文章的付费锁定状态（不扣券）。
+	 *
+	 * <p>未登录也可调用（第二参 true = allowAnonymous），返回 locked / unlocked /
+	 * tickets / costTickets 供详情页渲染解锁卡片。若强制登录，未登录用户打开付费文章时
+	 * 只能看到登录错误态，拿不到「本文需阅读券」的引导。</p>
+	 */
+	getContentStatus: async (articleName) => {
+		const name = String(articleName || '').trim();
+		if (!name) {
+			return Promise.reject({ error: '缺少文章参数' });
+		}
+		return requestContentApi({
+			apiKey: 'contentStatus',
+			method: 'GET',
+			params: { articleName: name }
+		}, true);
+	},
+
+	/**
+	 * 用阅读券解锁一篇付费文章（幂等，已解锁不会重复扣券）。需登录。
+	 */
+	unlockContent: async (articleName) => {
+		const name = String(articleName || '').trim();
+		if (!name) {
+			return Promise.reject({ error: '缺少文章参数' });
+		}
+		return requestContentApi({
+			apiKey: 'contentUnlock',
+			method: 'POST',
+			data: { articleName: name }
+		});
+	},
+
+	/** 查询当前用户的阅读券余额；未登录返回 0 而不报错。 */
+	getContentTickets: async () => {
+		return requestContentApi({ apiKey: 'contentTickets', method: 'GET' }, true);
 	},
 }

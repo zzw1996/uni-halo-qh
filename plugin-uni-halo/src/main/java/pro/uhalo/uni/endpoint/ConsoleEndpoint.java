@@ -16,6 +16,7 @@ import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.LuckyDrawService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.services.UserActivityService;
+import pro.uhalo.uni.services.VirtualPayService;
 import pro.uhalo.uni.services.WxUserService;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.endpoint.CustomEndpoint;
@@ -32,17 +33,20 @@ public class ConsoleEndpoint implements CustomEndpoint {
     private final PointsService pointsService;
     private final LuckyDrawService luckyDrawService;
     private final InviteService inviteService;
+    private final VirtualPayService virtualPayService;
 
     public ConsoleEndpoint(WxUserService wxUserService,
                            UserActivityService userActivityService,
                            PointsService pointsService,
                            LuckyDrawService luckyDrawService,
-                           InviteService inviteService) {
+                           InviteService inviteService,
+                           VirtualPayService virtualPayService) {
         this.wxUserService = wxUserService;
         this.userActivityService = userActivityService;
         this.pointsService = pointsService;
         this.luckyDrawService = luckyDrawService;
         this.inviteService = inviteService;
+        this.virtualPayService = virtualPayService;
     }
 
     @Override
@@ -208,7 +212,44 @@ public class ConsoleEndpoint implements CustomEndpoint {
                     .description("Delete a lucky winning.")
                     .tag(apiTag);
             })
+            .GET("/payOrders", this::listPayOrders, builder -> {
+                builder.operationId("ConsoleListPayOrders")
+                    .description("List virtual payment orders (default: orders needing manual refund).")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("status")
+                        .in(ParameterIn.QUERY)
+                        .description("Status: needs_refund (default), pending, delivered or closed")
+                        .required(false)
+                        .implementation(String.class))
+                    .parameter(parameterBuilder()
+                        .name("page")
+                        .in(ParameterIn.QUERY)
+                        .description("Page index, zero-based")
+                        .required(false)
+                        .implementation(Integer.class))
+                    .parameter(parameterBuilder()
+                        .name("size")
+                        .in(ParameterIn.QUERY)
+                        .description("Page size")
+                        .required(false)
+                        .implementation(Integer.class));
+            })
             .build();
+    }
+
+    Mono<ServerResponse> listPayOrders(ServerRequest request) {
+        var status = request.queryParam("status").orElse(null);
+        var page = parseIntParam(request, "page", 0);
+        var size = parseIntParam(request, "size", 20);
+        return virtualPayService.listOrdersForAdmin(status, page, size)
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console listPayOrders failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "查询订单列表失败"));
+            });
     }
 
     Mono<ServerResponse> updateLuckyWinning(ServerRequest request) {

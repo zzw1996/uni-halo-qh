@@ -1,0 +1,11 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: ExtensionDefinition
+metadata:
+  name: outfit-avatar-frame-filter
+  labels:
+    auth.halo.run/extension-point-name: "additional-webfilter"
+spec:
+  className: pro.uhalo.uni.filter.OutfitAvatarFrameFilter
+  extensionPointName: additional-webfilter
+  displayName: "OutfitAvatarFrameFilter"
+  description: "评论列表注入头像框/昵称框装扮（全站可见），失败时放行原始响应。"

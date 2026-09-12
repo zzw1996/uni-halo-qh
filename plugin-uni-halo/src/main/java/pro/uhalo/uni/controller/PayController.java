@@ -61,7 +61,8 @@ public class PayController {
         var clientIp = resolveClientIp(request);
         if (!rateLimiter.tryAcquire("notify:" + clientIp, NOTIFY_RATE_LIMIT_PER_MINUTE,
             Duration.ofMinutes(1))) {
-            log.warn("虚拟支付发货推送触发限流，ip={}", clientIp);
+            log.warn("虚拟支付发货推送触发限流，remote={}，forwarded={}", clientIp,
+                resolveForwardedFor(request));
             return ServerResponse.ok()
                 .contentType(MediaType.APPLICATION_XML)
                 .bodyValue("<xml><ErrCode>1</ErrCode><ErrMsg><![CDATA[rate limited]]></ErrMsg></xml>");
@@ -79,18 +80,33 @@ public class PayController {
             });
     }
 
+    /**
+     * 解析用于限流的来源标识：只使用 TCP 连接的对端地址（不可伪造）。
+     *
+     * <p>不能把 X-Forwarded-For 作为限流键：该请求头由客户端完全控制，
+     * 攻击者每次换一个值即可让每个请求落入不同限流桶，从而绕过限流并放大
+     * 对微信 query_order 的调用（可能触发 268490015 频率限制）与数据库压力。
+     * 该头仅用于日志排查，不参与安全决策。</p>
+     *
+     * <p>注意：若站点部署在反向代理之后，对端地址会是代理地址，
+     * 此时限流退化为全局共享一个桶。微信推送间隔 ≥2 秒且单笔最多重试 15 次，
+     * 30 次/分钟对个人主体小程序（月限额 10 万元）的正常交易量足够。</p>
+     */
     private static String resolveClientIp(ServerRequest request) {
-        var forwarded = request.headers().firstHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            var first = forwarded.split(",")[0].trim();
-            if (StringUtils.hasText(first)) {
-                return first;
-            }
-        }
         return request.remoteAddress()
             .map(InetSocketAddress::getAddress)
             .map(InetAddress::getHostAddress)
             .orElse("unknown");
+    }
+
+    /** 仅用于日志诊断的转发头，不参与限流等安全决策。 */
+    private static String resolveForwardedFor(ServerRequest request) {
+        var forwarded = request.headers().firstHeader("X-Forwarded-For");
+        if (!StringUtils.hasText(forwarded)) {
+            return "-";
+        }
+        var first = forwarded.split(",")[0].trim();
+        return StringUtils.hasText(first) ? first : "-";
     }
 
     private Mono<ServerResponse> withOpenid(ServerRequest request,

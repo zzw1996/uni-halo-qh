@@ -4,6 +4,7 @@ import UserActivities from "./views/UserActivities.vue";
 import PointsRecords from "./views/PointsRecords.vue";
 import LuckyWinnings from "./views/LuckyWinnings.vue";
 import InviteFriends from "./views/InviteFriends.vue";
+import AiDigest from "./views/AiDigest.vue";
 
 export default definePlugin({
   components: {},
@@ -75,6 +76,22 @@ export default definePlugin({
           searchable: true,
           permissions: ["plugin:plugin-uni-halo:users:view"],
           menu: { name: "邀请好友", group: "UniHalo", priority: 4 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
+        path: "/uni-halo/ai-digest",
+        name: "UniHaloAiDigest",
+        component: AiDigest,
+        meta: {
+          title: "AI 日报",
+          searchable: true,
+          // 与其它页面共用同一个 UI 权限：新增权限串需要重新登录才会聚合到当前用户，
+          // 复用已有的权限可以保证菜单立刻可见
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "AI 日报", group: "UniHalo", priority: 5 },
         },
       },
     },

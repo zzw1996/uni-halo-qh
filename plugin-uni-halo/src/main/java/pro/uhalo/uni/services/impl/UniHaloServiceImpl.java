@@ -2,6 +2,7 @@ package pro.uhalo.uni.services.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.minidev.json.JSONObject;
@@ -64,17 +65,52 @@ public class UniHaloServiceImpl implements UniHaloService {
 
     private static final String INVITE_SCENE_PREFIX = "inv:";
 
+    /** 虚拟支付配置分组名 */
+    private static final String PAY_CONFIG_GROUP = "payConfig";
+
+    /** 仅供服务端使用、禁止下发到小程序的支付敏感字段 */
+    private static final java.util.Set<String> PAY_SECRET_FIELDS =
+        java.util.Set.of("appKey", "offerId");
+
     public static String TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
     public static String GET_WXA_CODE_URL = "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=";
 
     @Override
     public Mono<Map<String, JsonNode>> getAppConfigs() {
-        return this.settingFetcher.getValues();
+        // 全量配置接口为匿名可访问，且小程序会把响应整体写入本地存储，
+        // 因此必须在此剥离仅供服务端使用的支付密钥，避免密钥下发到客户端。
+        return this.settingFetcher.getValues()
+            .map(configs -> {
+                var sanitized = new HashMap<String, JsonNode>(configs);
+                var payConfig = sanitized.get(PAY_CONFIG_GROUP);
+                if (payConfig != null) {
+                    sanitized.put(PAY_CONFIG_GROUP, stripPaySecrets(payConfig));
+                }
+                return sanitized;
+            });
     }
 
     @Override
     public Mono<JsonNode> getAppConfigsByGroupName(String groupName) {
-        return this.settingFetcher.get(groupName);
+        // 按分组查询同样匿名可访问，payConfig 需一并脱敏
+        return this.settingFetcher.get(groupName)
+            .map(config -> PAY_CONFIG_GROUP.equals(groupName) ? stripPaySecrets(config) : config);
+    }
+
+    /**
+     * 移除虚拟支付密钥字段。
+     *
+     * <p>appKey 用于服务端计算 paySig 签名，一旦泄露任何人可伪造签名下单；
+     * offerId 同样只在服务端构造 signData 时使用。小程序端只需要 enabled 与 goods
+     * 两项即可完成「是否展示入口」与「商品列表渲染」。</p>
+     */
+    private static JsonNode stripPaySecrets(JsonNode config) {
+        if (config == null || !(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        PAY_SECRET_FIELDS.forEach(copy::remove);
+        return copy;
     }
 
     @Override
@@ -162,6 +198,16 @@ public class UniHaloServiceImpl implements UniHaloService {
                             return externalLinkProcessor.processLink(urlToUse);
                         });
                 }));
+    }
+
+    @Override
+    public Mono<String> uploadImageToAttachments(byte[] bytes, String safeName) {
+        return uploadMedia(safeName, bytes)
+            .flatMap(this::getPermalink)
+            .onErrorResume(ex -> ex instanceof IllegalStateException
+                ? Mono.error(ex)
+                : Mono.error(new IllegalStateException("图片上传失败：" + ex.getMessage(), ex)))
+            .map(url -> externalLinkProcessor.processLink(url));
     }
 
     private Mono<QRCodeInfo> ensureSceneKey(QRCodeInfo info, String postId) {

@@ -141,8 +141,11 @@ export default {
         mockJson() {
             return this.$tm.vx.getters().getMockJson;
         },
+        /** 分类页布局固定值（原后台「页面配置」已移除） */
         categoryConfig() {
-            return this.haloConfigs.pageConfig.categoryConfig
+            return {
+                type: "list"
+            }
         },
         calcShowType() {
             return this.currentCategoryConfig.type
@@ -223,7 +226,7 @@ export default {
         },
         fnGetData() {
             if (this.calcAuditModeEnabled) {
-                this.categoryConfig.type = "list"
+                this.currentCategoryConfig.type = "list"
                 this.dataList = this.mockJson.category.list.map((item) => {
                     return {
                         metadata: {

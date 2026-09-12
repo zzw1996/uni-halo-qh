@@ -56,9 +56,9 @@
 					<view
 						style="display: flex; flex-direction: column; gap: 12rpx 0;padding: 0 24rpx;padding-right:28rpx;">
 						<audio v-for="(audio,index) in moment.audios" :controls="true" :key="index" :id="audio.url"
-							:poster="bloggerInfo.avatar"
-							:name="'来自' + (startConfig.title||bloggerInfo.nickname) + '的声音'"
-							:author="bloggerInfo.nickname" :src="audio.url"></audio>
+							:poster="defaultAvatar"
+							:name="'来自' + siteName + '的声音'"
+							:author="siteName" :src="audio.url"></audio>
 					</view>
 				</view>
 				<view v-if="moment.videos && moment.videos.length!==0" class="card">
@@ -146,14 +146,14 @@
 					return getApp().globalData.baseApiUrl + url;
 				};
 			},
-			// 获取博主信息
-			bloggerInfo() {
-				const blogger = this.haloConfigs.authorConfig.blogger;
-				blogger.avatar = this.$utils.checkAvatarUrl(blogger.avatar, true);
-				return blogger;
+			siteName() {
+				return this.haloConfigs?.appConfig?.startConfig?.title || '';
+			},
+			defaultAvatar() {
+				return this.$utils.checkAvatarUrl(this.haloConfigs?.imagesConfig?.defaultAvatarUrl, true);
 			},
 			calcUseTagRandomColor() {
-				return this.haloConfigs.pageConfig.momentConfig.useTagRandomColor;
+				return true;
 			},
 		},
 		onLoad(e) {
@@ -188,8 +188,8 @@
 					.then(res => {
 						console.log('获取详情', res);
 						const displayUser = {
-							displayName: this.bloggerInfo.nickname,
-							avatar: this.$utils.checkAvatarUrl(this.bloggerInfo.avatar)
+							displayName: this.siteName,
+							avatar: this.defaultAvatar
 						};
 						this.moment = normalizeMomentListItem(res, {
 							displayUser,

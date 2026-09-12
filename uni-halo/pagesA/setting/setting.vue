@@ -115,9 +115,10 @@
 
 		<!-- 操作区域 -->
 		<view v-if="!loading" class="btn-bar flex flex-center bg-white">
+			<!-- 保存为主操作，跟随主题皮肤变色；恢复默认（危险）与返回需保持语义色 -->
 			<tm-button theme="light-blue" :shadow="0" block :height="70" @click="fnOnSave()">保存设置</tm-button>
-			<tm-button theme="red" :shadow="0" block :height="70" @click="fnOnSaveDefault()">恢复默认设置</tm-button>
-			<tm-button theme="blue-grey" :shadow="0" block :height="70" @click="fnOnBack()">返回</tm-button>
+			<tm-button theme="red" :fllowTheme="false" :shadow="0" block :height="70" @click="fnOnSaveDefault()">恢复默认设置</tm-button>
+			<tm-button theme="blue-grey" :fllowTheme="false" :shadow="0" block :height="70" @click="fnOnBack()">返回</tm-button>
 		</view>
 	</view>
 </template>

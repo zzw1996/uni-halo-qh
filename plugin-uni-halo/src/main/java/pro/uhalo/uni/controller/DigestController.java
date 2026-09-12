@@ -1,0 +1,291 @@
+package pro.uhalo.uni.controller;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.server.ServerRequest;
+import org.springframework.web.reactive.function.server.ServerResponse;
+import pro.uhalo.uni.dto.DigestConfigDTO;
+import pro.uhalo.uni.dto.DigestOverviewDTO;
+import pro.uhalo.uni.dto.DigestPostResultDTO;
+import pro.uhalo.uni.dto.DigestRunDetailDTO;
+import pro.uhalo.uni.dto.DigestRunRequest;
+import pro.uhalo.uni.dto.DigestRunSummaryDTO;
+import pro.uhalo.uni.infra.DigestPersistence;
+import pro.uhalo.uni.scheme.DigestReport;
+import pro.uhalo.uni.services.DigestPostWriter;
+import pro.uhalo.uni.services.DigestProgressTracker;
+import pro.uhalo.uni.services.DigestScheduler;
+import pro.uhalo.uni.services.DigestService;
+import pro.uhalo.uni.utils.DigestConfigHelper;
+import run.halo.app.plugin.ReactiveSettingFetcher;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * AI 日报后台接口。
+ *
+ * <p>「立即生成」是异步的：一次生成要跑 1-3 分钟以上，同步等结果必然把浏览器请求拖到网关超时。
+ * 这里只负责触发，前台通过概览接口的 running 标记 + 列表刷新观察进度。</p>
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class DigestController {
+
+    private static final int DEFAULT_LIMIT = 30;
+    private static final int MAX_LIMIT = 200;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private final DigestService digestService;
+    private final DigestScheduler digestScheduler;
+    private final DigestProgressTracker progressTracker;
+    private final DigestPostWriter postWriter;
+    private final ReactiveSettingFetcher settingFetcher;
+
+    /** 开关状态 + 下次执行时间 + 最近一次运行 */
+    public Mono<ServerResponse> overview(ServerRequest request) {
+        return loadConfig()
+            .flatMap(config -> digestScheduler.nextRunInstant()
+                .map(Optional::ofNullable)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(nextRun -> digestService.listReports(DEFAULT_LIMIT)
+                    .map(reports -> buildOverview(config, reports, nextRun.orElse(null)))))
+            .flatMap(this::jsonOk);
+    }
+
+    public Mono<ServerResponse> listReports(ServerRequest request) {
+        var limit = limitParam(request);
+        return digestService.listReports(limit)
+            .map(reports -> digestReportsToResponse(reports))
+            .flatMap(this::jsonOk);
+    }
+
+    public Mono<ServerResponse> getReport(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return digestService.getReport(name)
+            .switchIfEmpty(Mono.error(new IllegalArgumentException("日报记录不存在：" + name)))
+            .map(report -> DigestRunDetailDTO.builder()
+                .summary(toSummary(report))
+                .markdown(report.getMarkdown())
+                .stats(parseStats(report.getStats()))
+                .build())
+            .flatMap(this::jsonOk)
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /**
+     * 残留文章清理：{@code ?dryRun=true} 只预览清单，false 才执行删除。
+     *
+     * <p>删除前会自动摘掉所有终态器——站点上若有插件（如 AI 助手）挂了终态器且其协调器
+     * 一直失败，文章会永久卡在「删除中」，从后台删不掉。</p>
+     */
+    public Mono<ServerResponse> cleanupResidues(ServerRequest request) {
+        var dryRun = request.queryParam("dryRun").map(Boolean::parseBoolean).orElse(true);
+        log.info("[UniHalo][Digest] 收到残留清理请求：dryRun={}", dryRun);
+        return (dryRun ? postWriter.previewResidues() : postWriter.previewResidues()
+            .flatMap(items -> postWriter.purgeResidues()
+                .doOnNext(names -> log.warn("[UniHalo][Digest] 已清理残留文章 {} 篇：{}",
+                    names.size(), names))
+                .thenReturn(items)))
+            .map(items -> {
+                var payload = new java.util.LinkedHashMap<String, Object>();
+                payload.put("dryRun", dryRun);
+                payload.put("count", items.size());
+                payload.put("items", items);
+                payload.put("message", dryRun
+                    ? "共找到 " + items.size() + " 篇未发布成功的残留文章，确认后执行清理"
+                    : "已清理 " + items.size() + " 篇残留文章（含终态器摘除）");
+                return payload;
+            })
+            .flatMap(this::jsonOk)
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /** 发布环境自检：令牌、作者、分类标签逐项返回结论与处置建议 */
+    public Mono<ServerResponse> preflight(ServerRequest request) {
+        return digestService.preflight()
+            .flatMap(items -> jsonOk(Map.of("items", items)))
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /**
+     * 立即生成。
+     *
+     * <p>是否发布可以从查询串给（{@code ?publish=true}，方便 curl 与独立管理页），
+     * 也可以从 body 给（{@code {"publish": true}}）；都不给时按插件配置里的「自动发布」决定。</p>
+     */
+    public Mono<ServerResponse> run(ServerRequest request) {
+        return request.bodyToMono(DigestRunRequest.class)
+            .defaultIfEmpty(new DigestRunRequest())
+            .flatMap(body -> {
+                if (digestService.isRunning()) {
+                    return badRequest("已有一次日报生成任务在执行中，请等它跑完");
+                }
+                return loadConfig().flatMap(config -> {
+                    var publish = resolvePublishFlag(request, body, config);
+                    var slot = DigestPersistence.manualSlot(
+                        ZonedDateTime.now(DigestConfigHelper.zoneOf(config.getTimezone())));
+                    log.info("[UniHalo][Digest] 收到后台手动触发：slot={} publish={}", slot, publish);
+                    // 订阅后立刻返回，真正的流水线在弹性线程池上跑，避免占用事件循环线程
+                    digestService.run(slot, publish)
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .subscribe(
+                            report -> log.info("[UniHalo][Digest] 后台手动任务结束 name={} status={}",
+                                report.getMetadata().getName(), report.getStatus()),
+                            ex -> log.warn("[UniHalo][Digest] 后台手动任务失败：{}", ex.getMessage(), ex));
+                    return jsonOk(Map.of(
+                        "started", true,
+                        "slot", slot,
+                        "publish", publish,
+                        "message", "已开始生成，预计需要 1-3 分钟，可刷新列表查看进度"));
+                });
+            })
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    private static boolean resolvePublishFlag(ServerRequest request, DigestRunRequest body,
+        DigestConfigDTO config) {
+        var fromQuery = request.queryParam("publish")
+            .map(value -> Boolean.parseBoolean(value.trim()))
+            .orElse(null);
+        if (fromQuery != null) {
+            return fromQuery;
+        }
+        return body.getPublish() != null ? body.getPublish() : config.isPublishEnabled();
+    }
+
+    /**
+     * 把已生成但没发布成功的报告重新发布一次。
+     *
+     * <p>与「立即生成」同样是异步的：发布要等服务端生成发布快照，可能持续几分钟，
+     * 同步等待会把浏览器请求拖到网关超时。</p>
+     */
+    public Mono<ServerResponse> publishReport(ServerRequest request) {
+        var name = request.pathVariable("name");
+        if (digestService.isRunning()) {
+            return badRequest("已有一次日报任务在执行中，请等它跑完");
+        }
+        log.info("[UniHalo][Digest] 收到后台重新发布请求：name={}", name);
+        digestService.publishReport(name)
+            .subscribeOn(Schedulers.boundedElastic())
+            .subscribe(
+                report -> log.info("[UniHalo][Digest] 重新发布结束 name={} state={} 共 {} 篇",
+                    name, report.getPublishState(),
+                    report.getPostCount() == null ? 0 : report.getPostCount()),
+                ex -> log.warn("[UniHalo][Digest] 重新发布失败 name={}：{}", name, ex.getMessage(), ex));
+        return jsonOk(Map.of(
+            "started", true,
+            "message", "已开始发布，正文较长时需要几分钟确认，可刷新列表查看状态"));
+    }
+
+    // ── 组装 ──
+
+    private DigestOverviewDTO buildOverview(DigestConfigDTO config, java.util.List<DigestReport> reports,
+        java.time.Instant nextRunAt) {
+        return DigestOverviewDTO.builder()
+            .enabled(config.isEnabled())
+            .scheduleEnabled(config.isScheduleEnabled())
+            .scheduleTimes(config.getScheduleTimes())
+            .timezone(config.getTimezone())
+            .nextRunAt(nextRunAt)
+            .running(digestService.isRunning())
+            .progress(progressTracker.snapshot())
+            .totalReports(reports.size())
+            .lastReport(reports.isEmpty() ? null : toSummary(reports.get(0)))
+            .build();
+    }
+
+    private Map<String, Object> digestReportsToResponse(java.util.List<DigestReport> reports) {
+        var items = reports.stream().map(this::toSummary).toList();
+        return Map.of("items", items, "total", items.size());
+    }
+
+    private DigestRunSummaryDTO toSummary(DigestReport report) {
+        return DigestRunSummaryDTO.builder()
+            .name(report.getMetadata() == null ? null : report.getMetadata().getName())
+            .date(report.getDate())
+            .slot(report.getSlot())
+            .status(report.getStatus())
+            .publishState(report.getPublishState())
+            .articleCount(report.getArticleCount())
+            .postCount(report.getPostCount())
+            .posts(parsePosts(report.getPosts()))
+            .postName(report.getPostName())
+            .postUrl(report.getPostUrl())
+            .cover(report.getCover())
+            .error(report.getError())
+            .startedAt(report.getStartedAt())
+            .finishedAt(report.getFinishedAt())
+            .durationMs(durationMs(report))
+            .build();
+    }
+
+    /** 各篇文章的发布结果，反序列化失败时返回空列表并告警（不要静默吞掉） */
+    private static List<DigestPostResultDTO> parsePosts(String json) {
+        if (!StringUtils.hasText(json)) {
+            return List.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(json,
+                OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class,
+                    DigestPostResultDTO.class));
+        } catch (Exception ex) {
+            log.warn("[UniHalo][Digest] 发布结果解析失败（name 列表仍可正常展示）：{}",
+                ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private static Long durationMs(DigestReport report) {
+        if (report.getStartedAt() == null || report.getFinishedAt() == null) {
+            return null;
+        }
+        return Duration.between(report.getStartedAt(), report.getFinishedAt()).toMillis();
+    }
+
+    private static JsonNode parseStats(String stats) {
+        if (!StringUtils.hasText(stats)) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.readTree(stats);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private Mono<DigestConfigDTO> loadConfig() {
+        return settingFetcher.get(DigestConfigHelper.groupName())
+            .map(DigestConfigHelper::parse)
+            .defaultIfEmpty(DigestConfigHelper.defaults());
+    }
+
+    private int limitParam(ServerRequest request) {
+        var raw = request.queryParam("limit").orElse("");
+        try {
+            return Math.min(MAX_LIMIT, Math.max(1, Integer.parseInt(raw)));
+        } catch (NumberFormatException ex) {
+            return DEFAULT_LIMIT;
+        }
+    }
+
+    private Mono<ServerResponse> jsonOk(Object body) {
+        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body);
+    }
+
+    private Mono<ServerResponse> badRequest(String message) {
+        return ServerResponse.badRequest().contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("error", StringUtils.hasText(message) ? message : "请求失败"));
+    }
+}

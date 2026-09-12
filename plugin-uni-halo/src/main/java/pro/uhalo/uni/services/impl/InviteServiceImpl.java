@@ -65,13 +65,69 @@ public class InviteServiceImpl implements InviteService {
                         .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
                         .flatMap(user -> ensureInviteCode(user)
                             .flatMap(ensured -> wxUserService.countByInviterOpenid(id)
-                                .map(count -> InviteInfoDTO.builder()
-                                    .enabled(config.enabled())
-                                    .rewardPoints(config.rewardPoints())
-                                    .inviteCode(ensured.getInviteCode())
-                                    .invitedCount(count)
-                                    .build()))));
+                                .flatMap(count -> {
+                                    var base = InviteInfoDTO.builder()
+                                        .enabled(config.enabled())
+                                        .rewardPoints(config.rewardPoints())
+                                        .inviteCode(ensured.getInviteCode())
+                                        .invitedCount(count)
+                                        .posterGeneratedAt(PointsRecordHelper.formatInstant(user.getPosterGeneratedAt()))
+                                        .posterImageUrl(user.getPosterImageUrl())
+                                        .build();
+                                    return resolveInviter(user)
+                                        .map(inviter -> {
+                                            base.setInviterNickname(StringUtils.hasText(inviter.getNickname())
+                                                ? inviter.getNickname().trim()
+                                                : inviter.getHaloUserName());
+                                            base.setInviterAvatar(inviter.getAvatarUrl());
+                                            return base;
+                                        })
+                                        .defaultIfEmpty(base);
+                                }))));
             });
+    }
+
+    @Override
+    public Mono<Boolean> markPosterGenerated(String openid) {
+        return requireOpenid(openid)
+            .flatMap(id -> {
+                ensureRateLimit(id, "invite-poster-generate", 10, "操作过于频繁，请稍后再试");
+                return wxUserService.fetchByOpenid(id)
+                    .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
+                    .flatMap(user -> {
+                        if (user.getPosterGeneratedAt() != null) {
+                            return Mono.just(true);
+                        }
+                        user.setPosterGeneratedAt(java.time.Instant.now());
+                        return wxUserService.update(user).map(updated -> true);
+                    });
+            });
+    }
+
+    @Override
+    public Mono<Boolean> attachPosterImage(String openid, String imageUrl) {
+        if (!StringUtils.hasText(imageUrl)) {
+            return Mono.just(false);
+        }
+        return requireOpenid(openid)
+            .flatMap(id -> wxUserService.fetchByOpenid(id)
+                .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
+                .flatMap(user -> {
+                    user.setPosterImageUrl(imageUrl.trim());
+                    if (user.getPosterGeneratedAt() == null) {
+                        user.setPosterGeneratedAt(java.time.Instant.now());
+                    }
+                    return wxUserService.update(user).map(updated -> true);
+                }));
+    }
+
+    /** 查询邀请我的好友（被邀请关系），无邀请人时返回空 */
+    private Mono<WxUser> resolveInviter(WxUser user) {
+        var inviterOpenid = user.getInviterOpenid();
+        if (!StringUtils.hasText(inviterOpenid)) {
+            return Mono.empty();
+        }
+        return wxUserService.fetchByOpenid(inviterOpenid.trim());
     }
 
     @Override
@@ -161,10 +217,12 @@ public class InviteServiceImpl implements InviteService {
 
         return Mono.zip(
                 persistence.listAllRecords(),
-                wxUserService.loadUserLookup())
+                wxUserService.loadUserLookup(),
+                wxUserService.listAllUsers())
             .map(tuple -> {
                 var records = tuple.getT1();
                 var lookup = tuple.getT2();
+                var users = tuple.getT3();
                 var inviteRecords = records.stream()
                     .filter(record -> INVITE_ACTION.equals(record.getAction()))
                     .filter(record -> matchesInviteKeyword(record, lookup, normalizedKeyword))
@@ -179,7 +237,7 @@ public class InviteServiceImpl implements InviteService {
                     .toList();
                 return AdminInviteRecordListResponse.builder()
                     .items(items)
-                    .summary(buildInviteSummary(inviteRecords, lookup))
+                    .summary(buildInviteSummary(inviteRecords, lookup, users, normalizedKeyword))
                     .total(total)
                     .hasNext(to < total)
                     .page(normalizedPage)
@@ -212,8 +270,10 @@ public class InviteServiceImpl implements InviteService {
 
     /**
      * 按邀请人聚合：累计邀请人数 + 累计发放积分，按总积分倒序。
+     * 生成过邀请海报的用户即使尚未邀请成功也保留在汇总中（posterGenerated=true）。
      */
-    private List<AdminInviteSummaryItemDTO> buildInviteSummary(List<PointsRecord> records, WxUserLookup lookup) {
+    private List<AdminInviteSummaryItemDTO> buildInviteSummary(List<PointsRecord> records,
+        WxUserLookup lookup, List<WxUser> users, String keyword) {
         var aggregates = new LinkedHashMap<String, Map<String, Object>>();
         for (var record : records) {
             var inviterOpenid = PointsRecordHelper.resolveOpenid(record);
@@ -232,26 +292,50 @@ public class InviteServiceImpl implements InviteService {
                 }
             }
         }
+        // 生成过海报的用户并入汇总（可能尚无邀请成功记录）
+        for (var user : users) {
+            if (user.getPosterGeneratedAt() == null || !StringUtils.hasText(user.getOpenid())) {
+                continue;
+            }
+            if (keyword != null && !matchesUserKeyword(user, keyword)) {
+                continue;
+            }
+            aggregates.putIfAbsent(user.getOpenid(), new LinkedHashMap<>());
+        }
         var summary = new ArrayList<AdminInviteSummaryItemDTO>();
         for (var entry : aggregates.entrySet()) {
             var inviterOpenid = entry.getKey();
             var agg = entry.getValue();
             var inviter = resolveNullable(lookup, inviterOpenid);
-            summary.add(AdminInviteSummaryItemDTO.builder()
+            var invitedCount = ((Number) agg.getOrDefault("count", 0L)).longValue();
+            var totalPoints = ((Number) agg.getOrDefault("points", 0L)).longValue();
+            AdminInviteSummaryItemDTO item = AdminInviteSummaryItemDTO.builder()
                 .inviterOpenid(inviterOpenid)
                 .inviterNickname(PointsRecordHelper.resolveDisplayName(inviter, inviterOpenid))
                 .inviterAvatar(inviter == null ? null : inviter.getAvatarUrl())
                 .inviterHaloUserName(inviter == null ? null : inviter.getHaloUserName())
-                .invitedCount(((Number) agg.getOrDefault("count", 0L)).longValue())
-                .totalPoints(((Number) agg.getOrDefault("points", 0L)).longValue())
+                .invitedCount(invitedCount)
+                .totalPoints(totalPoints)
                 .lastInviteTime(PointsRecordHelper.formatInstant((java.time.Instant) agg.get("lastTime")))
-                .build());
+                .build();
+            if (inviter != null && inviter.getPosterGeneratedAt() != null) {
+                item.setPosterGenerated(true);
+                item.setPosterGeneratedAt(PointsRecordHelper.formatInstant(inviter.getPosterGeneratedAt()));
+                item.setPosterImageUrl(inviter.getPosterImageUrl());
+            }
+            summary.add(item);
         }
         summary.sort(Comparator
             .comparingLong(AdminInviteSummaryItemDTO::getTotalPoints).reversed()
             .thenComparing(Comparator.comparingLong(AdminInviteSummaryItemDTO::getInvitedCount).reversed()
                 .thenComparing(item -> item.getInviterOpenid(), Comparator.nullsLast(String::compareTo))));
         return summary;
+    }
+
+    private static boolean matchesUserKeyword(WxUser user, String keyword) {
+        return containsIgnoreCase(user.getOpenid(), keyword)
+            || containsIgnoreCase(user.getNickname(), keyword)
+            || containsIgnoreCase(user.getHaloUserName(), keyword);
     }
 
     private static WxUser resolveNullable(WxUserLookup lookup, String openid) {

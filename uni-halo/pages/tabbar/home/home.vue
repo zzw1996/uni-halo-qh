@@ -33,7 +33,7 @@
 				</view>
 			</view>
 
-			<!-- 每日一句 + 倒数日 + 热榜 -->
+			<!-- 每日一句 + 倒数日（原「热榜」块已随榜单页上线移除） -->
 			<view class="daily-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
 				<view class="daily-quote uh-py-12">
 				<view class="daily-quote-head flex flex-between">
@@ -52,7 +52,7 @@
 						</view>
 					</view>
 				</view>
-				<view class="daily-countdown">
+				<!-- <view class="daily-countdown">
 					<view class="countdown-head flex flex-between">
 						<text class="page-item_title text-weight-b">倒数日</text>
 						<view class="countdown-add-btn" @click="fnToggleCountdownForm">
@@ -81,25 +81,7 @@
 						</view>
 					</view>
 					<view v-else class="countdown-empty">还没有倒数日，点右上角「＋ 新增」添加一个吧</view>
-				</view>
-				<view v-if="rankList.length" class="daily-rank">
-					<view class="daily-rank-head flex flex-between">
-						<text class="page-item_title text-weight-b">热榜</text>
-						<text class="daily-rank-tip">按浏览量排序</text>
-					</view>
-					<view
-						v-for="(item, index) in rankList"
-						:key="item.name"
-						class="daily-rank-item flex flex-between"
-						@click="fnToRankArticle(item)"
-					>
-						<view class="daily-rank-main flex">
-							<text class="daily-rank-no" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</text>
-							<text class="daily-rank-title">{{ item.title || item.name }}</text>
-						</view>
-						<text class="daily-rank-visit">{{ item.visit }} 阅读</text>
-					</view>
-				</view>
+				</view> -->
 			</view>
 
 			<!-- 每日任务入口 -->
@@ -113,32 +95,6 @@
 					<text class="daily-task-arrow-icon">›</text>
 				</view>
 			</view>
-
-			<!-- 精品分类 -->
-			<block v-if="calcIsShowCategory">
-				<view class="flex flex-between mt-16 mb-24 pl-24 pr-24">
-					<view class="page-item_title text-weight-b ">精选分类</view>
-					<view class="show-more flex flex-center bg-white round-3" @click="fnToCategoryPage">
-						<text class="iconfont icon-angle-right text-size-s text-grey-darken-1"></text>
-					</view>
-					<view v-if="false" class="flex flex-center text-size-s text-grey-darken-1"
-						@click="fnToCategoryPage">
-						<text class=" text-size-m">查看更多</text>
-						<text class="iconfont icon-angle-right  text-size-s "></text>
-					</view>
-				</view>
-				<scroll-view class="category" scroll-x="true">
-					<view v-if="categoryList.length === 0" class="cate-empty round-3 mr-5 flex flex-center text-grey">
-						还没有任何分类~
-					</view>
-					<block v-else>
-						<view class="content" v-for="(category, index) in categoryList" :key="category.metadata.name"
-							@click="fnToCategoryBy(category)">
-							<category-mini-card :category="category"></category-mini-card>
-						</view>
-					</block>
-				</scroll-view>
-			</block>
 
 			<!-- 最新文章 -->
 			<view class="flex flex-between mt-24 mb-24 pl-24 pr-24">
@@ -210,7 +166,6 @@
 					loading: 'loading',
 					todayQuote: { text: '', author: '' },
 					todayQuoteDate: '',
-					rankList: [],
 					countdownList: [],
 					countdownShowForm: false,
 					countdownForm: {
@@ -229,7 +184,6 @@
 				bannerList: [],
 				noticeList: [],
 				articleList: [],
-				categoryList: [],
 				notify: {
 					show: false,
 					data: {}
@@ -245,17 +199,6 @@
 					return this.$utils.checkAvatarUrl(this.wxUserInfo.avatarUrl, true);
 				}
 				return '';
-			},
-			bloggerInfo() {
-				const blogger = this.haloConfigs?.authorConfig?.blogger;
-				if (!blogger) return {
-					avatar: '',
-					nickname: ''
-				};
-				return {
-					...blogger,
-					avatar: this.$utils.checkAvatarUrl(blogger.avatar, true)
-				};
 			},
 			appInfo() {
 				const appInfo = this.haloConfigs?.appConfig?.appInfo;
@@ -274,27 +217,18 @@
 			calcAuditModeEnabled() {
 				return !!this.haloConfigs?.auditConfig?.auditModeEnabled
 			},
-			calcIsShowCategory() {
-				if (this.calcAuditModeEnabled && this.categoryList.length !== 0) {
-					return false
-				}
-				if (this.calcAuditModeEnabled) {
-					return false
-				}
-				return !!this.haloConfigs?.pageConfig?.homeConfig?.useCategory
-			},
 			calcVotePluginEnabled() {
-				return !!this.haloConfigs?.pluginConfig?.votePlugin?.enabled
+				return !!this.haloConfigs?.pluginIntegrations?.vote
 			},
 			calcLinksPluginEnabled() {
-				return !!this.haloConfigs?.pluginConfig?.linksPlugin?.enabled;
+				return !!this.haloConfigs?.pluginIntegrations?.links;
 			},
 			bannerConfig() {
-				return this.haloConfigs?.pageConfig?.homeConfig?.bannerConfig || {
-					enabled: false,
-					height: '400rpx',
+				return {
+					enabled: true,
 					showTitle: true,
 					showIndicator: true,
+					height: '400rpx',
 					dotPosition: 'right',
 					type: 'post',
 					list: []
@@ -357,55 +291,6 @@
 			fnQuery() {
 				this.fnGetBanner();
 				this.fnGetArticleList();
-				this.fnGetCategoryList();
-			},
-			fnGetCategoryList() {
-				if (this.calcAuditModeEnabled) {
-					this.categoryList = this.mockJson.home.categoryList.map((item) => {
-						return {
-							metadata: {
-								name: Date.now() * Math.random(),
-							},
-							spec: {
-								displayName: item.title,
-								cover: item.cover
-							},
-							postCount: 0
-						}
-					});
-					return;
-				}
-
-				if (!this.calcIsShowCategory) {
-					return;
-				}
-
-				this.$httpApi.v2
-					.getCategoryList({
-						fieldSelector: ['spec.hideFromList=false']
-					})
-					.then(res => {
-						this.categoryList = res.items.map(item => {
-							item.postCount = item.postCount ?? 0
-							return item;
-						}).sort((a, b) => {
-							return b.postCount - a.postCount;
-						});
-
-						setTimeout(() => {
-							this.loading = 'success';
-						}, 500);
-					})
-					.catch(err => {
-						console.error(err);
-						this.loading = 'error';
-					})
-					.finally(() => {
-						setTimeout(() => {
-							uni.hideLoading();
-							uni.stopPullDownRefresh();
-						}, 500);
-					});
 			},
 			// 获取轮播图
 			fnGetBanner() {
@@ -414,8 +299,8 @@
 						return {
 							mp4: '',
 							id: Date.now() * Math.random(),
-							nickname: this.bloggerInfo.nickname || '博主',
-							avatar: this.bloggerInfo.avatar,
+							nickname: this.appInfo.name || '博主',
+							avatar: this.appInfo.logo,
 							address: '',
 							createTime: item.time,
 							title: item.title,
@@ -437,8 +322,8 @@
 						return {
 							mp4: '',
 							id: Date.now() * Math.random(),
-							nickname: this.bloggerInfo.nickname || '博主',
-							avatar: this.bloggerInfo.avatar,
+							nickname: this.appInfo.name || '博主',
+							avatar: this.appInfo.logo,
 							address: '',
 							createTime: "",
 							title: item.title,
@@ -596,7 +481,6 @@
 				this.todayQuote = quote || { text: '', author: '' };
 				const now = new Date();
 				this.todayQuoteDate = `${now.getMonth() + 1}月${now.getDate()}日`;
-				this.fnLoadRank();
 				this.fnInitNotify();
 				this.fnLoadCountdowns();
 			},
@@ -674,18 +558,6 @@
 				uni.setStorageSync(key, today);
 			},
 
-			async fnLoadRank() {
-				try {
-					const res = await this.$httpApi.v2.getRankArticles(3);
-					const body = res?.data || res || {};
-					const items = (body.items || []).filter((item) => item && item.name);
-					this.rankList = items.slice(0, 3);
-				} catch (err) {
-					// 热榜接口未部署（旧插件）时静默隐藏热榜块
-					this.rankList = [];
-				}
-			},
-
 			fnCopyTodayQuote() {
 				const text = this.todayQuote.text
 					? `每日一句：${this.todayQuote.text}${this.todayQuote.author ? ` —— ${this.todayQuote.author}` : ''}`
@@ -700,14 +572,6 @@
 			fnShareDailyQuote() {
 				this.fnCopyTodayQuote();
 				uni.showToast({ title: '已复制，快去分享给朋友吧', icon: 'none' });
-			},
-
-			fnToRankArticle(item) {
-				if (!item?.name) return;
-				uni.navigateTo({
-					url: '/pagesA/article-detail/article-detail?name=' + encodeURIComponent(item.name),
-					animationType: 'slide-in-right'
-				});
 			},
 
 			// 快捷导航页面跳转
@@ -725,26 +589,10 @@
 						break;
 				}
 			},
-			// 分类页面
-			fnToCategoryPage() {
-				uni.switchTab({
-					url: '/pages/tabbar/category/category'
-				});
-			},
 			// 所有的文章列表页面
 			fnToArticlesPage() {
 				uni.navigateTo({
 					url: '/pagesA/articles/articles'
-				});
-			},
-
-			// 根据slug查询分类下的文章
-			fnToCategoryBy(category) {
-				if (this.calcAuditModeEnabled) {
-					return;
-				}
-				uni.navigateTo({
-					url: `/pagesA/category-detail/category-detail?name=${category.metadata.name}&title=${category.spec.displayName}`
 				});
 			},
 
@@ -842,27 +690,6 @@
 		// box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
 		.name {
 			color: var(--main-text-color);
-		}
-	}
-
-	.category {
-		width: 94vw;
-		display: flex;
-		height: 200rpx;
-		white-space: nowrap;
-		margin: 0 24rpx;
-
-		.content {
-			display: inline-block;
-			padding-left: 24rpx;
-
-			&:first-child {
-				padding-left: 0;
-			}
-		}
-
-		.cate-empty {
-			height: inherit;
 		}
 	}
 
@@ -1101,59 +928,6 @@
 		background: #f0f8ff;
 		font-size: 22rpx;
 		color: #03a9f4;
-	}
-
-	.daily-rank {
-		padding: 20rpx 24rpx;
-		border-top: 1rpx solid #f0f0f0;
-	}
-
-	.daily-rank-head {
-		align-items: center;
-		margin-bottom: 8rpx;
-	}
-
-	.daily-rank-tip {
-		font-size: 22rpx;
-		color: #c0c4cc;
-	}
-
-	.daily-rank-item {
-		align-items: center;
-		padding: 14rpx 0;
-	}
-
-	.daily-rank-main {
-		align-items: center;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.daily-rank-no {
-		width: 36rpx;
-		font-size: 24rpx;
-		font-weight: 700;
-		color: #c0c4cc;
-
-		&.is-top {
-			color: #ff9800;
-		}
-	}
-
-	.daily-rank-title {
-		flex: 1;
-		min-width: 0;
-		font-size: 26rpx;
-		color: #303133;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.daily-rank-visit {
-		margin-left: 16rpx;
-		font-size: 22rpx;
-		color: #909399;
 	}
 
 	.nav-box {		background-color: #ffff;

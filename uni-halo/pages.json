@@ -48,6 +48,19 @@
 			}
 		},
 		{
+			"path": "pages/tabbar/rank/rank",
+			"style": {
+				"navigationBarTitleText": "榜单",
+				"enablePullDownRefresh": true,
+				"app-plus": {
+					"pullToRefresh": {
+						"color": "#03a9f4",
+						"style": "circle"
+					}
+				}
+			}
+		},
+		{
 			"path": "pages/tabbar/moments/moments",
 			"style": {
 				"navigationBarTitleText": "瞬间",
@@ -105,49 +118,10 @@
 						}
 					}
 				},
-				{
-					"path": "love/love",
-					"style": {
-						"navigationBarTitleText": "恋爱日记",
-						"navigationStyle": "custom",
-						"enablePullDownRefresh": false,
-						"app-plus": {
-							"pullToRefresh": {
-								"color": "#03a9f4",
-								"style": "circle"
-							}
-						}
-					}
-				},
-				{
-					"path": "love/list",
-					"style": {
-						"navigationBarTitleText": "恋爱清单",
-						"enablePullDownRefresh": false,
-						"navigationStyle": "custom"
-					}
-				},
-				{
-					"path": "love/album",
-					"style": {
-						"navigationBarTitleText": "恋爱相册",
-						"enablePullDownRefresh": true,
-						"app-plus": {
-							"pullToRefresh": {
-								"color": "#03a9f4",
-								"style": "circle"
-							}
-						}
-					}
-				},
-				{
-					"path": "love/journey",
-					"style": {
-						"navigationBarTitleText": "我们的故事",
-						"navigationStyle": "custom",
-						"enablePullDownRefresh": false
-					}
-				},
+
+
+
+
 				{
 					"path": "archives/archives",
 					"style": {
@@ -207,13 +181,7 @@
 						"enablePullDownRefresh": false
 					}
 				},
-				{
-					"path": "contact/contact",
-					"style": {
-						"navigationBarTitleText": "联系博主",
-						"enablePullDownRefresh": false
-					}
-				},
+
 				{
 					"path": "about/about",
 					"style": {
@@ -274,13 +242,7 @@
 						}
 					}
 				},
-				{
-					"path": "submit-link/submit-link",
-					"style": {
-						"navigationBarTitleText": "友链提交",
-						"enablePullDownRefresh": false
-					}
-				},
+
 				{
 					"path": "moment-detail/moment-detail",
 					"style": {
@@ -355,10 +317,10 @@
 					}
 				},
 				{
-					"path": "points-exchange/points-exchange",
+					"path": "lucky-records/lucky-records",
 					"style": {
-						"navigationBarTitleText": "积分兑换",
-						"enablePullDownRefresh": false
+						"navigationBarTitleText": "抽奖记录",
+						"enablePullDownRefresh": true
 					}
 				},
 				{
@@ -464,8 +426,8 @@
 			{
 				"iconPath": "static/tabbar/select_links.png",
 				"selectedIconPath": "static/tabbar/select_links_active.png",
-				"pagePath": "pages/tabbar/moments/moments",
-				"text": "瞬间"
+				"pagePath": "pages/tabbar/rank/rank",
+				"text": "榜单"
 			},
 			{
 				"iconPath": "static/tabbar/select_mine.png",

@@ -40,6 +40,9 @@ public interface UniHaloService {
      */
     Mono<InviteQRCodeDataDTO> resolveInviteQRCodeData(String inviteCode);
 
+    /** 上传图片字节到附件存储，返回外部可访问地址 */
+    Mono<String> uploadImageToAttachments(byte[] bytes, String safeName);
+
     /**
      * 获取二维码信息
      *

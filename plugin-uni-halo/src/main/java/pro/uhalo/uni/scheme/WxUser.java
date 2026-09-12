@@ -5,6 +5,8 @@ import lombok.EqualsAndHashCode;
 import run.halo.app.extension.AbstractExtension;
 import run.halo.app.extension.GVK;
 
+import java.time.Instant;
+
 import static pro.uhalo.uni.constants.Constants.BASIC_DOMAIN_NAME;
 import static pro.uhalo.uni.constants.Constants.PLUGIN_API_VERSION;
 
@@ -37,4 +39,10 @@ public class WxUser extends AbstractExtension {
 
     /** 邀请我注册的人（openid，未受邀则为空） */
     private String inviterOpenid;
+
+    /** 最近一次生成邀请海报时间（null=未生成过海报） */
+    private Instant posterGeneratedAt;
+
+    /** 邀请海报图片地址（上传到后台附件后回填，null=未上传或生成失败） */
+    private String posterImageUrl;
 }

@@ -42,14 +42,14 @@
 
     <!-- 汇总：一人邀请多人，累计邀请人数 + 汇总积分 -->
     <div class="table-card">
-      <div class="table-title">📊 邀请人汇总</div>
+      <div class="table-title">📊 邀请人汇总（含生成过邀请海报的用户）</div>
       <table class="tbl">
         <thead>
-          <tr><th>#</th><th>邀请人</th><th>累计成功邀请</th><th>汇总积分</th><th>最近邀请时间</th></tr>
+          <tr><th>#</th><th>邀请人</th><th>累计成功邀请</th><th>汇总积分</th><th>邀请海报</th><th>最近邀请时间</th></tr>
         </thead>
         <tbody>
-          <tr v-if="state.loading.value"><td colspan="5" class="empty">⏳ 加载中…</td></tr>
-          <tr v-else-if="!summaryItems.length"><td colspan="5" class="empty">🎈 暂无邀请记录</td></tr>
+          <tr v-if="state.loading.value"><td colspan="6" class="empty">⏳ 加载中…</td></tr>
+          <tr v-else-if="!summaryItems.length"><td colspan="6" class="empty">🎈 暂无邀请记录</td></tr>
           <tr v-for="(item, idx) in summaryItems" :key="item.inviterOpenid">
             <td class="rank-no">{{ idx + 1 }}</td>
             <td>
@@ -64,6 +64,21 @@
             </td>
             <td><span class="stat-number">{{ item.invitedCount }}</span> 人</td>
             <td><span class="points-cell">+{{ item.totalPoints }}</span> 积分</td>
+            <td>
+              <span v-if="item.posterGenerated" class="poster-cell">
+                <img
+                  v-if="item.posterImageUrl"
+                  class="poster-thumb"
+                  :src="item.posterImageUrl"
+                  :alt="item.inviterNickname"
+                  title="点击查看大图"
+                  @click="viewPoster(item.posterImageUrl)"
+                />
+                <span v-else class="muted">已生成</span>
+                <span v-if="item.posterGeneratedAt" class="muted small">{{ item.posterGeneratedAt }}</span>
+              </span>
+              <span v-else class="muted">-</span>
+            </td>
             <td class="time">{{ item.lastInviteTime || "-" }}</td>
           </tr>
         </tbody>
@@ -143,6 +158,10 @@ function fmt(value: string | null | undefined) {
   return formatTime(value);
 }
 
+function viewPoster(url: string) {
+  window.open(url, "_blank");
+}
+
 async function load(page: number) {
   state.page.value = page;
   state.loading.value = true;
@@ -211,6 +230,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .rank-no { color: #aab0c0; font-weight: 700; }
 .stat-number { font-size: 16px; font-weight: 700; color: #3a6ee0; }
 .points-cell { color: #e8862b; font-weight: 700; }
+.poster-tag { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #f0edff; color: #7d57e0; font-size: 12px; white-space: nowrap; }
+.poster-cell { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.poster-thumb { width: 42px; height: 58px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid #eef1fb; }
+.small { font-size: 11px; }
 
 .empty { text-align: center; color: #aab0c0; padding: 48px 0; font-size: 14px; }
 .pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end; padding: 12px 14px; color: #8b90a0; font-size: 13px; }

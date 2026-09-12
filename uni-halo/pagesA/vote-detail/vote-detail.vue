@@ -174,16 +174,18 @@
 				<view class="vote-submit flex w-full flex-center" :style="{
 					paddingBottom:safeAreaBottom + 'rpx'
 				}">
-					<tm-button v-if="fnCalcIsVoted()" theme="white" text :block="true" class="w-full">您已参与投票</tm-button>
-					<tm-button v-else-if="vote.spec._uh_state.state==='未开始'" theme="orange" text class="w-full"
+					<!-- 按钮颜色承载投票状态语义（已投票/未开始/已结束/可提交），
+					     必须关闭全局主题跟随，否则换肤后各状态糊成同一色 -->
+					<tm-button v-if="fnCalcIsVoted()" theme="white" text :fllowTheme="false" :block="true" class="w-full">您已参与投票</tm-button>
+					<tm-button v-else-if="vote.spec._uh_state.state==='未开始'" theme="orange" text :fllowTheme="false" class="w-full"
 						:block="true" @click="handleSubmitTip('投票未开始')">投票未开始</tm-button>
-					<tm-button v-else-if="vote.spec._uh_state.state==='已结束'" theme="red" text class="w-full"
+					<tm-button v-else-if="vote.spec._uh_state.state==='已结束'" theme="red" text :fllowTheme="false" class="w-full"
 						:block="true" @click="handleSubmitTip('投票已结束')">投票已结束</tm-button>
-					<tm-button v-else-if="!vote.spec.canAnonymously" theme="red" :shadow="0" class="w-full" text
+					<tm-button v-else-if="!vote.spec.canAnonymously" theme="red" :fllowTheme="false" :shadow="0" class="w-full" text
 						:block="true" @click="handleSubmit()">不支持匿名投票</tm-button>
-					<tm-button v-else-if="submitForm.voteData.length===0" theme="white" text class="w-full"
+					<tm-button v-else-if="submitForm.voteData.length===0" theme="white" text :fllowTheme="false" class="w-full"
 						:block="true" @click="handleSubmitTip('请选择选项')">提交投票（请选择选项）</tm-button>
-					<tm-button v-else theme="light-blue" class="w-full" :block="true" :loading="submitLoading"
+					<tm-button v-else theme="light-blue" :fllowTheme="false" class="w-full" :block="true" :loading="submitLoading"
 						:disabled="submitLoading" @click="handleSubmit()">提交投票</tm-button>
 				</view>
 			</block>

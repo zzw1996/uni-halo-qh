@@ -38,11 +38,11 @@
 						</view>
 						<text class="ql-arrow">›</text>
 					</view>
-					<view v-if="calcPointsEnabled" class="quick-link" @click="fnToPointsExchange">
-						<view class="ql-icon ql-icon--gift">🎁</view>
+					<view v-if="calcPayEnabled" class="quick-link" @click="fnToPointsRecharge">
+						<view class="ql-icon ql-icon--gift">🛍️</view>
 						<view class="ql-main">
-							<text class="ql-title">积分兑换</text>
-							<text class="ql-sub">积分换好物</text>
+							<text class="ql-title">权益直购</text>
+							<text class="ql-sub">现金购买道具权益</text>
 						</view>
 						<text class="ql-arrow">›</text>
 					</view>
@@ -50,29 +50,7 @@
 			</view>
 		</view>
 
-		<!-- ========== 2. 数据统计 ========== -->
-		<view class="section-card stats-card">
-			<view
-				v-for="item in statList"
-				:key="item.key"
-				class="stat-item"
-				@click="fnOnStatClick(item)"
-			>
-				<view class="stat-badge" :class="item.bgClass">
-					<tm-flop
-						v-if="isLoggedIn"
-						:end-val="item.value"
-						:duration="1200"
-						class="stat-num"
-						:class="'text-' + item.color"
-					></tm-flop>
-					<text v-else class="stat-num stat-num--placeholder">-</text>
-				</view>
-				<text class="stat-label">{{ item.label }}</text>
-			</view>
-		</view>
-
-		<!-- ========== 2.5 积分签到 ========== -->
+		<!-- ========== 2. 积分签到 ========== -->
 		<view v-if="calcPointsEnabled" class="section-card points-card">
 				<view class="points-card-head">
 					<view class="points-card-title-wrap">
@@ -80,9 +58,7 @@
 						<text class="points-card-balance">{{ calcPointsBalance }}</text>
 					</view>
 					<view class="points-card-links">
-						<view v-if="calcPayEnabled" class="points-recharge-link" @click="fnToPointsRecharge">
-							<text>权益直购</text>
-						</view>
+						<!-- 权益直购入口已提到头部胶囊，此处只保留积分明细 -->
 						<view class="points-card-link" @click="fnToPointsHistory">
 							<text>明细</text>
 							<tm-icons name="icon-angle-right" :size="20" color="#909399"></tm-icons>
@@ -95,12 +71,6 @@
 						<text class="pa-title">今日签到</text>
 						<text class="pa-tip">{{ calcSignedToday ? '已连续 ' + calcConsecutiveDays + ' 天' : '每天签到领积分' }}</text>
 						<text class="pa-btn" :class="{ 'is-done': calcSignedToday }">{{ calcSignInButtonText }}</text>
-					</view>
-					<view class="pa-card pa-card--draw" @click="fnOpenPointsDraw">
-						<text class="pa-icon">🎴</text>
-						<text class="pa-title">每日翻牌</text>
-						<text class="pa-tip">每天一次 · 最高 {{ drawMaxPrize }} 分</text>
-						<text class="pa-btn">翻牌抽奖</text>
 					</view>
 					<view class="pa-card pa-card--task" @click="fnToTaskCenter">
 						<text class="pa-icon">✅</text>
@@ -119,6 +89,47 @@
 					<text class="points-week-dot"></text>
 					<text class="points-week-label">{{ idx + 1 }}天</text>
 				</view>
+			</view>
+		</view>
+
+		<!-- ========== 2.6 开启盲盒（当前唯一的抽奖玩法） ========== -->
+		<!-- 抽奖类活动要求公示全部奖品与中奖概率，因此概率直接印在每个奖品上，
+		     不折叠、不跳转——公示与展示合一，避免「公示藏在二级页」的合规风险 -->
+		<view v-if="calcPointsEnabled && luckyEnabled" class="section-card lucky-card">
+			<view class="lk-head">
+				<view class="lk-title-wrap">
+					<text class="lk-emoji">🎁</text>
+					<view>
+						<text class="lk-title">开启盲盒</text>
+						<text class="lk-sub">抽完即知结果，奖品由站长发放</text>
+					</view>
+				</view>
+				<text class="lk-cost">{{ luckyCost }} 积分/次</text>
+			</view>
+
+			<scroll-view scroll-x class="lk-prizes-scroll" :show-scrollbar="false">
+				<view class="lk-prizes">
+					<view v-for="(prize, idx) in luckyPrizes" :key="idx" class="lk-prize">
+						<text class="lk-prize-emoji">{{ prize.emoji }}</text>
+						<text class="lk-prize-name">{{ prize.name }}</text>
+						<text v-if="prize.probabilityText" class="lk-prize-prob">{{ prize.probabilityText }}</text>
+					</view>
+				</view>
+			</scroll-view>
+
+			<tm-button theme="orange" :block="true" :loading="luckyBoxShow" @click="fnOpenLucky">
+				立即开启
+			</tm-button>
+
+			<!-- 抽奖记录与消耗明细（中奖信息、物流进度、每盒积分扣减都在这一页） -->
+			<view class="lk-entry" hover-class="lk-entry-hover" @click="fnToLuckyRecords">
+				<text class="lk-entry-icon">📜</text>
+				<view class="lk-entry-main">
+					<text class="lk-entry-title">抽奖记录与消耗明细</text>
+					<text class="lk-entry-sub">中奖信息 · 发货进度 · 每次开盒消耗</text>
+				</view>
+				<text v-if="pendingClaimCount > 0" class="lk-entry-badge">{{ pendingClaimCount }}</text>
+				<text class="lk-entry-arrow">›</text>
 			</view>
 		</view>
 
@@ -184,6 +195,7 @@
 						<image
 							:src="profileForm.avatarTempPath || profileForm.avatarUrl || calcDefaultAvatar"
 							class="profile-avatar"
+							:class="calcAvatarFrameClass"
 							mode="aspectFill"
 						></image>
 						<text v-if="calcProfileModifyState.ok" class="profile-avatar-tip">点击更换头像</text>
@@ -207,6 +219,7 @@
 					<image
 						:src="profileForm.avatarUrl || calcDefaultAvatar"
 						class="profile-avatar"
+						:class="calcAvatarFrameClass"
 						mode="aspectFill"
 					></image>
 				</view>
@@ -236,6 +249,7 @@
 						block
 						theme="red"
 						plan
+						:fllowTheme="false"
 						:shadow="0"
 						:loading="haloUnbinding"
 						@click="fnUnbindHaloAccount"
@@ -252,20 +266,17 @@
 						block
 						theme="red"
 						plan
+						:fllowTheme="false"
 						:shadow="0"
 						@click="fnHandleLogout"
 					>退出登录</tm-button>
-					<tm-button block plan theme="grey" :shadow="0" @click="fnCloseProfileDialog">返回</tm-button>
+					<tm-button block plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnCloseProfileDialog">返回</tm-button>
 				</view>
 			</view>
 		</view>
 		<points-toast></points-toast>
-		<points-draw
-			:show.sync="pointsDrawShow"
-			:cost="drawCost"
-			:max-prize="drawMaxPrize"
-			@drawn="fnOnDrawDrawn"
-		></points-draw>
+		<!-- 开盒动画（与「积分兑换」页共用同一组件，交互完全一致） -->
+		<lucky-box :show.sync="luckyBoxShow" @drawn="fnOnLuckyDrawn"></lucky-box>
 	</view>
 </template>
 
@@ -277,8 +288,12 @@
 		clearWxLoginInfo,
 	} from '@/utils/auth.js';
 	import { getProfileModifyState, performSaveWxProfile } from '@/utils/wxLogin.js';
+	import { resolveMomentPublishPermission, canShowMomentPublish } from '@/utils/momentPublish.js';
 	import { shouldPromptHaloBind, shouldShowHaloBindBoundInfo, isHaloBindFeatureEnabled, performUnbindHaloAccount } from '@/utils/haloUser.js';
-	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay, isDrawDoneToday, fetchPointsDrawStatus } from '@/utils/points.js';
+	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay, emitPointsUpdated } from '@/utils/points.js';
+	import { applyThemeSkin, clearThemeSkin } from '@/utils/themeSkin.js';
+import { avatarFrameClass } from '@/utils/outfitSkin.js';
+import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	// #ifdef APP-PLUS
 	import CheckAppUpdate from '@/uni_modules/uni-upgrade-center-app/utils/check-update';
 	// #endif
@@ -289,22 +304,20 @@
 	} from "@/utils/plugin.js"
 
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
-	import tmFlop from '@/tm-vuetify/components/tm-flop/tm-flop.vue';
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import tmInput from '@/tm-vuetify/components/tm-input/tm-input.vue';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import PointsToast from '@/components/points-toast/points-toast.vue';
-	import PointsDraw from '@/components/points-draw/points-draw.vue';
+	import LuckyBox from '@/components/lucky-box/lucky-box.vue';
 
 	export default {
 		components: {
 			tmButton,
-			tmFlop,
 			tmIcons,
 			tmInput,
 			wxLoginDialog,
 			PointsToast,
-			PointsDraw,
+			LuckyBox,
 		},
 			data() {
 			const sys = uni.getSystemInfoSync();
@@ -324,34 +337,38 @@
 					avatarUrl: '',
 					avatarTempPath: ''
 				},
-				statistics: {
-					post: 0,
-					comment: 0,
-					category: 0,
-					visit: 0,
-					upvote: 0
-				},
 				pointsBalance: 0,
 				pointsTodayEarned: 0,
 				signInStatus: null,
 				signInLoading: false,
-				pointsDrawShow: false,
-				drawChecking: false,
-				drawCost: 10,
-					drawMaxPrize: 100,
-					pointsApiReady: null,
-					pointsLocalMode: false,
+				/** 盲盒：入口配置 + 开盒弹窗开关（开盒过程由 lucky-box 组件负责） */
+				luckyEnabled: false,
+				luckyCost: 20,
+				luckyPrizes: [],
+				luckyBoxShow: false,
+				/** 我的中奖礼品（发放进度与物流），抽奖记录的唯一入口 */
+				myClaims: [],
+				pointsApiReady: null,
+				pointsLocalMode: false,
 					navList: [],
 					levelStatus: null,
 					outfitStatus: null,
+					/** 「我的瞬间」入口是否展示：仅博主本人，判定口径与瞬间页一致 */
+					canShowMyMoments: false,
 				};
 		},
 		computed: {
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs
 			},
-			bloggerInfo() {
-				return this.haloConfigs?.authorConfig?.blogger || { avatar: '', nickname: '', description: '' };
+			/**
+			 * 待处理的中奖单数量（待填写收货信息）。
+			 *
+			 * 中奖列表已移到「抽奖记录」页，这里只用于入口行上的角标提醒——
+			 * 「待填写」是唯一需要用户操作的状态，漏掉会让礼品一直发不出去。
+			 */
+			pendingClaimCount() {
+				return (this.myClaims || []).filter((claim) => claim && claim.status === 'pending').length;
 			},
 			wxAppConfig() {
 				return this.haloConfigs?.wxAppConfig || {};
@@ -363,10 +380,10 @@
 				return !!this.haloConfigs?.auditConfig?.auditModeEnabled
 			},
 			calcVotePluginEnabled() {
-				return !!this.haloConfigs?.pluginConfig?.votePlugin?.enabled;
+				return !!this.haloConfigs?.pluginIntegrations?.vote;
 			},
 			calcLinksPluginEnabled() {
-				return !!this.haloConfigs?.pluginConfig?.linksPlugin?.enabled;
+				return !!this.haloConfigs?.pluginIntegrations?.links;
 			},
 			postDetailConfig() {
 				return this.haloConfigs?.basicConfig?.postDetailConfig || { showComment: true };
@@ -375,7 +392,7 @@
 				return this.postDetailConfig.showComment !== false;
 			},
 			calcDefaultAvatar() {
-				return this.$utils.checkAvatarUrl(this.bloggerInfo.avatar);
+				return this.$utils.checkAvatarUrl(this.haloConfigs?.imagesConfig?.defaultAvatarUrl);
 			},
 			calcUserAvatar() {
 				if (this.wxUserInfo && this.wxUserInfo.avatarUrl) {
@@ -397,10 +414,7 @@
 				return `Lv.${status.level}${status.levelTitle ? ' · ' + status.levelTitle : ''}`;
 			},
 			calcAvatarFrameClass() {
-				const frame = this.outfitStatus?.avatarFrame;
-				if (frame === 'gold') return 'frame-gold';
-				if (frame === 'rainbow') return 'frame-rainbow';
-				return '';
+				return avatarFrameClass(this.outfitStatus?.avatarFrame);
 			},
 			calcProfileModifyState() {
 				return getProfileModifyState(this.wxUserInfo, this.wxAppConfig);
@@ -482,41 +496,6 @@
 				if (this.pointsApiReady !== true) return '加载中...';
 				return '签到领积分';
 			},
-			statList() {
-				const fourthStat = this.calcIsShowComment ? {
-					key: 'comment',
-					label: '评论',
-					value: this.statistics.comment,
-					color: 'blue',
-					bgClass: 'stat-bg-indigo'
-				} : {
-					key: 'upvote',
-					label: '点赞',
-					value: this.statistics.upvote,
-					color: 'red',
-					bgClass: 'stat-bg-red'
-				};
-				return [{
-					key: 'post',
-					label: '文章',
-					value: this.statistics.post,
-					color: 'light-blue',
-					bgClass: 'stat-bg-blue',
-					path: '/pagesA/archives/archives'
-				}, {
-					key: 'visit',
-					label: '访客',
-					value: this.statistics.visit,
-					color: 'green',
-					bgClass: 'stat-bg-green'
-				}, {
-					key: 'category',
-					label: '分类',
-					value: this.statistics.category,
-					color: 'orange',
-					bgClass: 'stat-bg-orange'
-				}, fourthStat];
-			},
 			siteFunctionList() {
 				return this.navList
 					.filter(nav => nav.show)
@@ -592,7 +571,9 @@
 		created() {
 			this.fnSyncPointsApiStateFromCache();
 			this.fnCheckLoginStatus();
-			this.fnGetData();
+			this.fnRefreshPointsData();
+			// 盲盒配置属站点公开信息（未登录也能取），与登录态无关，启动时即拉
+			this.fnLoadLucky();
 			uni.$on('wx_login_status_changed', this.fnCheckLoginStatus);
 			uni.$on('points_updated', this.fnOnPointsUpdated);
 			uni.$on('points_config_ready', this.fnOnPointsConfigReady);
@@ -605,6 +586,8 @@
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
+			// 从中奖填写页返回时刷新发放状态，避免列表显示过期进度
+			this.fnLoadLuckyClaims();
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnCheckLoginStatus);
@@ -613,7 +596,7 @@
 		},
 		onPullDownRefresh() {
 			uni.$tm.vx.actions('config/fetchConfigs').finally(() => {
-				this.fnGetData();
+				this.fnRefreshPointsData();
 			});
 		},
 		methods: {
@@ -625,13 +608,6 @@
 				if (this.isLoggedIn) return true;
 				this.loginDialogShow = true;
 				return false;
-			},
-
-			fnOnStatClick(item) {
-				if (!this.fnEnsureLogin()) return;
-				if (item.path) {
-					this.fnOnNav({ type: 'page', path: item.path, requireLogin: true });
-				}
 			},
 
 			/** 按图标名选择字体基类：halocoloricon / haloicon 字体（common/icons）或 tm 通用 iconfont */
@@ -669,24 +645,47 @@
 				this.isLoggedIn = checkHasWxLogin();
 				this.wxUserInfo = this.isLoggedIn ? getWxLoginInfo() : null;
 				if (this.isLoggedIn && !wasLoggedIn) {
-					this.fnGetData();
+					this.fnRefreshPointsData();
 					if (this.calcPointsEnabled) {
 						this.fnRefreshPointsOverview({ forceRemote: true });
 					}
+					this.fnLoadLucky();
+					// 中奖记录需要登录态才能查，登录成功后补拉一次
+					this.fnLoadLuckyClaims();
 				}
 				if (!this.isLoggedIn) {
-					this.statistics = {
-						post: 0,
-						comment: 0,
-						category: 0,
-						visit: 0,
-						upvote: 0
-					};
 					this.pointsBalance = 0;
 					this.pointsTodayEarned = 0;
 					this.signInStatus = null;
 					this.pointsApiReady = null;
 					this.pointsLocalMode = false;
+					// 抽奖配置属于站点公开信息，不需要登录；此处重置开盒状态与中奖记录
+					this.luckyBoxShow = false;
+					this.myClaims = [];
+				}
+				// 登录态变化会影响博主判定，此处一并刷新「我的瞬间」入口
+				this.fnRefreshMomentPermission();
+			},
+
+			/**
+			 * 「我的瞬间」入口仅博主可见：发表瞬间的权限判定与瞬间页共用同一套逻辑
+			 * （ownerOpenid / personalToken 对应用户 / 绑定 Halo 账号三种匹配）。
+			 */
+			async fnRefreshMomentPermission() {
+				if (!this.isLoggedIn || this.calcAuditModeEnabled) {
+					this.canShowMyMoments = false;
+					return;
+				}
+				try {
+					const permission = await resolveMomentPublishPermission(
+						this.$httpApi.v2,
+						this.haloConfigs,
+						this.wxUserInfo || getWxLoginInfo()
+					);
+					this.canShowMyMoments = canShowMomentPublish(permission);
+				} catch (err) {
+					console.warn('[about] 判定瞬间发表权限失败:', err);
+					this.canShowMyMoments = false;
 				}
 			},
 
@@ -749,14 +748,15 @@
 				uni.navigateTo({ url: '/pagesA/identity/identity' });
 			},
 
-			fnToPointsExchange() {
-				if (!this.fnEnsureLogin()) return;
-				uni.navigateTo({ url: '/pagesA/points-exchange/points-exchange' });
-			},
-
 			/** 拉取等级/装扮状态（失败静默，不影响页面） */
 			async fnRefreshIdentity() {
-				if (!this.isLoggedIn) return;
+				if (!this.isLoggedIn) {
+					this.levelStatus = null;
+					this.outfitStatus = null;
+					// 未登录状态不保留上一个账号的皮肤，恢复项目原有配色
+					applyThemeSkin('');
+					return;
+				}
 				try {
 					const [levelRes, outfitRes] = await Promise.all([
 						this.$httpApi.v2.getLevelStatus(),
@@ -774,9 +774,17 @@
 						nickFrame: outfitData.nickFrame || '',
 						theme: outfitData.theme || ''
 					};
+					// 同步到本地装扮缓存：评论输入弹窗、充值页预览等页面同步读取，
+					// 避免每个页面各发一次 getOutfitStatus。
+					cacheOwnOutfit(this.outfitStatus);
+					// 服务端 activeTheme 是权威来源，据此纠正启动时的本地缓存；
+					// 本页是 tabBar 页，同时把 tabBar 选中色一并同步。
+					applyThemeSkin(this.outfitStatus.theme);
 				} catch (err) {
 					this.levelStatus = null;
 					this.outfitStatus = null;
+					// 接口失败（如网络抖动）时不要动主题：本地缓存里是用户已购皮肤，
+					// 误清会让用户以为买的东西没了。下次加载成功后自然会被服务端值纠正。
 				}
 			},
 
@@ -833,43 +841,92 @@
 				await this.fnRefreshPointsOverview({ silent: true });
 			},
 
-			// 点击「翻牌抽奖」按钮时即判断今日状态：已翻则直接拦截提示，不打开弹窗
-			async fnOpenPointsDraw() {
-				if (!this.fnEnsureLogin()) return;
-				if (isDrawDoneToday()) {
-					uni.showToast({ title: '今日已翻牌，明天再来吧', icon: 'none' });
-					return;
-				}
-				this.drawChecking = true;
+			/**
+			 * 拉取盲盒配置（开启才显示专区；失败静默，不影响本页其它功能）。
+			 * 配置属站点公开信息，未登录也能拿到，因此不放在登录回调里。
+			 */
+			async fnLoadLucky() {
 				try {
-					const status = await fetchPointsDrawStatus(this.$httpApi.v2);
-					if (status.ok) {
-						if (status.alreadyDrawn) {
-							uni.showToast({ title: '今日已翻牌，明天再来吧', icon: 'none' });
-							return;
-						}
-						if (status.cost) {
-							this.drawCost = status.cost;
-						}
+					const res = await this.$httpApi.v2.getLuckyConfig();
+					const data = res?.data || res || {};
+					if (!data?.enabled) {
+						this.luckyEnabled = false;
+						return;
 					}
+					this.luckyEnabled = true;
+					this.luckyCost = Number(data.costPoints || 20);
+					this.luckyPrizes = (Array.isArray(data.prizes) ? data.prizes : [])
+						.filter((prize) => prize && prize.name)
+						.map((prize) => {
+							const raw = prize.probability;
+							// 概率由服务端统一计算下发（与抽取实现同口径），前端只做展示；
+							// 0 或缺失时不显示，避免出现「中奖概率 0%」这类误导文案
+							const hasProbability = typeof raw === 'number' && isFinite(raw) && raw > 0;
+							return {
+								name: prize.name,
+								emoji: prize.emoji || '🎁',
+								desc: prize.desc || '',
+								probabilityText: hasProbability ? `${raw}%` : ''
+							};
+						});
 				} catch (err) {
-					// 状态接口异常（旧版插件）时静默放行，翻牌接口仍兜底
-				} finally {
-					this.drawChecking = false;
+					// 静默：接口不可用时不显示盲盒专区
+					this.luckyEnabled = false;
 				}
-				const draw = this.haloConfigs?.pointsConfig?.rules?.draw || {};
-				this.drawCost = Number(draw.cost ?? 10) || 10;
-				const prizes = Array.isArray(draw.prizes) ? draw.prizes : [];
-				this.drawMaxPrize = prizes.length
-					? Math.max(...prizes.map((p) => Number(p.points) || 0))
-					: 100;
-				this.pointsDrawShow = true;
 			},
 
-			fnOnDrawDrawn(payload) {
-				if (payload?.balance != null && this.isLoggedIn) {
-					this.fnOnPointsUpdated({ balance: payload.balance });
+			/** 我的中奖礼品（发放进度与物流），失败静默 */
+			async fnLoadLuckyClaims() {
+				if (!this.isLoggedIn) {
+					this.myClaims = [];
+					return;
 				}
+				try {
+					const res = await this.$httpApi.v2.getMyLuckyClaims();
+					const raw = Array.isArray(res) ? res : (res?.data || res || {});
+					const list = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : []);
+					this.myClaims = list.map((item) => {
+						const normalized = Object.assign({}, item);
+						// 兼容新版 winningId / 旧接口 id 两种单号字段
+						if (!normalized.winningId && item && item.id) {
+							normalized.winningId = item.id;
+						}
+						return normalized;
+					});
+				} catch (err) {
+					// 静默：拿不到中奖记录不影响页面其它部分
+					this.myClaims = [];
+				}
+			},
+
+			/** 抽奖记录页（中奖信息 + 消耗明细） */
+			fnToLuckyRecords() {
+				if (!this.fnEnsureLogin()) return;
+				uni.navigateTo({
+					url: '/pagesA/lucky-records/lucky-records',
+					fail: () => uni.showToast({ title: '页面打开失败，请重试', icon: 'none' })
+				});
+			},
+
+			/** 打开开盒弹窗（开盒过程与结果都在 lucky-box 组件内） */
+			fnOpenLucky() {
+				if (!this.fnEnsureLogin()) return;
+				this.luckyBoxShow = true;
+			},
+
+			/**
+			 * 开盒结果回调：同步余额并刷新中奖记录。
+			 *
+			 * 余额变化同时通过 emitPointsUpdated 广播，让其它页面（身份中心、积分明细）
+			 * 不会残留过期余额——开盒是积分消耗点，这一步不能省。
+			 */
+			async fnOnLuckyDrawn(data) {
+				if (data?.balance != null && this.isLoggedIn) {
+					const balance = Number(data.balance);
+					this.fnOnPointsUpdated({ balance });
+					emitPointsUpdated({ balance });
+				}
+				await this.fnLoadLuckyClaims();
 			},
 
 			fnHandleUserCard() {
@@ -892,7 +949,8 @@
 				this.wxUserInfo = userInfo;
 				this.isLoggedIn = true;
 				this.profileDialogShow = false;
-				this.fnGetData();
+				this.fnRefreshPointsData();
+				this.fnRefreshMomentPermission();
 			},
 
 			fnOpenHaloBindDialog() {
@@ -1001,6 +1059,11 @@
 					this.isLoggedIn = false;
 					this.wxUserInfo = null;
 					this.profileDialogShow = false;
+					// 皮肤/装扮属于账号权益，登出后不应残留给下一个使用者
+					clearThemeSkin();
+					clearOwnOutfit();
+					this.levelStatus = null;
+					this.outfitStatus = null;
 					uni.showToast({ title: '已退出', icon: 'success' });
 				}).catch(() => {});
 			},
@@ -1022,6 +1085,17 @@
 					// 数据看板始终显示（页面内部有插件未安装提示）
 					show: true
 				}, {
+					key: 'my-moments',
+					title: '我的瞬间',
+					icon: 'haloicon-wenzhang1',
+					iconColor: 'blue',
+					// 瞬间页已从 tabBar 摘除，博主在此进入发表/管理
+					path: '/pages/tabbar/moments/moments',
+					isAdmin: false,
+					type: 'page',
+					requireLogin: true,
+					show: this.canShowMyMoments
+				}, {
 					key: 'archives',
 					title: this.calcAuditModeEnabled ? '内容归档' : '文章归档',
 					icon: 'halocoloricon-classify',
@@ -1030,15 +1104,6 @@
 					isAdmin: false,
 					type: 'page',
 					show: true
-				}, {
-					key: 'love',
-					title: '恋爱日记',
-					icon: 'halocoloricon-attent',
-					iconColor: 'red',
-					path: '/pagesA/love/love',
-					isAdmin: false,
-					type: 'page',
-					show: !!this.haloConfigs?.loveConfig?.loveEnabled
 				}, {
 					key: 'vote',
 					title: '投票中心',
@@ -1067,15 +1132,6 @@
 					isAdmin: false,
 					type: 'page',
 					show: !!this.haloConfigs?.basicConfig?.disclaimers?.enabled
-				}, {
-					key: 'contact-blogger',
-					title: '联系博主',
-					icon: 'icon-paper-plane',
-					iconColor: 'orange',
-					path: '/pagesA/contact/contact',
-					isAdmin: false,
-					type: 'page',
-					show: !!this.haloConfigs?.authorConfig?.social?.enabled
 				}, {
 					key: 'session',
 					title: '在线客服',
@@ -1108,17 +1164,19 @@
 				}];
 			},
 
-			fnGetData() {
+			/**
+			 * 刷新本页的积分数据（登录后、下拉刷新、登录成功时调用）。
+			 *
+			 * 原实现同时拉取站点统计（文章/访客/分类/评论数），该统计区块已按产品决定移除，
+			 * 因此这里只剩积分概览与下拉刷新收尾；方法名相应调整以免误导。
+			 */
+			fnRefreshPointsData() {
 				if (!this.isLoggedIn) {
 					uni.stopPullDownRefresh();
 					return;
 				}
-				this.$httpApi.v2
-					.getBlogStatistics()
-					.then(res => { this.statistics = res; })
-					.catch(() => { this.$tm.toast('统计数据加载失败'); })
+				this.fnRefreshPointsOverview({ silent: isPointsApiReady() === true })
 					.finally(() => { uni.stopPullDownRefresh(); });
-				this.fnRefreshPointsOverview({ silent: isPointsApiReady() === true });
 			},
 
 			fnOnNav(data) {
@@ -1286,6 +1344,11 @@
 			background: linear-gradient(#f0f0f5, #f0f0f5) padding-box,
 				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
 			box-shadow: 0 0 16rpx rgba(155, 140, 255, 0.4);
+		}
+
+		&.frame-silver {
+			border: 5rpx solid #c3cbd8;
+			box-shadow: 0 0 16rpx rgba(195, 203, 216, 0.5);
 		}
 
 		image {
@@ -1498,51 +1561,9 @@
 		max-width: 100%;
 	}
 
-	/* ===== 统计 ===== */
-	.stats-card {
-		display: flex;
-		padding: 32rpx 0;
-	}
-
-	.stat-item {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-	}
-
-	.stat-badge {
-		min-width: 80rpx;
-		padding: 8rpx 20rpx;
-		border-radius: 12rpx;
-		text-align: center;
-	}
-
-	.stat-bg-blue { background: rgba(3, 169, 244, .1); }
-	.stat-bg-green { background: rgba(67, 160, 71, .1); }
-	.stat-bg-orange { background: rgba(251, 140, 0, .1); }
-	.stat-bg-indigo { background: rgba(30, 136, 229, .1); }
-	.stat-bg-red { background: rgba(229, 57, 53, .1); }
-
-	.stat-num {
-		font-size: 40rpx;
-		font-weight: 700;
-		line-height: 48rpx;
-
-		&--placeholder {
-			color: #c0c4cc;
-		}
-	}
-
-	.stat-label {
-		font-size: 22rpx;
-		color: $text3;
-		margin-top: 8rpx;
-	}
-
 	/* ===== 积分签到 ===== */
 	.points-card {
-		padding: 24rpx 28rpx 28rpx;
+		padding: 20rpx 24rpx 22rpx;
 	}
 
 	.points-card-head {
@@ -1576,15 +1597,6 @@
 		gap: 20rpx;
 	}
 
-	.points-recharge-link {
-		padding: 6rpx 20rpx;
-		border-radius: 999rpx;
-		background: #fff7e6;
-		font-size: 24rpx;
-		font-weight: 600;
-		color: #ff9800;
-	}
-
 	.points-card-link {
 		display: flex;
 		align-items: center;
@@ -1595,16 +1607,17 @@
 
 	.points-actions-grid {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 14rpx;
-		margin-top: 20rpx;
+		/* 「每日翻牌」已下线（抽奖玩法收敛为盲盒），三宫格改两宫格 */
+		grid-template-columns: repeat(2, 1fr);
+		gap: 12rpx;
+		margin-top: 14rpx;
 	}
 
 	.pa-card {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		padding: 24rpx 8rpx 20rpx;
+		padding: 16rpx 8rpx 14rpx;
 		border-radius: 16rpx;
 		border: 2rpx solid transparent;
 		text-align: center;
@@ -1619,11 +1632,6 @@
 			}
 		}
 
-		&.pa-card--draw {
-			background: linear-gradient(160deg, #fff5ec 0%, #ffefe0 100%);
-			border-color: #ffe3c9;
-		}
-
 		&.pa-card--task {
 			background: linear-gradient(160deg, #f3f0ff 0%, #ece7ff 100%);
 			border-color: #ddd4fb;
@@ -1631,21 +1639,21 @@
 	}
 
 	.pa-icon {
-		font-size: 40rpx;
+		font-size: 34rpx;
 		line-height: 1.2;
 	}
 
 	.pa-title {
 		display: block;
-		margin-top: 10rpx;
-		font-size: 26rpx;
+		margin-top: 6rpx;
+		font-size: 25rpx;
 		font-weight: 700;
 		color: $text2;
 	}
 
 	.pa-tip {
 		display: block;
-		margin-top: 6rpx;
+		margin-top: 4rpx;
 		font-size: 20rpx;
 		color: $text3;
 		overflow: hidden;
@@ -1655,13 +1663,13 @@
 	}
 
 	.pa-btn {
-		margin-top: 14rpx;
+		margin-top: 10rpx;
 		font-size: 22rpx;
 		font-weight: 600;
 		color: #ffffff;
 		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 		border-radius: 999rpx;
-		padding: 10rpx 26rpx;
+		padding: 8rpx 24rpx;
 		line-height: 1;
 
 		&.is-done {
@@ -1670,11 +1678,171 @@
 		}
 	}
 
+	/* ===== 开启盲盒专区（当前唯一的抽奖玩法） =====
+	   用暖色渐变把这张卡与周围白卡区分开，视觉重心落在唯一玩法上；
+	   正文保持深色以保证可读性（深色底 + 白字在浅色主题下观感更差）。 */
+	.lucky-card {
+		padding: 26rpx 28rpx 28rpx;
+		background: linear-gradient(160deg, #fff8ec 0%, #ffeedd 100%);
+		border: 2rpx solid #ffe0c2;
+	}
+
+	.lk-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.lk-title-wrap {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.lk-emoji {
+		font-size: 48rpx;
+		margin-right: 16rpx;
+		line-height: 1;
+	}
+
+	.lk-title {
+		display: block;
+		font-size: 32rpx;
+		font-weight: 700;
+		color: #8a5a12;
+	}
+
+	.lk-sub {
+		display: block;
+		margin-top: 6rpx;
+		font-size: 21rpx;
+		color: #b08a56;
+	}
+
+	.lk-cost {
+		flex-shrink: 0;
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #e8862b;
+		background: rgba(255, 255, 255, 0.85);
+		padding: 6rpx 16rpx;
+		border-radius: 999rpx;
+	}
+
+	.lk-prizes-scroll {
+		margin: 20rpx 0 6rpx;
+		white-space: nowrap;
+	}
+
+	.lk-prizes {
+		display: inline-flex;
+		padding-bottom: 4rpx;
+	}
+
+	/* 奖品项：概率直接印在奖品上，公示与展示合一（抽奖类活动必须公示全部奖品与概率） */
+	.lk-prize {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 132rpx;
+		margin-right: 14rpx;
+		padding: 16rpx 8rpx 12rpx;
+		border-radius: 16rpx;
+		background: rgba(255, 255, 255, 0.92);
+		box-shadow: 0 4rpx 14rpx rgba(200, 140, 60, 0.08);
+	}
+
+	.lk-prize-emoji {
+		font-size: 44rpx;
+		line-height: 1.2;
+	}
+
+	.lk-prize-name {
+		margin-top: 6rpx;
+		font-size: 20rpx;
+		color: #7a6a52;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.lk-prize-prob {
+		margin-top: 8rpx;
+		font-size: 19rpx;
+		font-weight: 600;
+		color: #e8862b;
+		background: #fff3e0;
+		padding: 2rpx 12rpx;
+		border-radius: 999rpx;
+	}
+
+	/* ===== 抽奖记录入口行（中奖列表已移到该页，专区只留入口 + 待处理角标） ===== */
+	.lk-entry {
+		display: flex;
+		align-items: center;
+		margin-top: 22rpx;
+		padding: 18rpx 20rpx;
+		border-radius: 16rpx;
+		background: rgba(255, 255, 255, 0.9);
+	}
+
+	.lk-entry-hover {
+		background: rgba(255, 255, 255, 0.7);
+	}
+
+	.lk-entry-icon {
+		font-size: 34rpx;
+		margin-right: 14rpx;
+	}
+
+	.lk-entry-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.lk-entry-title {
+		display: block;
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #8a5a12;
+	}
+
+	.lk-entry-sub {
+		display: block;
+		margin-top: 4rpx;
+		font-size: 20rpx;
+		color: #b08a56;
+	}
+
+	.lk-entry-badge {
+		flex-shrink: 0;
+		min-width: 34rpx;
+		height: 34rpx;
+		line-height: 34rpx;
+		text-align: center;
+		margin-right: 8rpx;
+		padding: 0 10rpx;
+		border-radius: 999rpx;
+		background: #e53935;
+		color: #fff;
+		font-size: 20rpx;
+	}
+
+	.lk-entry-arrow {
+		flex-shrink: 0;
+		font-size: 30rpx;
+		color: #cbbba3;
+	}
+
+	/* 周签到点阵：7 个点横排一行。
+	   注意：这条规则曾在上一次调整样式时被误删（删块时多切了一条），
+	   丢掉 display:flex 后 7 个点会竖向堆叠、把卡片撑得很高。 */
 	.points-week-row {
 		display: flex;
 		justify-content: space-between;
-		margin-top: 20rpx;
-		padding-top: 16rpx;
+		margin-top: 14rpx;
+		padding-top: 12rpx;
 		border-top: 1rpx dashed #f0f0f0;
 	}
 
@@ -1884,6 +2052,24 @@
 		height: 128rpx;
 		border-radius: 50%;
 		background: #f5f6fa;
+
+		// 头像框（与个人中心右上角、评论列表同一套色值）
+		&.frame-gold {
+			border: 6rpx solid #f5c542;
+			box-shadow: 0 0 18rpx rgba(245, 197, 66, 0.5);
+		}
+
+		&.frame-rainbow {
+			border: 6rpx solid transparent;
+			background: linear-gradient(#f5f6fa, #f5f6fa) padding-box,
+				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
+			box-shadow: 0 0 18rpx rgba(155, 140, 255, 0.4);
+		}
+
+		&.frame-silver {
+			border: 6rpx solid #c3cbd8;
+			box-shadow: 0 0 18rpx rgba(195, 203, 216, 0.5);
+		}
 	}
 
 	.profile-avatar--placeholder {

@@ -12,6 +12,10 @@ export function useConsoleApi() {
     return request("GET", `/apis/console.api.uni.uhalo.pro/v1alpha1${path}${query ? `?${query}` : ""}`);
   }
 
+  async function apiPost(path: string, body: Record<string, unknown> = {}) {
+    return request("POST", `/apis/console.api.uni.uhalo.pro/v1alpha1${path}`, body);
+  }
+
   async function apiPut(path: string, body: Record<string, unknown> = {}) {
     return request("PUT", `/apis/console.api.uni.uhalo.pro/v1alpha1${path}`, body);
   }
@@ -50,7 +54,7 @@ export function useConsoleApi() {
     return res.json();
   }
 
-  return { apiGet, apiPut, apiDelete };
+  return { apiGet, apiPost, apiPut, apiDelete };
 }
 
 export function useTableState<T>() {

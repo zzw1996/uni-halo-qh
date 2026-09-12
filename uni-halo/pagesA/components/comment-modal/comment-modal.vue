@@ -9,7 +9,7 @@
             <view class="comment-modal__author">
                 <image
                     class="comment-modal__avatar"
-
+                    :class="ownAvatarFrameClass"
                     :src="$utils.checkAvatarUrl(authorInfo.avatar, false)"
                     mode="aspectFill"
                 ></image>
@@ -49,6 +49,8 @@ import tmForm from '@/tm-vuetify/components/tm-form/tm-form.vue';
 import tmInput from '@/tm-vuetify/components/tm-input/tm-input.vue';
 import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 import { getCommentAuthorInfo, buildCommentPayload, buildMomentCommentPayload, canSubmitComment, isCommentSerializationError } from '@/utils/comment.js';
+import { avatarFrameClass } from '@/utils/outfitSkin.js';
+import { ensureOwnOutfit } from '@/utils/ownOutfit.js';
 
 export default {
     name: 'CommentModal',
@@ -84,6 +86,8 @@ export default {
         return {
             isShow: false,
             submitting: false,
+            /** 自己的头像框快照：storage 不是 Vue 响应式依赖，必须存 data 再渲染 */
+            ownAvatarFrame: '',
             form: {
                 content: '',
                 postName: ''
@@ -93,6 +97,9 @@ export default {
     computed: {
         authorInfo() {
             return getCommentAuthorInfo();
+        },
+        ownAvatarFrameClass() {
+            return avatarFrameClass(this.ownAvatarFrame);
         },
         isReply() {
             return !this.isComment;
@@ -121,10 +128,16 @@ export default {
                 this.isShow = true;
                 this.handleResetForm();
                 this.form.postName = this.postName;
+                this.fnRefreshOwnOutfit();
             }
         }
     },
     methods: {
+        /** 拉取（或复用）自己的装扮缓存，让输入框头像带上头像框。 */
+        async fnRefreshOwnOutfit() {
+            const data = await ensureOwnOutfit(this.$httpApi?.v2);
+            this.ownAvatarFrame = data?.avatarFrame || '';
+        },
         handleResetForm() {
             this.submitting = false;
             this.form = {
@@ -262,6 +275,24 @@ export default {
 
         &.is-radius {
             border-radius: 50%;
+        }
+
+        // 头像框（与评论列表同一套色值，避免同一个人两处显示不一致）
+        &.frame-gold {
+            border: 5rpx solid #f5c542;
+            box-shadow: 0 0 16rpx rgba(245, 197, 66, 0.5);
+        }
+
+        &.frame-rainbow {
+            border: 5rpx solid transparent;
+            background: linear-gradient(#f0f0f5, #f0f0f5) padding-box,
+                linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
+            box-shadow: 0 0 16rpx rgba(155, 140, 255, 0.4);
+        }
+
+        &.frame-silver {
+            border: 5rpx solid #c3cbd8;
+            box-shadow: 0 0 16rpx rgba(195, 203, 216, 0.5);
         }
     }
 

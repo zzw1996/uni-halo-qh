@@ -3,6 +3,7 @@
  */
 import { getWxLoginInfo, getOpenid, checkHasWxLogin } from '@/utils/auth.js';
 import { getAppConfigs } from '@/config/index.js';
+import { getOwnAvatarFrame, getOwnNickFrame } from '@/utils/ownOutfit.js';
 
 const MINIAPP_EMAIL_DOMAIN = 'mini.unihalo.local';
 const OPENID_ANNOTATION_KEY = 'unihalo.openid';
@@ -16,7 +17,10 @@ export function buildCommentEmail(openid) {
 }
 
 /**
- * 获取当前用户的评论作者信息（昵称、头像、邮箱、openid）
+ * 获取当前用户的评论作者信息（昵称、头像、邮箱、openid、装扮）
+ *
+ * 装扮取本地缓存（见 utils/ownOutfit.js）：评论输入弹窗等页面在提交评论时
+ * 需要同步拿到自己的头像框/昵称前缀，不能再发一次请求。
  */
 export function getCommentAuthorInfo() {
 	const wxUser = getWxLoginInfo();
@@ -32,7 +36,9 @@ export function getCommentAuthorInfo() {
 		displayName,
 		avatar,
 		email: buildCommentEmail(openid),
-		website: ''
+		website: '',
+		avatarFrame: getOwnAvatarFrame(),
+		nickFrame: getOwnNickFrame()
 	};
 }
 
@@ -119,6 +125,7 @@ export function parseOpenidFromCommentEmail(email) {
 
 /**
  * 从评论对象解析展示用作者信息（兼容旧数据）
+ * 兼容插件 v1.0.97 的评论列表装扮注入：comment 顶层 avatarFrame/nickFrame。
  */
 export function resolveCommentOwner(comment) {
 	if (!comment?.owner) {
@@ -130,7 +137,9 @@ export function resolveCommentOwner(comment) {
 	return {
 		displayName: owner.displayName || '匿名用户',
 		avatar: owner.avatar || '',
-		openid: annoOpenid || emailOpenid || ''
+		openid: annoOpenid || emailOpenid || '',
+		avatarFrame: comment.avatarFrame || '',
+		nickFrame: comment.nickFrame || ''
 	};
 }
 

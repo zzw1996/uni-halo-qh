@@ -3,6 +3,7 @@ import HaloTokenConfig from '@/config/uhalo.config.js';
 import v2Api from '@/api/v2/all.api.js';
 import { syncPointsAfterLogin, resetPointsSession } from '@/utils/points.js';
 import { checkHasWxLogin } from '@/utils/auth.js';
+import { restoreThemeSkin } from '@/utils/themeSkin.js';
 
 import {CheckWxUpdate} from '@/utils/update.js';
 // #ifdef APP-PLUS
@@ -24,6 +25,10 @@ export default {
         // #ifdef MP-WEIXIN
         CheckWxUpdate();
         // #endif
+
+        // 先用本地缓存恢复主题，避免首屏闪回默认配色；
+        // 服务端 activeTheme 才是权威来源，进入「我的」/「身份中心」时会据此纠正。
+        restoreThemeSkin();
 
         uni.$tm.vx.actions('config/fetchConfigs').then((res) => {
         })

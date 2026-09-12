@@ -1,7 +1,5 @@
 package pro.uhalo.uni.services.impl;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,6 +11,7 @@ import pro.uhalo.uni.dto.LevelStatusDTO;
 import pro.uhalo.uni.dto.OutfitBuyResponse;
 import pro.uhalo.uni.dto.OutfitItemDTO;
 import pro.uhalo.uni.dto.OutfitStatusDTO;
+import pro.uhalo.uni.dto.OwnedOutfitDetailDTO;
 import pro.uhalo.uni.dto.TitleItemDTO;
 import pro.uhalo.uni.dto.UnlockedTitleDTO;
 import pro.uhalo.uni.exception.WxAuthException;
@@ -22,13 +21,17 @@ import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.services.LevelService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.LevelConfigHelper;
+import pro.uhalo.uni.utils.OwnedOutfitParser;
 import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 等级/称号/装扮实现：累计获得积分来自 PointsRecord（points>0 求和），
@@ -39,7 +42,6 @@ import java.util.List;
 @Slf4j
 public class LevelServiceImpl implements LevelService {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int OPERATE_RATE_LIMIT_PER_MINUTE = 15;
 
     private final PointsPersistence persistence;
@@ -94,14 +96,40 @@ public class LevelServiceImpl implements LevelService {
         return requireOpenid(openid)
             .flatMap(id -> loadConfig()
                 .flatMap(config -> persistence.getOrCreateAccount(id)
-                    .map(account -> OutfitStatusDTO.builder()
-                        .enabled(config.isEnabled())
-                        .items(config.getOutfits())
-                        .owned(parseOwned(account.getOutfitOwned()))
-                        .avatarFrame(account.getActiveAvatarFrame())
-                        .nickFrame(account.getActiveNickFrame())
-                        .theme(account.getActiveTheme())
-                        .build())));
+                    .map(account -> {
+                        // 限时结构：有效期内才视为已拥有；过期项保留在原始数据中（防误清），
+                        // 但不下发到前端 owned，用户可重新购买。
+                        var validOwned = OwnedOutfitParser.parse(account.getOutfitOwned()).stream()
+                            .filter(OwnedOutfitParser.OwnedOutfit::isStillValid)
+                            .toList();
+                        var configuredKeys = config.getOutfits() == null ? Set.<String>of()
+                            : config.getOutfits().stream()
+                                .map(OutfitItemDTO::getKey)
+                                .collect(Collectors.toSet());
+                        return OutfitStatusDTO.builder()
+                            .enabled(config.isEnabled())
+                            .items(config.getOutfits())
+                            .owned(validOwned.stream()
+                                .map(OwnedOutfitParser.OwnedOutfit::key)
+                                .toList())
+                            // 明细含到期时间：前端据此展示「剩余 N 天 / 永久」
+                            .ownedDetails(validOwned.stream()
+                                .map(item -> OwnedOutfitDetailDTO.builder()
+                                    .key(item.key())
+                                    .expireAt(item.expireAt())
+                                    .permanent(item.expireAt() == null)
+                                    .build())
+                                .toList())
+                            // 已拥有但配置中已删除的装扮：单独列出，避免「买过的东西凭空消失」
+                            .orphanOwned(validOwned.stream()
+                                .map(OwnedOutfitParser.OwnedOutfit::key)
+                                .filter(key -> !configuredKeys.contains(key))
+                                .toList())
+                            .avatarFrame(account.getActiveAvatarFrame())
+                            .nickFrame(account.getActiveNickFrame())
+                            .theme(account.getActiveTheme())
+                            .build();
+                    })));
     }
 
     @Override
@@ -121,10 +149,11 @@ public class LevelServiceImpl implements LevelService {
                         }
                         return persistence.getOrCreateAccount(id)
                             .flatMap(account -> {
-                                var owned = new ArrayList<>(parseOwned(account.getOutfitOwned()));
-                                if (owned.contains(normalized)) {
+                                var owned = OwnedOutfitParser.parse(account.getOutfitOwned());
+                                // 已拥有且有效期内：拦截（过期视为未拥有，可重新购买）。
+                                if (OwnedOutfitParser.isOwnedAndValid(owned, normalized)) {
                                     return Mono.just(OutfitBuyResponse.builder()
-                                        .owned(owned)
+                                        .owned(owned.stream().map(OwnedOutfitParser.OwnedOutfit::key).toList())
                                         .balance(safeBalance(account))
                                         .message("已拥有该装扮")
                                         .build());
@@ -137,36 +166,60 @@ public class LevelServiceImpl implements LevelService {
                                 var newBalance = balance - item.getPoints();
                                 return resolveWxUserId(id, account)
                                     .flatMap(wxUserId -> {
-                                        account.setBalance(newBalance);
-                                        if (StringUtils.hasText(wxUserId)
-                                            && !wxUserId.equals(account.getWxUserId())) {
-                                            account.setWxUserId(wxUserId);
-                                        }
-                                        owned.add(normalized);
-                                        account.setOutfitOwned(writeOwned(owned));
                                         var earnKey = PointsServiceImpl.buildEarnKey(id, "outfit_" + normalized,
                                             "own");
                                         var record = PointsPersistence.newRecord(id, "outfit_" + normalized,
                                             -item.getPoints(), newBalance, "购买装扮·" + item.getName(),
                                             normalized, earnKey, wxUserId);
-                                        return persistence.saveAccount(account)
-                                            .then(persistence.appendRecord(record))
-                                            .thenReturn(OutfitBuyResponse.builder()
-                                                .owned(owned)
-                                                .balance(newBalance)
-                                                .message("已获得 · " + item.getName())
-                                                .build())
+                                        // 关键：先写幂等流水（create 冲突即幂等闸门），成功后再改账户。
+                                        // 原实现先 saveAccount 后 appendRecord，并发下两个请求读到相同
+                                        // owned/balance 各自扣分却只落一条流水，属"扣了分没记账"缺陷。
+                                        // 流水 create 冲突（重复提交）直接返回"已拥有"，不改账户。
+                                        return persistence.appendRecord(record)
                                             .onErrorResume(ex -> isDuplicateRecordError(ex)
-                                                ? Mono.just(OutfitBuyResponse.builder()
-                                                    .owned(owned)
-                                                    .balance(newBalance)
-                                                    .message("已拥有该装扮")
-                                                    .build())
-                                                : Mono.error(ex));
+                                                ? Mono.error(new WxAuthException("请勿重复提交"))
+                                                : Mono.error(ex))
+                                            .then(persistence.getOrCreateAccount(id))
+                                            .flatMap(latest -> {
+                                                var latestOwned = new ArrayList<>(
+                                                    OwnedOutfitParser.parse(latest.getOutfitOwned()));
+                                                if (OwnedOutfitParser.isOwnedAndValid(latestOwned, normalized)) {
+                                                    return Mono.just(OutfitBuyResponse.builder()
+                                                        .owned(latestOwned.stream()
+                                                            .map(OwnedOutfitParser.OwnedOutfit::key).toList())
+                                                        .balance(safeBalance(latest))
+                                                        .message("已拥有该装扮")
+                                                        .build());
+                                                }
+                                                latest.setBalance(newBalance);
+                                                if (StringUtils.hasText(wxUserId)
+                                                    && !wxUserId.equals(latest.getWxUserId())) {
+                                                    latest.setWxUserId(wxUserId);
+                                                }
+                                                var expireAt = resolveOutfitExpireAt(item);
+                                                latestOwned.add(new OwnedOutfitParser.OwnedOutfit(
+                                                    normalized, Instant.now().getEpochSecond(), expireAt));
+                                                latest.setOutfitOwned(OwnedOutfitParser.write(latestOwned));
+                                                return persistence.saveAccount(latest)
+                                                    .thenReturn(OutfitBuyResponse.builder()
+                                                        .owned(latestOwned.stream()
+                                                            .map(OwnedOutfitParser.OwnedOutfit::key).toList())
+                                                        .balance(newBalance)
+                                                        .message("已获得 · " + item.getName())
+                                                        .build());
+                                            });
                                     });
                             });
                     });
             });
+    }
+
+    /** 计算到期时间：durationDays<=0 视为永久（null）。 */
+    private static Long resolveOutfitExpireAt(OutfitItemDTO item) {
+        if (item.getDurationDays() <= 0) {
+            return null;
+        }
+        return Instant.now().getEpochSecond() + item.getDurationDays() * 86400L;
     }
 
     @Override
@@ -194,8 +247,24 @@ public class LevelServiceImpl implements LevelService {
                             if (item == null) {
                                 return Mono.error(new WxAuthException("装扮不存在"));
                             }
-                            if (!parseOwned(account.getOutfitOwned()).contains(normalized)) {
-                                return Mono.error(new WxAuthException("请先购买该装扮"));
+                            var ownedList = OwnedOutfitParser.parse(account.getOutfitOwned());
+                            var active = ownedList.stream()
+                                .filter(entry -> normalized.equals(entry.key())
+                                    && entry.isStillValid())
+                                .findFirst()
+                                .orElse(null);
+                            if (active == null) {
+                                // 已过期或未购买：一律回退脱装扮，避免残留过期装扮的视觉效果。
+                                account.setActiveAvatarFrame(null);
+                                account.setActiveNickFrame(null);
+                                account.setActiveTheme(null);
+                                return persistence.saveAccount(account)
+                                    .thenReturn(EquipOutfitResponse.builder()
+                                        .avatarFrame(null)
+                                        .nickFrame(null)
+                                        .theme(null)
+                                        .message("该装扮已过期或尚未购买，请重新获取")
+                                        .build());
                             }
                             applyActive(item.getType(), item.getStyle(), account);
                             return persistence.saveAccount(account)
@@ -216,7 +285,7 @@ public class LevelServiceImpl implements LevelService {
                 var totalEarned = records.stream()
                     .mapToLong(r -> r.getPoints() == null ? 0 : Math.max(0, r.getPoints()))
                     .sum();
-                var leveled = resolveLevel(config, totalEarned);
+                var leveled = LevelConfigHelper.resolveLevel(config, totalEarned);
                 var titles = config.getTitles().stream()
                     .map(title -> {
                         var progress = (int) Math.min(title.getTarget(),
@@ -252,29 +321,6 @@ public class LevelServiceImpl implements LevelService {
 
     private static String normalizeWorn(String wornTitleId) {
         return StringUtils.hasText(wornTitleId) ? wornTitleId.trim() : "";
-    }
-
-    private record Leveled(int level, String title, int currentMin, int nextMin) {
-    }
-
-    private static Leveled resolveLevel(LevelConfigDTO config, long totalEarned) {
-        var levels = config.getLevels();
-        if (levels.isEmpty()) {
-            return new Leveled(1, "新手上路", 0, 0);
-        }
-        var current = levels.get(0);
-        for (var item : levels) {
-            if (totalEarned >= item.getMinPoints()) {
-                current = item;
-            }
-        }
-        var picked = current;
-        var next = levels.stream()
-            .filter(item -> item.getLevel() > picked.getLevel())
-            .findFirst()
-            .orElse(null);
-        return new Leveled(picked.getLevel(), picked.getTitle(), picked.getMinPoints(),
-            next == null ? 0 : next.getMinPoints());
     }
 
     /** 统计各指标的完成进度，invite 类型需查邀请关系 */
@@ -335,27 +381,6 @@ public class LevelServiceImpl implements LevelService {
             case "nick_frame" -> account.setActiveNickFrame(style);
             case "theme" -> account.setActiveTheme(style);
             default -> throw new WxAuthException("不支持的装扮类型：" + type);
-        }
-    }
-
-    private static List<String> parseOwned(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return List.of();
-        }
-        try {
-            var parsed = MAPPER.readValue(raw, new TypeReference<List<String>>() {
-            });
-            return parsed == null ? List.of() : List.copyOf(parsed);
-        } catch (Exception ex) {
-            return List.of();
-        }
-    }
-
-    private static String writeOwned(List<String> owned) {
-        try {
-            return MAPPER.writeValueAsString(owned);
-        } catch (Exception ex) {
-            return "[]";
         }
     }
 

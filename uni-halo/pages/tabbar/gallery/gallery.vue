@@ -116,8 +116,12 @@
 			};
 		},
 		computed: {
+			/** 图库页布局固定值（原后台「页面配置 - 图库配置」已移除） */
 			galleryConfig() {
-				return this.$tm.vx.getters().getConfigs.pageConfig.galleryConfig;
+				return {
+					pageTitle: '图库',
+					useWaterfall: true
+				};
 			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;

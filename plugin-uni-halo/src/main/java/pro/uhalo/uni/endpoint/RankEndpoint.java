@@ -30,6 +30,20 @@ public class RankEndpoint implements CustomEndpoint {
                     .operationId("GetTopArticles")
                     .description("Top articles by visit counters for home hot rank module.")
                     .tag(apiTag))
+            .GET(Constants.END_POINT_API_BASE_PATH + "/rank/activities",
+                rankController::recentActivities,
+                builder -> builder
+                    .operationId("GetRankActivities")
+                    .description("Recent comment/vote (and optionally upvote) activities for the "
+                        + "ranking page activity wall. Public read.")
+                    .tag(apiTag))
+            .GET(Constants.END_POINT_API_BASE_PATH + "/rank/users", rankController::topUsers,
+                builder -> builder
+                    .operationId("GetUserRank")
+                    .description("User ranking by earned points / weekly activity / invites. "
+                        + "Public read; the current user's own rank is returned when the "
+                        + "Wechat-Session-Id header is present.")
+                    .tag(apiTag))
             .build();
     }
 }

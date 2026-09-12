@@ -6,7 +6,7 @@
 			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
-			<tm-button class="mt-16" plan theme="grey" :shadow="0" @click="fnBackHome">返回首页</tm-button>
+			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
 		</view>
 		<template v-else>
 			<view v-if="loading === 'loading'" class="loading-wrap">
@@ -14,7 +14,7 @@
 			</view>
 			<view v-else-if="loading === 'error'" class="content-empty flex flex-center flex-col" style="min-height: 60vh;">
 				<tm-empty icon="icon-shiliangzhinengduixiang-" label="加载失败"></tm-empty>
-				<tm-button class="mt-24" plan theme="grey" :shadow="0" @click="fnLoad">重新加载</tm-button>
+				<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnLoad">重新加载</tm-button>
 			</view>
 			<view v-else class="content">
 				<view class="invite-card">
@@ -26,7 +26,6 @@
 							<text class="invite-code-label">我的邀请码</text>
 							<text class="invite-code-value">{{ inviteInfo.inviteCode }}</text>
 						</view>
-						<tm-button size="m" theme="primary" :shadow="2" @click="fnCopyCode">复制邀请码</tm-button>
 					</view>
 					<view class="invite-stats">
 						<view class="invite-stat">
@@ -40,6 +39,27 @@
 					</view>
 				</view>
 
+				<!-- 生成后固定展示的邀请海报 -->
+				<view v-if="poster.loading" class="poster-card poster-card-loading flex flex-center">
+					<liu-poster ref="liuPoster" :width="674" :height="940" @change="handleOnPosterChange"></liu-poster>
+					<view class="poster-loading-tip flex flex-center">
+						<text class="e-loading-icon iconfont icon-loading"></text>
+						<text class="ml-6">海报正在生成...</text>
+					</view>
+				</view>
+				<view v-else-if="poster.url" class="poster-card">
+					<view class="poster-head flex flex-between">
+						<view>
+							<text class="poster-title">我的邀请海报</text>
+							<text class="poster-sub">好友扫码注册登录，邀请即自动生效</text>
+						</view>
+						<text class="poster-count">已邀请 {{ inviteInfo.invitedCount }} 人</text>
+					</view>
+					<image class="poster-img" :src="poster.url" mode="widthFix" @click="fnSavePoster()"></image>
+					<tm-button class="poster-save mt-16" theme="bg-gradient-light-blue-accent" size="m" :block="true"
+						@click="fnSavePoster()">保存到相册</tm-button>
+				</view>
+
 				<tm-button
 					v-if="inviteInfo.enabled !== false"
 					theme="bg-gradient-light-blue-accent"
@@ -49,15 +69,24 @@
 					open-type="share"
 				>发送给微信好友</tm-button>
 				<tm-button
-					v-if="inviteInfo.enabled !== false"
+					v-if="inviteInfo.enabled !== false && !poster.url && !poster.loading"
 					class="mt-16"
 					plan
 					theme="primary"
 					:shadow="0"
 					:height="88"
 					:block="true"
-					@click="fnShowPoster"
+					@click="fnGeneratePoster"
 				>生成邀请海报</tm-button>
+
+				<!-- 我的邀请人 -->
+				<view v-if="inviteInfo.inviterNickname" class="inviter-card flex flex-center">
+					<image v-if="inviteInfo.inviterAvatar" class="inviter-avatar" :src="inviteInfo.inviterAvatar" mode="aspectFill"></image>
+					<view v-else class="inviter-avatar inviter-avatar-empty flex flex-center">
+						<tm-icons name="icon-user" :size="22" color="#03a9f4"></tm-icons>
+					</view>
+					<text class="inviter-text">我的邀请人：{{ inviteInfo.inviterNickname }} 邀请加入</text>
+				</view>
 
 				<view class="footer-tip">
 					<text>邀请新用户通过分享进入小程序并完成登录，每成功注册 1 人你获得 {{ inviteInfo.rewardPoints }} 积分；好友登录后可领取「新人见面礼」。</text>
@@ -65,31 +94,6 @@
 				</view>
 			</view>
 		</template>
-
-		<!-- 邀请海报弹窗 -->
-		<tm-poup v-model="poster.show" width="90vw" height="auto" :round="6" :over-close="true" position="center">
-			<view class="poster-content pt-12 bg-white">
-				<liu-poster ref="liuPoster" :width="674" :height="940" @change="handleOnPosterChange"></liu-poster>
-				<view v-if="poster.loading" class="poster-loading flex flex-center text-grey-darken-1">
-					<text class="e-loading-icon iconfont icon-loading"></text>
-					<text class="ml-6">海报正在生成...</text>
-				</view>
-				<block v-if="!poster.loading">
-					<image
-						v-if="poster.url"
-						:style="{
-							width: '100%',
-							height: '940rpx'
-						}"
-						:src="poster.url"
-					></image>
-					<view class="poster-save ma-24 mt-0 pt-20 flex flex-center">
-						<tm-button theme="bg-gradient-light-blue-accent" size="m" @click="fnSavePoster()">保存到相册</tm-button>
-						<tm-button theme="bg-gradient-blue-grey-accent" size="m" @click="fnOnPosterClose()">关 闭</tm-button>
-					</view>
-				</block>
-			</view>
-		</tm-poup>
 
 		<wx-login-dialog
 			:show.sync="loginDialogShow"
@@ -104,18 +108,17 @@
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
-	import tmPoup from '@/tm-vuetify/components/tm-poup/tm-poup.vue';
+	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import liuPoster from '@/uni_modules/liu-poster/components/liu-poster/liu-poster.vue';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
-	import utils from '@/utils/index.js';
 
 	export default {
 		components: {
 			tmSkeleton,
 			tmEmpty,
 			tmButton,
-			tmPoup,
+			tmIcons,
 			liuPoster,
 			wxLoginDialog
 		},
@@ -128,10 +131,11 @@
 					enabled: true,
 					rewardPoints: 30,
 					inviteCode: '',
-					invitedCount: 0
+					invitedCount: 0,
+					inviterNickname: '',
+					inviterAvatar: ''
 				},
 				poster: {
-					show: false,
 					loading: false,
 					url: '',
 					configs: []
@@ -165,7 +169,7 @@
 			return {
 				title: `${this.userNickname} 邀请你加入 uni-halo，和我一起玩`,
 				path: '/pages/index/index' + (code ? '?inviteCode=' + encodeURIComponent(code) : ''),
-				imageUrl: this.userAvatar || ''
+				imageUrl: this.poster.url || this.userAvatar || ''
 			};
 		},
 		onShareTimeline() {
@@ -176,101 +180,157 @@
 					: {}
 			};
 		},
-		methods: {
-			async fnLoad() {
-				try {
-					const res = await this.$httpApi.v2.getInviteInfo();
-					const data = res?.data || res || {};
-					if (data?.error) {
+			methods: {
+				async fnLoad() {
+					try {
+						const res = await this.$httpApi.v2.getInviteInfo();
+						const data = res?.data || res || {};
+						if (data?.error) {
+							this.loading = 'error';
+							uni.showToast({ title: data.error, icon: 'none' });
+							return;
+						}
+						this.inviteInfo = {
+							enabled: data.enabled !== false,
+							rewardPoints: Number(data.rewardPoints || 30),
+							inviteCode: data.inviteCode || '',
+							invitedCount: Number(data.invitedCount || 0),
+							inviterNickname: data.inviterNickname || '',
+							inviterAvatar: data.inviterAvatar || '',
+							posterImageUrl: data.posterImageUrl || '',
+							posterGeneratedAt: data.posterGeneratedAt || ''
+						};
+						if (this.inviteInfo.inviteCode) {
+							uni.setStorageSync('invite.code', this.inviteInfo.inviteCode);
+						}
+						this.loading = 'success';
+						this.fnRestorePoster();
+					} catch (err) {
 						this.loading = 'error';
-						uni.showToast({ title: data.error, icon: 'none' });
+						uni.showToast({ title: err?.error || '加载失败，请稍后重试', icon: 'none' });
+					}
+				},
+				fnOnLoginSuccess() {
+					this.isLoggedIn = true;
+					this.fnLoad();
+				},
+				fnBackHome() {
+					uni.switchTab({ url: '/pages/tabbar/home/home' });
+				},
+
+				// ==================== 邀请海报 ====================
+				/** 恢复邀请海报：优先使用后台保存的图片（跨设备/重编译不丢失），否则用本机持久化文件 */
+				fnRestorePoster() {
+					if (this.inviteInfo.posterImageUrl) {
+						this.poster.url = this.inviteInfo.posterImageUrl;
 						return;
 					}
-					this.inviteInfo = {
-						enabled: data.enabled !== false,
-						rewardPoints: Number(data.rewardPoints || 30),
-						inviteCode: data.inviteCode || '',
-						invitedCount: Number(data.invitedCount || 0)
-					};
-					if (this.inviteInfo.inviteCode) {
-						uni.setStorageSync('invite.code', this.inviteInfo.inviteCode);
+					const saved = uni.getStorageSync('invite.poster.path') || '';
+					if (!saved) return;
+					// #ifdef MP-WEIXIN
+					try {
+						wx.getFileSystemManager().accessSync(saved);
+					} catch (e) {
+						uni.removeStorageSync('invite.poster.path');
+						return;
 					}
-					this.loading = 'success';
-				} catch (err) {
-					this.loading = 'error';
-					uni.showToast({ title: err?.error || '加载失败，请稍后重试', icon: 'none' });
-				}
-			},
-			fnCopyCode() {
-				if (!this.inviteInfo.inviteCode) return;
-				utils.copyText(this.inviteInfo.inviteCode, '邀请码已复制');
-			},
-			fnOnLoginSuccess() {
-				this.isLoggedIn = true;
-				this.fnLoad();
-			},
-			fnBackHome() {
-				uni.switchTab({ url: '/pages/tabbar/home/home' });
-			},
-
-			// ==================== 邀请海报 ====================
-			fnShowPoster() {
-				if (!this.inviteInfo.inviteCode) {
-					uni.$tm.toast('邀请码尚未生成，请下拉刷新重试');
-					return;
-				}
-				this.poster.url = '';
-				this.fnGeneratePoster();
-			},
-			async fnGeneratePoster() {
-				this.poster.show = true;
-				this.poster.loading = true;
-				if (this._posterTimer) {
-					clearTimeout(this._posterTimer);
-				}
-				this._posterTimer = setTimeout(() => {
-					if (this.poster.loading) {
-						uni.hideLoading();
+					// #endif
+					this.poster.url = saved;
+				},
+				/** 将生成的临时海报文件持久化到本地固定路径，下次进入直接展示 */
+				fnPersistPoster(tmpPath) {
+					// #ifdef MP-WEIXIN
+					try {
+						const fs = wx.getFileSystemManager();
+						const code = this.inviteInfo.inviteCode || 'default';
+						const dest = `${wx.env.USER_DATA_PATH}/invite_poster_${code}.png`;
+						try {
+							fs.unlinkSync(dest);
+						} catch (e) {
+							// 目标文件不存在，忽略
+						}
+						fs.copyFileSync(tmpPath, dest);
+						return dest;
+					} catch (err) {
+						console.warn('[invite] 海报持久化失败，本次会话内有效', err && (err.errMsg || err.message));
+						return '';
+					}
+					// #endif
+					// #ifndef MP-WEIXIN
+					return '';
+					// #endif
+				},
+				async fnGeneratePoster() {
+					if (!this.inviteInfo.inviteCode) {
+						uni.$tm.toast('邀请码尚未生成，请下拉刷新重试');
+						return;
+					}
+					if (this.poster.loading || this.poster.url) return;
+					this.poster.loading = true;
+					if (this._posterTimer) {
+						clearTimeout(this._posterTimer);
+					}
+					this._posterTimer = setTimeout(() => {
+						if (this.poster.loading) {
+							uni.hideLoading();
+							this.poster.loading = false;
+							uni.$tm.toast('海报生成超时，请检查图片配置');
+						}
+					}, 20000);
+					try {
+						await this.handleCreatePoster();
+						setTimeout(() => {
+							this.$nextTick(() => {
+								if (this.$refs.liuPoster) {
+									this.$refs.liuPoster.init(this.poster.configs);
+								}
+							});
+						}, 300);
+					} catch (err) {
+						if (this._posterTimer) {
+							clearTimeout(this._posterTimer);
+							this._posterTimer = null;
+						}
+						console.error('[invite] 海报生成失败', err);
 						this.poster.loading = false;
-						this.poster.show = false;
-						uni.$tm.toast('海报生成超时，请检查图片配置');
+						uni.$tm.toast(err?.detail || err?.message || err?.error || '海报生成失败，请稍后重试');
 					}
-				}, 20000);
-				try {
-					await this.handleCreatePoster();
-					setTimeout(() => {
-						this.$nextTick(() => {
-							if (this.$refs.liuPoster) {
-								this.$refs.liuPoster.init(this.poster.configs);
-							}
-						});
-					}, 300);
-				} catch (err) {
+				},
+				handleOnPosterChange(url) {
 					if (this._posterTimer) {
 						clearTimeout(this._posterTimer);
 						this._posterTimer = null;
 					}
-					console.error('[invite] 海报生成失败', err);
+					uni.hideLoading();
+					if (!url) {
+						this.poster.loading = false;
+						uni.$tm.toast('海报绘制失败，请检查图片配置');
+						return;
+					}
+					// 固定展示：持久化到本地，下次进入页面直接显示，按钮随即隐藏
+					const saved = this.fnPersistPoster(url);
+					this.poster.url = saved || url;
 					this.poster.loading = false;
-					this.poster.show = false;
-					uni.$tm.toast(err?.detail || err?.message || err?.error || '海报生成失败，请稍后重试');
-				}
-			},
-			handleOnPosterChange(url) {
-				if (this._posterTimer) {
-					clearTimeout(this._posterTimer);
-					this._posterTimer = null;
-				}
-				uni.hideLoading();
-				if (!url) {
-					this.poster.loading = false;
-					this.poster.show = false;
-					uni.$tm.toast('海报绘制失败，请检查图片配置');
-					return;
-				}
-				this.poster.url = url;
-				this.poster.loading = false;
-			},
+					uni.setStorageSync('invite.poster.path', this.poster.url);
+					// 上传到后台附件（管理端展示 + 跨设备恢复），失败不影响本机展示
+					this.fnUploadPosterToServer(saved || url);
+					// 上报生成记录（管理端「邀请好友」汇总按此展示海报用户）
+					this.$httpApi.v2.markInvitePosterGenerated()
+						.catch((err) => console.warn('[invite] 海报生成上报失败', err));
+					uni.$tm.toast('邀请海报已生成');
+				},
+				async fnUploadPosterToServer(filePath) {
+					try {
+						const res = await this.$httpApi.v2.uploadInvitePoster(filePath);
+						const imageUrl = res?.data?.imageUrl || res?.imageUrl || '';
+						if (imageUrl) {
+							this.inviteInfo.posterImageUrl = imageUrl;
+							uni.setStorageSync('invite.poster.serverUrl', imageUrl);
+						}
+					} catch (err) {
+						console.warn('[invite] 邀请海报上传后台失败（不影响本机展示）', err);
+					}
+				},
 			/** 海报图片兜底：失效外链回退到站点内默认图 */
 			getPosterImageUrl(url) {
 				const imagesConfig = this.haloConfigs?.imagesConfig || {};
@@ -772,16 +832,21 @@
 					}
 				];
 			},
-			fnOnPosterClose() {
-				this.poster.show = false;
-				this.poster.loading = false;
-			},
 			async fnSavePoster() {
 				if (!this.poster.url) return;
 				const authorize = await this.fnCheckAlbumAppAuthorize();
 				if (!authorize) return;
+				// 展示用图可能来自后台（网络地址），保存前先下载到本地临时文件
+				let filePath = this.poster.url;
+				if (/^https?:\/\//.test(filePath)) {
+					filePath = await this.fnDownloadImage(filePath);
+					if (!filePath) {
+						uni.$tm.toast('海报下载失败，请配置 downloadFile 合法域名后重试');
+						return;
+					}
+				}
 				uni.saveImageToPhotosAlbum({
-					filePath: this.poster.url,
+					filePath,
 					success: () => {
 						uni.$tm.toast('保存成功');
 					},
@@ -949,8 +1014,90 @@
 		}
 	}
 
-	.poster-loading {
-		height: 240rpx;
-		justify-content: center;
+	.poster-card {
+		background: #fff;
+		border-radius: 20rpx;
+		padding: 24rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(30, 40, 90, 0.06);
+	}
+
+	.poster-head {
+		align-items: center;
+		margin-bottom: 16rpx;
+	}
+
+	.poster-title {
+		display: block;
+		font-size: 30rpx;
+		font-weight: 700;
+		color: #333;
+	}
+
+	.poster-sub {
+		display: block;
+		margin-top: 4rpx;
+		font-size: 20rpx;
+		color: #909399;
+	}
+
+	.poster-count {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #667eea;
+	}
+
+	.poster-img {
+		width: 100%;
+		border-radius: 12rpx;
+		background: #f5f6fa;
+	}
+
+	.poster-card-loading {
+		position: relative;
+		height: 480rpx;
+		overflow: hidden;
+	}
+
+	.poster-card-loading liu-poster {
+		position: absolute;
+		left: -674rpx;
+		top: 0;
+	}
+
+	.poster-loading-tip {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+		z-index: 2;
+		color: #909399;
+		font-size: 24rpx;
+	}
+
+	.inviter-card {
+		margin-bottom: 24rpx;
+		padding: 18rpx 24rpx;
+		border-radius: 14rpx;
+		background: #f0f8ff;
+	}
+
+	.inviter-avatar {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 50%;
+		margin-right: 12rpx;
+		background: #d9ecff;
+		flex-shrink: 0;
+
+		&.inviter-avatar-empty {
+			border-radius: 50%;
+		}
+	}
+
+	.inviter-text {
+		font-size: 22rpx;
+		color: #03a9f4;
 	}
 </style>

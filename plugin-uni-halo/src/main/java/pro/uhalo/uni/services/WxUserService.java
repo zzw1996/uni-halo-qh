@@ -5,6 +5,8 @@ import pro.uhalo.uni.scheme.WxUser;
 import pro.uhalo.uni.utils.WxUserLookup;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 public interface WxUserService {
 
     Mono<WxUser> fetchByOpenid(String openid);
@@ -20,4 +22,7 @@ public interface WxUserService {
     Mono<WxUserListResponse> listUsers(String keyword, int page, int size);
 
     Mono<WxUserLookup> loadUserLookup();
+
+    /** 全量用户列表（管理端聚合使用） */
+    Mono<List<WxUser>> listAllUsers();
 }

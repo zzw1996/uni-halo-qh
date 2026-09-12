@@ -229,6 +229,19 @@ public class ConfigEndpoint implements CustomEndpoint {
                         .description("Lucky winning management page (HTML shell, needs personal token).")
                         .tag(ApiTag);
                 })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/refund-admin", this::getRefundAdmin,
+                builder -> {
+                    builder.operationId("PayOrderRefundAdminPage")
+                        .description("Virtual payment order / manual refund list page (HTML shell, needs personal token).")
+                        .tag(ApiTag);
+                })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/ai-digest-admin", this::getAiDigestAdmin,
+                builder -> {
+                    builder.operationId("AiDigestAdminPage")
+                        .description("AI daily digest management page (HTML shell, needs personal token). "
+                            + "Served by the backend so it works even when the console bundle is cached.")
+                        .tag(ApiTag);
+                })
             .build();
     }
 
@@ -297,6 +310,38 @@ public class ConfigEndpoint implements CustomEndpoint {
             .onErrorResume(ex -> {
                 log.warn("lucky-admin page failed: {}", ex.getMessage());
                 return badRequest("中奖记录管理页加载失败");
+            });
+    }
+
+    Mono<ServerResponse> getAiDigestAdmin(ServerRequest request) {
+        return Mono.fromCallable(() -> {
+                var resource = new org.springframework.core.io.ClassPathResource("static/ai-digest-admin.html");
+                try (var in = resource.getInputStream()) {
+                    return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            })
+            .flatMap(html -> ServerResponse.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .bodyValue(html))
+            .onErrorResume(ex -> {
+                log.warn("ai-digest-admin page failed: {}", ex.getMessage());
+                return badRequest("AI 日报管理页加载失败");
+            });
+    }
+
+    Mono<ServerResponse> getRefundAdmin(ServerRequest request) {
+        return Mono.fromCallable(() -> {
+                var resource = new org.springframework.core.io.ClassPathResource("static/refund-admin.html");
+                try (var in = resource.getInputStream()) {
+                    return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            })
+            .flatMap(html -> ServerResponse.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .bodyValue(html))
+            .onErrorResume(ex -> {
+                log.warn("refund-admin page failed: {}", ex.getMessage());
+                return badRequest("退款清单页加载失败");
             });
     }
 

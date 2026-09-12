@@ -11,7 +11,10 @@ import static pro.uhalo.uni.constants.Constants.BASIC_DOMAIN_NAME;
 import static pro.uhalo.uni.constants.Constants.PLUGIN_API_VERSION;
 
 /**
- * 虚拟支付订单（道具直购：积分充值）。
+ * 虚拟支付订单（道具直购）。
+ *
+ * <p>个人主体小程序仅支持道具直购（mode=short_series_goods），订单对应具体权益
+ * （数据看板高级版 / 发布券 / 装扮），不涉及积分充值。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -36,10 +39,15 @@ public class PayOrder extends AbstractExtension {
     /** 道具单价（分），与微信后台道具价格一致 */
     private Long price;
 
-    /** 到账积分（1 个道具 = points 分；仅旧积分充值模式使用） */
+    /**
+     * 到账积分（历史字段：仅旧的积分充值订单有值，新订单恒为 null）。
+     *
+     * <p>保留该字段仅为兼容已落库的历史订单反序列化，发货逻辑不再读取，
+     * 个人主体小程序不支持现金充值积分。</p>
+     */
     private Integer points;
 
-    /** 道具类型：points | dashboard | publish_ticket | outfit */
+    /** 道具类型：publish_ticket | outfit（dashboard 仅存在于升级前的历史订单，用于履约） */
     private String goodsType;
 
     /** 道具数量 */

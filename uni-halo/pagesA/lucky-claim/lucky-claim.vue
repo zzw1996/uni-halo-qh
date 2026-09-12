@@ -48,7 +48,7 @@
 				</view>
 				<view class="progress-row">
 					<text class="progress-label">参与时间</text>
-					<text class="progress-value">{{ (claim && claim.winTime) ? (claim.winTime | formatTime) : '—' }}</text>
+					<text class="progress-value">{{ formatTimeSafe(claim && claim.winTime) }}</text>
 				</view>
 				<template v-if="claim && claim.status === 'submitted'">
 					<view class="progress-row">
@@ -75,11 +75,11 @@
 					</view>
 					<view class="progress-row">
 						<text class="progress-label">发货时间</text>
-						<text class="progress-value">{{ claim.shipTime ? (claim.shipTime | formatTime) : '—' }}</text>
+						<text class="progress-value">{{ formatTimeSafe(claim.shipTime) }}</text>
 					</view>
 				</template>
 				<view class="progress-tip">
-					<text>{{ claim && claim.status === 'shipped' ? '礼品已发出，请保持手机畅通，注意查收～' : '已按你提交的收货信息安排，发放后本页会显示物流信息；还可到兑换中心「我的礼品发放」查看。' }}</text>
+					<text>{{ claim && claim.status === 'shipped' ? '礼品已发出，请保持手机畅通，注意查收～' : '已按你提交的收货信息安排，发放后本页会显示物流信息；也可在「我的」页 →「抽奖记录与消耗明细」随时查看进度。' }}</text>
 				</view>
 			</view>
 		</block>
@@ -89,6 +89,7 @@
 <script>
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import { checkHasWxLogin } from '@/utils/auth.js';
+	import { formatTimeSafe } from '@/utils/time.js';
 
 	export default {
 		components: {
@@ -136,7 +137,11 @@
 			}
 		},
 		methods: {
-			/** 拉取本单的发放进度：已提交/已发货时直接展示结果 */
+			/** 时间格式化（兼容 ISO 字符串 / 秒级或毫秒级时间戳；无法解析时返回「—」，不会渲染成 1970） */
+			formatTimeSafe(value) {
+				return formatTimeSafe(value);
+			},
+			/** 拉取本单的发放进度：已提交/已发货时展示结果，仍处于待填写时展示表单 */
 			async fnLoadProgress() {
 				try {
 					const res = await this.$httpApi.v2.getMyLuckyClaims();
@@ -145,7 +150,10 @@
 					const mine = list.find((item) => item?.winningId === this.winningId || item?.id === this.winningId);
 					if (mine) {
 						this.claim = mine;
-						this.needForm = mine.status !== 'pending';
+						// 只有「已提交 / 已发货」才收起表单；pending（待填写）必须继续显示表单。
+						// 原实现写成 `status !== 'pending'`，正好反了——进入中奖页会直接显示
+						// 「已提交」，用户根本没机会填收货信息。
+						this.needForm = mine.status !== 'submitted' && mine.status !== 'shipped';
 					} else if (this.incomingStatus && this.incomingStatus !== 'pending') {
 						// 接口暂时匹配不到时，按进入状态兜底展示进度，避免误显示表单
 						this.claim = { winningId: this.winningId, status: this.incomingStatus };

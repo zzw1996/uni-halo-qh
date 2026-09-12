@@ -24,7 +24,13 @@ public interface InviteService {
 
     /**
      * 后台邀请明细（谁邀请谁、发放积分）+ 按邀请人汇总（邀请人数、总积分）。
-     * items 分页，summary 为全量聚合（按总积分倒序）。
+     * items 分页，summary 为全量聚合（含生成过邀请海报的用户，按总积分倒序）。
      */
     Mono<AdminInviteRecordListResponse> listInviteRecordsForAdmin(String keyword, int page, int size);
+
+    /** 记录用户已生成邀请海报（生成成功后上报，管理端汇总据此展示） */
+    Mono<Boolean> markPosterGenerated(String openid);
+
+    /** 绑定邀请海报图片地址（上传到后台附件后回填到用户记录） */
+    Mono<Boolean> attachPosterImage(String openid, String imageUrl);
 }

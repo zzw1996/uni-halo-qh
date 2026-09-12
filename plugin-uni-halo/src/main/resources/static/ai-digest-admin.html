@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 日报 · 生成与发布管理</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6fa; color: #303133; padding: 20px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.04); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input, button { font-size: 14px; border-radius: 8px; border: 1px solid #dcdfe6; padding: 8px 12px; outline: none; }
+  input:focus { border-color: #667eea; }
+  button { background: #667eea; color: #fff; border: none; cursor: pointer; }
+  button:hover { opacity: .9; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: #eef1fb; color: #4c5480; }
+  .token { width: 320px; }
+  .tip { font-size: 12px; color: #b0b5c0; margin-top: 6px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .stat { border-radius: 10px; padding: 12px 14px; color: #fff; }
+  .stat .k { font-size: 12px; opacity: .9; }
+  .stat .v { font-size: 20px; font-weight: 700; margin: 3px 0; }
+  .stat .s { font-size: 11px; opacity: .8; }
+  .s1 { background: linear-gradient(135deg,#5b6ee8,#7d57e0); }
+  .s2 { background: linear-gradient(135deg,#f2994a,#e8622c); }
+  .s3 { background: linear-gradient(135deg,#4aa5f0,#4f74dd); }
+  .s4 { background: linear-gradient(135deg,#2bb673,#1e9e8e); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f1f5; vertical-align: middle; }
+  th { color: #909399; font-weight: 600; white-space: nowrap; }
+  td { word-break: break-all; }
+  a { color: #667eea; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+  .ok { background: #e6f7e6; color: #3a9e3a; }
+  .bad { background: #ffecec; color: #d94a4a; }
+  .run { background: #fff3e0; color: #e8862b; }
+  .idle { background: #eef1fb; color: #6b7290; }
+  .empty { color: #b0b5c0; text-align: center; padding: 40px 0; }
+  .msg { margin-top: 10px; font-size: 13px; }
+  .msg.bad { color: #d94a4a; }
+  .msg.ok { color: #3a9e3a; }
+  pre.md { background: #fbfcff; border: 1px solid #eef1fb; border-radius: 10px; padding: 14px; font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; }
+  .mono { font-family: monospace; font-size: 11.5px; color: #aab0c0; }
+  .reason { font-size: 12px; }
+  .fail-reason { color: #d94a4a; line-height: 1.5; }
+  .pf-item { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; font-size: 13px; flex-wrap: wrap; }
+  .pf-flag { font-weight: 700; }
+  .pf-ok { color: #17a05e; }
+  .pf-bad { color: #d94a4a; }
+  .pf-name { color: #3c4160; font-weight: 600; min-width: 130px; }
+  .pf-msg { color: #7a8095; }
+  .pf-msg-bad { color: #d94a4a; }
+  #progressBar.indeterminate { width: 35%; animation: digest-slide 1.2s ease-in-out infinite; }
+  @keyframes digest-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📰 AI 日报 · 生成与发布管理</h1>
+  <p class="sub">每天定时抓取技术博客 → AI 精选成稿 → 通过 Halo 官方接口发布文章。Token 仅保存在本机浏览器。</p>
+
+  <div class="card">
+    <div class="row">
+      <input class="token" id="token" type="password" placeholder="Personal Token（Halo 后台 → 个人资料 → 个人令牌）">
+      <button onclick="load()">🔄 刷新</button>
+      <button onclick="triggerRun(true)" id="btnRunPublish">⚡ 立即生成并发布</button>
+      <button class="ghost" onclick="triggerRun(false)" id="btnRunDraft">📝 只生成不发布</button>
+      <button class="ghost" onclick="runPreflight()" id="btnPreflight">🩺 发布环境自检</button>
+      <button class="ghost" onclick="cleanupResidues()" id="btnCleanup">🧹 清理残留文章</button>
+    </div>
+    <p class="tip">生成一次约需 1-3 分钟，正文较长时发布确认还要更久；触发后页面会自动刷新，不用手动点。Token 需要是超级管理员令牌。注意：「发布」只会发出这一期在生成时就已经固化的文章（逐篇模式下为 N 篇独立文章）；早期生成的记录里没有逐篇内容，只能整体补发一篇日报。若某一期是「只生成不发布」，点「发布」即可把它备好的文章写入 Halo；已建过稿的篇目只会重新触发发布，不会重复建稿。</p>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card" id="progressCard" style="display:none">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span id="progressTitle" style="font-size:13px;font-weight:700;color:#3c4160"></span>
+      <span id="progressText" style="font-size:13px;color:#667eea"></span>
+    </div>
+    <div id="progressBarWrap" style="margin-top:8px;height:8px;border-radius:999px;background:#eef1fb;overflow:hidden">
+      <div id="progressBar" style="height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#667eea,#9a4ee0);transition:width .4s ease"></div>
+    </div>
+    <div id="progressMeta" style="margin-top:6px;font-size:12px;color:#9aa1b5"></div>
+  </div>
+
+  <div class="card" id="preflightCard" style="display:none">
+    <div style="font-size:14px;font-weight:700;color:#3c4160;margin-bottom:6px">🩺 发布环境自检结果</div>
+    <div id="preflight"></div>
+    <p class="tip">自检只读取信息、不会发布任何内容；不通过的项按提示改完再点「发布」。</p>
+  </div>
+
+  <div class="card">
+    <div class="stats" id="stats"><div class="empty" style="grid-column:1/-1">请先输入 Personal Token 并点击「刷新」</div></div>
+  </div>
+
+  <div class="card">
+    <div id="list"><div class="empty">暂无数据</div></div>
+  </div>
+
+  <div class="card" id="detail" style="display:none"></div>
+</div>
+
+<script>
+  var timer = null;
+  var graceUntil = 0;
+
+  function token() { return document.getElementById('token').value.trim(); }
+  function saveToken() { try { localStorage.setItem('aiDigestAdminToken', token()); } catch (e) {} }
+  function restoreToken() {
+    try {
+      var saved = localStorage.getItem('aiDigestAdminToken');
+      if (saved) document.getElementById('token').value = saved;
+    } catch (e) {}
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function api(path) { return location.origin + '/apis/console.api.uni.uhalo.pro/v1alpha1' + path; }
+  function fmt(t) {
+    if (!t) return '-';
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return String(t);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function statusText(s) { return s === 'SUCCESS' ? '成功' : s === 'FAILED' ? '失败' : s === 'RUNNING' ? '运行中' : '待运行'; }
+  function statusClass(s) { return s === 'SUCCESS' ? 'ok' : s === 'FAILED' ? 'bad' : s === 'RUNNING' ? 'run' : 'idle'; }
+  function publishText(s, running) {
+    if (s === 'PUBLISHING') return running ? '发布中' : '未发布';
+    return s === 'PUBLISHED' ? '已发布' : s === 'PARTIAL' ? '部分成功' : s === 'PENDING' ? '待确认'
+      : s === 'FAILED' ? '发布失败' : s === 'SKIPPED' ? '未发布' : '-';
+  }
+  function publishClass(s, running) {
+    if (s === 'PUBLISHING') return running ? 'run' : 'idle';
+    return s === 'PUBLISHED' ? 'ok' : s === 'FAILED' ? 'bad' : (s === 'PENDING' || s === 'PARTIAL') ? 'run' : 'idle';
+  }
+  function postsOf(item) { return (item && item.posts) || []; }
+
+  /** 按钮文案跟状态走：没发过是「发布」，发了一部分是「补发」，全发过了才是「重新发布」 */
+  function publishActionLabel(item) {
+    var posts = postsOf(item);
+    var created = posts.filter(function (p) { return p.postName; }).length;
+    if (!created) return '发布';
+    var published = posts.filter(function (p) { return p.state === 'PUBLISHED'; }).length;
+    return published === posts.length ? '重新发布' : '补发';
+  }
+
+  function publishActionHint(item) {
+    var label = publishActionLabel(item);
+    if (label === '发布') return '把这一期备好的文章写入 Halo（逐篇模式下一篇一篇文章）';
+    if (label === '补发') return '只补发还没成功的那几篇；已建稿的只重新触发发布';
+    return '全部重新触发发布（不会重复建稿，也不会改回旧正文）';
+  }
+
+  // 清理未发布成功的残留文章：先预览，确认后再删（删除时自动摘掉终态器）
+  async function cleanupResidues() {
+    try {
+      var preview = await request('/digest/cleanup?dryRun=true', 'POST');
+      var count = (preview && preview.count) || 0;
+      if (!count) { showMsg('没有发现需要清理的残留文章', true); return; }
+      var names = ((preview.items) || []).slice(0, 8).map(function (i) { return i.title || i.name; }).join('、');
+      if (!confirm('找到 ' + count + ' 篇未发布成功的残留文章（前几篇：' + names + '），确认删除？会自动摘除终态器')) {
+        showMsg('已取消，共 ' + count + ' 篇残留（未删除）', true);
+        return;
+      }
+      var result = await request('/digest/cleanup?dryRun=false', 'POST');
+      showMsg((result && result.message) || '清理完成', true);
+      load();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  async function runPreflight() {
+    var btn = document.getElementById('btnPreflight');
+    btn.disabled = true;
+    try {
+      var data = await request('/digest/preflight');
+      var items = (data && data.items) || [];
+      var failed = items.filter(function (i) { return !i.ok; }).length;
+      var html = '';
+      items.forEach(function (i) {
+        html += '<div class="pf-item">' +
+          '<span class="pf-flag ' + (i.ok ? 'pf-ok' : 'pf-bad') + '">' + (i.ok ? '✔' : '✘') + '</span>' +
+          '<span class="pf-name">' + esc(i.item) + '</span>' +
+          '<span class="pf-msg' + (i.ok ? '' : ' pf-msg-bad') + '">' + esc(i.message) + '</span>' +
+          '</div>';
+      });
+      document.getElementById('preflight').innerHTML = html || '<div class="empty">没有检查项</div>';
+      document.getElementById('preflightCard').style.display = 'block';
+      showMsg(failed ? ('自检发现 ' + failed + ' 项不通过，按提示处理后即可发布') : '自检全部通过', !failed);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  function primaryPostUrl(item) {
+    var list = postsOf(item);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].url) return list[i].url;
+    }
+    return item.postUrl || '';
+  }
+  function slotText(s) {
+    if (!s) return '-';
+    if (s.indexOf('manual') !== 0) return s;
+    var d = s.slice(7).replace(/(\d{2})(\d{2})(\d{2})/, '$1:$2');
+    return '手动 ' + d;
+  }
+  function showMsg(text, ok) {
+    var el = document.getElementById('msg');
+    el.className = 'msg ' + (ok ? 'ok' : 'bad');
+    el.textContent = text || '';
+  }
+  function setBusy(busy) {
+    document.getElementById('btnRunPublish').disabled = busy;
+    document.getElementById('btnRunDraft').disabled = busy;
+  }
+
+  async function request(path, method) {
+    var t = token();
+    if (!t) throw new Error('请先输入 Personal Token');
+    var res = await fetch(api(path), {
+      method: method || 'GET',
+      headers: Object.assign({ 'Authorization': 'Bearer ' + t }, method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+      body: method === 'POST' ? '{}' : undefined
+    });
+    if (res.status === 401 || res.status === 403) throw new Error('鉴权失败：Token 无效或权限不足（需要超级管理员令牌）');
+    var text = await res.text();
+    var data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (e) {}
+    if (!res.ok) throw new Error(data.error || ('请求失败：HTTP ' + res.status + ' ' + text));
+    return data;
+  }
+
+  async function load() {
+    saveToken();
+    if (!token()) {
+      document.getElementById('list').innerHTML = '<div class="empty">请先输入 Personal Token</div>';
+      return;
+    }
+    try {
+      var overview = await request('/digest/overview');
+      var listData = await request('/digest/reports?limit=30');
+      renderStats(overview);
+      renderProgress(overview);
+      renderList((listData && listData.items) || []);
+      if (!timer) {
+        timer = setInterval(function () {
+          if ((window.__running) || Date.now() < graceUntil) load();
+        }, 4000);
+      }
+    } catch (err) {
+      document.getElementById('list').innerHTML = '<div class="empty">' + esc(err.message || err) + '</div>';
+    }
+  }
+
+  function renderProgress(o) {
+    var p = (o && o.progress) || null;
+    var card = document.getElementById('progressCard');
+    var stale = p && !p.running && p.updatedAt &&
+      (Date.now() - new Date(p.updatedAt).getTime() > 5 * 60 * 1000);
+    if (!p || !p.message || stale) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    document.getElementById('progressTitle').textContent = p.running ? '⏳ 进行中' : '✅ 已完成';
+    document.getElementById('progressText').textContent = p.message;
+    var wrap = document.getElementById('progressBarWrap');
+    var bar = document.getElementById('progressBar');
+    var meta = document.getElementById('progressMeta');
+    wrap.style.display = 'block';
+    if (p.total > 0) {
+      var percent = Math.min(100, Math.max(0, Math.round((p.done / p.total) * 100)));
+      bar.classList.remove('indeterminate');
+      bar.style.width = percent + '%';
+      meta.textContent = percent + '%（' + p.done + '/' + p.total + '）';
+    } else {
+      // 生成阶段没有总量：用来回滑动的动画表示"正在进行"
+      bar.classList.add('indeterminate');
+      bar.style.width = '';
+      meta.textContent = '处理中，请稍候…';
+    }
+  }
+
+  function renderStats(o) {
+    o = o || {};
+    var last = o.lastReport;
+    window.__running = !!o.running;
+    var lastSub = last
+      ? [last.date, '精选 ' + (last.articleCount == null ? 0 : last.articleCount) + ' 篇',
+         last.durationMs ? Math.round(last.durationMs / 1000) + ' 秒' : null, publishText(last.publishState)]
+        .filter(Boolean).join(' · ')
+      : '暂无运行记录';
+    document.getElementById('stats').innerHTML =
+      card('s1', '功能状态', o.enabled ? '已开启' : '已关闭', o.enabled ? (o.scheduleEnabled ? '定时执行中' : '仅手动生成') : '请到插件设置开启') +
+      card('s2', '下次执行', o.nextRunAt ? fmt(o.nextRunAt) : '未开启', '每天 ' + esc(o.scheduleTimes || '-') + '（' + esc(o.timezone || '-') + '）') +
+      card('s3', '最近一次结果', statusText(last && last.status), lastSub) +
+      card('s4', '运行状态', o.running ? '生成中' : '空闲', o.running ? '预计 1-3 分钟' : '');
+  }
+
+  function card(cls, k, v, s) {
+    return '<div class="stat ' + cls + '"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) +
+      '</div><div class="s">' + esc(s || '') + '</div></div>';
+  }
+
+  function renderList(items) {
+    if (!items.length) {
+      document.getElementById('list').innerHTML = '<div class="empty">还没有运行记录，点「立即生成并发布」试试</div>';
+      return;
+    }
+    var html = '<table><thead><tr><th>日期</th><th>触发</th><th>状态</th><th>发布</th><th>精选</th><th>耗时</th>' +
+      '<th>文章</th><th>说明</th><th>操作</th></tr></thead><tbody>';
+    items.forEach(function (it) {
+      var url = primaryPostUrl(it);
+      var count = postsOf(it).length;
+      var link = url
+        ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">打开</a>' + (count > 1 ? ' <span style="color:#b0b5c0">共 ' + count + ' 篇</span>' : '')
+        : '<span class="mono">-</span>';
+      html += '<tr>' +
+        '<td>' + esc(it.date) + '</td>' +
+        '<td>' + esc(slotText(it.slot)) + '</td>' +
+        '<td><span class="tag ' + statusClass(it.status) + '">' + statusText(it.status) + '</span></td>' +
+        '<td><span class="tag ' + publishClass(it.publishState, window.__running) + '">' + publishText(it.publishState, window.__running) + '</span></td>' +
+        '<td>' + (it.articleCount == null ? '-' : esc(it.articleCount)) + '</td>' +
+        '<td>' + (it.durationMs ? Math.round(it.durationMs / 1000) + 's' : '-') + '</td>' +
+        '<td>' + link + '</td>' +
+        '<td style="max-width:300px" class="reason">' + (it.error ? '<span class="fail-reason" title="' + esc(it.error) + '">' + esc(it.error) + '</span>' : '<span class="mono">-</span>') + '</td>' +
+        '<td><button class="ghost" onclick="openDetail(\'' + esc(it.name) + '\')">详情</button> ' +
+        '<button class="ghost" onclick="republish(\'' + esc(it.name) + '\')">发布</button></td>' +
+        '</tr>';
+    });
+    document.getElementById('list').innerHTML = html + '</tbody></table>';
+  }
+
+  async function triggerRun(publish) {
+    setBusy(true);
+    showMsg('正在触发…', true);
+    try {
+      var r = await request('/digest/run?publish=' + publish, 'POST');
+      showMsg(r.message || '已开始生成', true);
+      graceUntil = Date.now() + 10 * 60 * 1000;
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      setBusy(false);
+      load();
+    }
+  }
+
+  async function republish(name) {
+    setBusy(true);
+    try {
+      var r = await request('/digest/reports/' + encodeURIComponent(name) + '/publish', 'POST');
+      showMsg(r.message || '已开始发布', true);
+      graceUntil = Date.now() + 10 * 60 * 1000;
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      setBusy(false);
+      load();
+    }
+  }
+
+  async function openDetail(name) {
+    try {
+      var d = await request('/digest/reports/' + encodeURIComponent(name));
+      var s = d.stats || {};
+      var head = '<div class="row" style="margin-bottom:10px"><strong>' + esc(d.summary.date) + ' · ' +
+        esc(slotText(d.summary.slot)) + '</strong>' +
+        '<button class="ghost" onclick="closeDetail()">关闭</button></div>';
+      var chips = [];
+      if (s.totalFeeds) chips.push('扫描源 ' + s.successFeeds + '/' + s.totalFeeds);
+      if (s.totalArticles) chips.push('抓取 ' + s.totalArticles + ' 篇');
+      if (s.selected) chips.push('精选 ' + s.selected + ' 篇');
+      if (s.actualAvgWords) chips.push('平均 ' + s.actualAvgWords + ' 字');
+      if (s.imageCount != null) chips.push('配图 ' + s.imageCount + ' 张');
+
+      var posts = postsOf(d.summary);
+      var postsHtml = '';
+      if (posts.length) {
+        postsHtml = '<div style="background:#fbfcff;border:1px solid #eef1fb;border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+          '<div style="font-size:12.5px;font-weight:700;color:#3c4160;margin-bottom:6px">发布明细（' + posts.length + ' 篇）</div>';
+        posts.forEach(function (p) {
+          postsHtml += '<div style="font-size:12.5px;padding:3px 0">' +
+            '<span class="tag ' + publishClass(p.state) + '">' + publishText(p.state) + '</span> ' +
+            (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.title || p.postName) + '</a>'
+                   : esc(p.title || p.postName)) +
+            (p.message && p.state !== 'PUBLISHED' ? ' <span style="color:#b0b5c0;font-size:11.5px">' + esc(p.message) + '</span>' : '') +
+            '</div>';
+        });
+        postsHtml += '</div>';
+      }
+
+      var body = head + (chips.length ? '<p class="tip">' + esc(chips.join(' | ')) + '</p>' : '') +
+        postsHtml + '<pre class="md">' + esc(d.markdown || '（没有正文）') + '</pre>';
+      var el = document.getElementById('detail');
+      el.innerHTML = body;
+      el.style.display = 'block';
+      el.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  function closeDetail() {
+    var el = document.getElementById('detail');
+    el.innerHTML = '';
+    el.style.display = 'none';
+  }
+
+  restoreToken();
+  if (token()) load();
+</script>
+</body>
+</html>

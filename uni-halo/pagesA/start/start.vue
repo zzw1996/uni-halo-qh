@@ -45,21 +45,60 @@
 			:show-center-play-btn="false" :show-loading="false" :enable-progress-gesture="false"
 			:show-progress="false"></video>
 
-		<cover-view v-if="startConfig.title || startConfig.logo" class="title-container">
-
+		<!-- 标题/Logo：非视频背景时用普通 view。
+		     cover-view 是原生层组件，只支持极有限的 CSS（不支持 vh 单位、不支持 transform），
+		     在没有原生组件需要覆盖的页面上使用它，覆盖范围会被算成整屏而盖住 webview，
+		     结果是页面看得见、但所有点击都到不了页面 JS（表现为「点什么都没反应」）。 -->
+		<view v-if="calcBackgroundType !== 'video' && (startConfig.title || startConfig.logo)"
+			class="title-container">
+			<view v-if="startConfig.logo" class="app-logo">
+				<view class="app-logo-border">
+					<image class="app-logo-image" :src="$utils.checkImageUrl(startConfig.logo)"
+						mode="aspectFill"></image>
+				</view>
+			</view>
+			<view v-if="startConfig.title" class="app-title" :style="startConfig.titleStyle">
+				「 {{ startConfig.title }} 」
+			</view>
+		</view>
+		<!-- 视频背景：video 是原生组件，只能用 cover-view 才能浮在其上 -->
+		<cover-view v-else-if="startConfig.title || startConfig.logo" class="title-container">
 			<cover-view v-if="startConfig.logo" class="app-logo">
 				<cover-view class="app-logo-border">
 					<cover-image class="app-logo-image" :src="$utils.checkImageUrl(startConfig.logo)"
 						mode="aspectFill"></cover-image>
 				</cover-view>
 			</cover-view>
-
 			<cover-view v-if="startConfig.title" class="app-title" :style="startConfig.titleStyle">
 				「 {{ startConfig.title }} 」
 			</cover-view>
 		</cover-view>
 
-		<cover-view class="bottom-container">
+		<!-- 非视频背景：用普通 view 承载按钮。cover-view 只支持基础样式且点击命中
+		     在模拟器/部分基础库上不可靠，这里没有原生组件需要覆盖，普通 view 才是正确选择。 -->
+		<view v-if="calcBackgroundType !== 'video'" class="bottom-container">
+			<view class="text-align-center" :style="startConfig.descStyle"
+				style="color:white;padding: 60vh 0 0 0;">
+				<view style="font-size: 44rpx;" v-show="startConfig.desc1">
+					{{ startConfig.desc1 }}
+				</view>
+				<view class="mt-30 text-size-m" v-show="startConfig.desc2">
+					{{ startConfig.desc2 }}
+				</view>
+			</view>
+			<!-- #ifdef APP-PLUS -->
+			<view class="start-btn-app" :style="[startConfig.btnStyle]" @click="fnStart()">
+				{{ startConfig.btnText || '开始体验' }}
+			</view>
+			<!-- #endif -->
+			<!-- #ifndef APP-PLUS -->
+			<view class="start-btn" :class="[startConfig.btnClass]" @click="fnStart()"
+				:style="[startConfig.btnStyle]">{{ startConfig.btnText || '开始体验' }}
+			</view>
+			<!-- #endif -->
+		</view>
+		<!-- 视频背景：video 是原生组件，按钮必须放在 cover-view 里才能浮在其上 -->
+		<cover-view v-else class="bottom-container">
 			<cover-view class="text-align-center" :style="startConfig.descStyle"
 				style="color:white;padding: 60vh 0 0 0;">
 				<cover-view style="font-size: 44rpx;" v-show="startConfig.desc1">
@@ -124,11 +163,42 @@
 			}
 		},
 		methods: {
+			/**
+			 * 进入首页。
+			 *
+			 * 原实现只写了 success 回调，switchTab 一旦失败（页面未注册、跳转被拦、基础库限制等）
+			 * 就是「点了没有任何反应」，用户卡在启动页且看不到任何原因。
+			 * 现在：失败先记日志，再用 reLaunch 兜底（reLaunch 对 tabBar 页同样有效、
+			 * 且不受 switchTab 的部分限制），仍失败则把错误原样弹出来。
+			 */
 			fnStart() {
-				uni.switchTab({
-					url: '/pages/tabbar/home/home',
-					success: () => {
+				const home = '/pages/tabbar/home/home';
+				const markStarted = () => {
+					try {
 						uni.setStorageSync('APP_HAS_STARTED', true);
+					} catch (e) {
+						// 存储失败不影响进入首页
+					}
+				};
+				console.log('[start] 点击启动页按钮，准备进入首页');
+				uni.switchTab({
+					url: home,
+					success: markStarted,
+					fail: (err) => {
+						console.error('[start] switchTab 失败，改用 reLaunch 兜底：', err);
+						uni.reLaunch({
+							url: home,
+							success: markStarted,
+							fail: (err2) => {
+								console.error('[start] reLaunch 也失败：', err2);
+								uni.showModal({
+									title: '进入首页失败',
+									content: (err2 && (err2.errMsg || err2.message))
+										|| '未知错误，请检查首页是否已正确注册（pages/tabbar/home/home）',
+									showCancel: false
+								});
+							}
+						});
 					}
 				});
 			}

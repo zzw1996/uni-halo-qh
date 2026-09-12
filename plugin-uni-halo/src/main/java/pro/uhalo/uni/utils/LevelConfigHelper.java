@@ -59,8 +59,10 @@ public final class LevelConfigHelper {
                 seedOutfit("avatar_rainbow", "彩虹头像框", "avatar_frame", 500, 0, "rainbow"),
                 seedOutfit("nick_star", "星光辉映", "nick_frame", 100, 0, "⭐"),
                 seedOutfit("nick_crown", "王者之冠", "nick_frame", 300, 0, "👑"),
-                seedOutfit("theme_dusk", "蓝紫渐变主题", "theme", 150, 0, "#667eea,#764ba2"),
-                seedOutfit("theme_sunset", "落日橙主题", "theme", 150, 0, "#f6d365,#fda085")
+                // type=theme 的 style 必须填 tm-vuetify 主题名（见前端 utils/themeSkin.js 的
+                // THEME_SKINS 白名单），不是 CSS 渐变值；填错会导致用户付费后界面无变化。
+                seedOutfit("theme_dusk", "静谧蓝紫主题", "theme", 150, 0, "primary"),
+                seedOutfit("theme_sunset", "落日橙主题", "theme", 150, 0, "deep-orange")
             ))
             .build();
     }
@@ -108,6 +110,37 @@ public final class LevelConfigHelper {
             .titles(List.copyOf(titles))
             .outfits(List.copyOf(outfits))
             .build();
+    }
+
+    /**
+     * 按「累计获得积分」解析等级：取 minPoints 不超过累计值的最高等级。
+     *
+     * <p>身份中心（{@code LevelServiceImpl}）与用户榜共用此口径，避免两处各写一套导致榜单等级与
+     * 个人页显示不一致。</p>
+     */
+    public static LeveledLevel resolveLevel(LevelConfigDTO config, long totalEarned) {
+        var levels = config == null || config.getLevels() == null ? List.<LevelItemDTO>of()
+            : config.getLevels();
+        if (levels.isEmpty()) {
+            return new LeveledLevel(1, "新手上路", 0, 0);
+        }
+        var current = levels.get(0);
+        for (var item : levels) {
+            if (totalEarned >= item.getMinPoints()) {
+                current = item;
+            }
+        }
+        var picked = current;
+        var next = levels.stream()
+            .filter(item -> item.getLevel() > picked.getLevel())
+            .findFirst()
+            .orElse(null);
+        return new LeveledLevel(picked.getLevel(), picked.getTitle(), picked.getMinPoints(),
+            next == null ? 0 : next.getMinPoints());
+    }
+
+    /** 等级解析结果：当前等级与相邻等级门槛 */
+    public record LeveledLevel(int level, String title, int currentMin, int nextMin) {
     }
 
     private static void parseLevels(JsonNode node, List<LevelItemDTO> sink) {

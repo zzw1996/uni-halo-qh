@@ -27,6 +27,10 @@ dependencies {
     compileOnly 'run.halo.app:api'
     compileOnly 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'redis.clients:jedis:5.2.0'
+    // Halo 服务端不做 markdown 渲染（编辑器是浏览器端渲染后提交 HTML），
+    // 所以插件必须自己把 Markdown 渲染成 HTML 再写入 content 字段，否则文章正文是空的
+    implementation 'org.commonmark:commonmark:0.22.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.22.0'
 
     testImplementation 'run.halo.app:api'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-redis'

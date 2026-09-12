@@ -33,9 +33,15 @@ export const POINTS_ACTION_LABELS = {
 	draw_cost: '翻牌消耗',
 	lucky_draw: '积分抽奖',
 	purchase_publish_ticket: '道具直购·发布券',
+	purchase_content_ticket: '道具直购·阅读券',
 	purchase_outfit: '道具直购·装扮',
+	purchase_dashboard: '道具直购·数据看板',
 	exchange_publish: '积分兑换·发布券',
+	exchange_publish_ticket: '积分兑换·发布券',
+	exchange_content_ticket: '积分兑换·阅读券',
 	exchange_dashboard: '积分兑换·数据看板',
+	unlock_content: '解锁付费文章',
+	rank_reward: '榜单奖励',
 	admin_adjust: '系统调整'
 };
 
@@ -74,7 +80,7 @@ const coerceBool = (val) => {
 /** 从配置对象中解析 pointsConfig（兼容不同层级） */
 export const resolvePointsConfig = (configs) => {
 	const source = configs || getAppConfigs() || {};
-	return source.pointsConfig || source.pluginConfig?.pointsConfig || {};
+	return source.pointsConfig || {};
 };
 
 /** 判断积分功能是否在后台开启 */
@@ -137,7 +143,11 @@ export const resolvePointsApiPaths = (configs) => {
 	luckyConfig: custom.luckyConfig || '/points/lucky/config',
 	luckyDraw: custom.luckyDraw || '/points/lucky/draw',
 	luckySubmit: custom.luckySubmit || '/points/lucky/submit',
-	luckyMine: custom.luckyMine || '/points/lucky/mine'
+	luckyMine: custom.luckyMine || '/points/lucky/mine',
+	// 阅读券（付费内容）：status 允许未登录调用，故不走 requestPointsApi
+	contentStatus: custom.contentStatus || '/points/content/status',
+	contentUnlock: custom.contentUnlock || '/points/content/unlock',
+	contentTickets: custom.contentTickets || '/points/content/tickets'
 };
 };
 
@@ -163,7 +173,10 @@ const POINTS_API_FALLBACKS = {
 	luckyConfig: ['/points/lucky/config', '/getLuckyDrawConfig'],
 	luckyDraw: ['/points/lucky/draw', '/drawLuckyGift'],
 	luckySubmit: ['/points/lucky/submit', '/submitLuckyClaim'],
-	luckyMine: ['/points/lucky/mine', '/getMyLuckyClaims']
+	luckyMine: ['/points/lucky/mine', '/getMyLuckyClaims'],
+	contentStatus: ['/points/content/status', '/getContentLockStatus'],
+	contentUnlock: ['/points/content/unlock', '/unlockPaidContent'],
+	contentTickets: ['/points/content/tickets', '/getContentTicketBalance']
 };
 
 export const getPointsApiPathCandidates = (key, configs) => {
@@ -484,6 +497,7 @@ export const exchangePointsItem = async (httpApi, item) => {
 			item,
 			balance: data.balance != null ? Number(data.balance) : null,
 			publishTickets: Number(data.publishTickets || 0) || 0,
+			contentTickets: Number(data.contentTickets || 0) || 0,
 			message: data.message || '兑换成功'
 		};
 	} catch (err) {
@@ -620,7 +634,7 @@ export const formatPointsHistoryItem = (item) => {
 	return {
 		id: item.id || `${action}-${item.createTimeText || item.createTime || Date.now()}`,
 		action,
-		actionLabel: item.actionLabel || POINTS_ACTION_LABELS[action] || '积分变动',
+		actionLabel: item.actionLabel || resolveActionLabel(action, item),
 		points,
 		pointsText: points > 0 ? `+${points}` : `${points}`,
 		balance: item.balance != null ? Number(item.balance) : null,
@@ -630,6 +644,19 @@ export const formatPointsHistoryItem = (item) => {
 		createTime: item.createTime || item.recordTime || ''
 	};
 };
+
+/**
+ * 动作码文案：优先查表，outfit_xxx 前缀动态映射（积分购买装扮流水）。
+ */
+export function resolveActionLabel(action, item) {
+	const label = POINTS_ACTION_LABELS[action];
+	if (label) return label;
+	if (action && action.startsWith('outfit_')) {
+		const ref = item?.refName || (item?.description || '').replace(/^购买装扮·/, '');
+		return `购买装扮${ref ? `·${ref}` : ''}`;
+	}
+	return '积分变动';
+}
 
 /**
  * 每日任务中心：拉取今日任务列表与进度

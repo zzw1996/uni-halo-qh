@@ -50,39 +50,6 @@ export function replaceRestrictedContent(post, replacement = '') {
     return raw.replace(regex, replacement);
 }
 
-// 常量定义（可抽离到 constants.js）
-const PLACEHOLDER = 'restrict-read-placeholder';
-
-/**
- * 获取可展示的HTML内容块
- * @param {Object} post - 文章对象
- * @returns {string[]} - 分割后的HTML片段数组
- */
-export function getShowableContent(post) {
-    const restrictEnabled = checkPostRestrictRead(post);
-    const rawContent = post?.content?.raw || '';
-
-    // 替换受限内容为占位符
-    const processedContent = restrictEnabled
-        ? replaceRestrictedContent(post, PLACEHOLDER)
-        : rawContent;
-
-    // 按占位符分割内容
-    const contentFragments = processedContent
-        .split(PLACEHOLDER)
-        .map(fragment => fragment.trim())
-        .filter(fragment => fragment);
-
-    // 移除最后一个元素如果它只包含HTML标签而无实际文本
-    if (contentFragments.length > 0 && isHtmlEmpty(contentFragments[contentFragments.length - 1])) {
-        contentFragments.pop();
-    }
-
-    console.log('contentFragments:', contentFragments);
-
-    return contentFragments;
-}
-
 /**
  * 获取受限阅读类型名称
  * @param post
@@ -128,13 +95,4 @@ export async function copyToClipboard(text) {
  */
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * 判断字符串去除HTML标签后是否为空
- * @param {string} html
- * @returns {boolean}
- */
-function isHtmlEmpty(html) {
-    return !html || !html.replace(/<[^>]+>/g, '').trim();
 }

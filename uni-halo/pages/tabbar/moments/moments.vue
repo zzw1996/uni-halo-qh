@@ -7,7 +7,7 @@
 			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
-			<tm-button class="mt-16" plan theme="grey" :shadow="0" @click="fnBackHome">返回首页</tm-button>
+			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
 		</view>
 		<template v-else>
 			<view v-if="loading === 'loading'" class="loading-wrap">
@@ -17,7 +17,7 @@
 			</view>
 			<view v-else-if="loading === 'error'" class="content-empty flex flex-center flex-col" style="min-height: 70vh;">
 				<tm-empty icon="icon-shiliangzhinengduixiang-" label="加载失败"></tm-empty>
-				<tm-button class="mt-24" plan theme="grey" :shadow="0" @click="fnRetryLoad">重新加载</tm-button>
+				<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnRetryLoad">重新加载</tm-button>
 			</view>
 			<!-- 内容区域 -->
 			<view v-else class="app-page-content" @click="fnCloseInteractionMenus">
@@ -83,9 +83,9 @@
 							<view v-if="moment.audios && moment.audios.length!==0" class="mb-12"
 								style="display: flex; flex-direction: column; gap: 12rpx 0;padding: 0 24rpx;padding-right:28rpx;">
 								<audio v-for="(audio,index) in moment.audios" :controls="true" :key="index"
-									:id="audio.url" :poster="bloggerInfo.avatar"
-									:name="'来自' + (startConfig.title||bloggerInfo.nickname) + '的声音'"
-									:author="bloggerInfo.nickname" :src="audio.url"></audio>
+									:id="audio.url" :poster="defaultAvatar"
+									:name="'来自' + (startConfig.title || siteName) + '的声音'"
+									:author="siteName" :src="audio.url"></audio>
 							</view>
 							<view v-if="moment.videos && moment.videos.length!==0" class="mb-12"
 								style="display: flex; flex-direction: column; gap: 12rpx 0;padding: 0 24rpx; ">
@@ -110,7 +110,7 @@
 								:show-comment="calcShowComment"
 								:current-user-name="momentDisplayUser.displayName"
 								:current-user-avatar="momentDisplayUser.avatar"
-								:blogger-nickname="bloggerInfo.nickname"
+								:blogger-nickname="siteName"
 								@comment="fnOnMomentComment"
 								@need-login="fnOnMomentNeedLogin"
 							></moment-interaction>
@@ -295,14 +295,15 @@
 					};
 				}
 				return {
-					displayName: this.bloggerInfo.nickname,
-					avatar: this.bloggerInfo.avatar
+					displayName: this.siteName,
+					avatar: this.defaultAvatar
 				};
 			},
-			bloggerInfo() {
-				let blogger = this.$tm.vx.getters().getConfigs.authorConfig.blogger;
-				blogger.avatar = this.$utils.checkAvatarUrl(blogger.avatar, true);
-				return blogger;
+			siteName() {
+				return this.haloConfigs?.appConfig?.startConfig?.title || '';
+			},
+			defaultAvatar() {
+				return this.$utils.checkAvatarUrl(this.haloConfigs?.imagesConfig?.defaultAvatarUrl, true);
 			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;
@@ -314,7 +315,7 @@
 				return this.haloConfigs.auditConfig.auditModeEnabled
 			},
 			calcUseTagRandomColor() {
-				return this.haloConfigs.pageConfig.momentConfig.useTagRandomColor
+				return true
 			},
 			startConfig() {
 				return this.haloConfigs.appConfig.startConfig;

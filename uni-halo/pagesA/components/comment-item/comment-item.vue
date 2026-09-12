@@ -3,6 +3,7 @@
 		:class="{ 'child-comment-item': isChild, 'no-solid': !useSolid, classItem }">
 		<view class="comment-item_user flex">
 			<image class="user-avatar"
+				:class="resolvedOwner.avatarFrame ? avatarFrameClass(resolvedOwner.avatarFrame) : ''"
 				:src="displayAvatar" mode="aspectFill"
 				@error="fnOnImageError"></image>
 			<view class="user-info pl-14">
@@ -20,9 +21,9 @@
 			<view v-if="useActions" class="comment-item_actions">
 				<tm-button v-if="!disallowComment" size="s" text theme="blue"
 					@click="$emit('on-comment', { type: 'user', comment: comment })">回复</tm-button>
-				<tm-button v-if="showDelete" size="s" text theme="red"
+				<tm-button v-if="showDelete" size="s" text theme="red" :fllowTheme="false"
 					@click.stop="$emit('on-delete', comment)">删除</tm-button>
-				<tm-button size="s" text theme="grey" @click="$emit('on-copy', comment.spec.raw)">复制</tm-button>
+				<tm-button size="s" text theme="grey" :fllowTheme="false" @click="$emit('on-copy', comment.spec.raw)">复制</tm-button>
 			</view>
 		</view>
 
@@ -35,6 +36,7 @@
 	import tmTags from '@/tm-vuetify/components/tm-tags/tm-tags.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import { resolveCommentOwner, canDeleteComment } from '@/utils/comment.js';
+	import { avatarFrameClass, nickFramePrefix } from '@/utils/outfitSkin.js';
 
 	export default {
 		name: 'comment-item',
@@ -84,7 +86,8 @@
 				return resolveCommentOwner(this.comment);
 			},
 			displayName() {
-				return this.resolvedOwner.displayName;
+				const prefix = nickFramePrefix(this.resolvedOwner.nickFrame);
+				return prefix ? `${prefix} ${this.resolvedOwner.displayName}` : this.resolvedOwner.displayName;
 			},
 			displayAvatar() {
 				return this.$utils.checkAvatarUrl(this.resolvedOwner.avatar, false);
@@ -142,6 +145,24 @@
 
 				&.is-radius {
 					border-radius: 50%;
+				}
+
+				// 头像框（装扮全站可见）
+				&.frame-gold {
+					border: 5rpx solid #f5c542;
+					box-shadow: 0 0 16rpx rgba(245, 197, 66, 0.5);
+				}
+
+				&.frame-rainbow {
+					border: 5rpx solid transparent;
+					background: linear-gradient(#f0f0f5, #f0f0f5) padding-box,
+						linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
+					box-shadow: 0 0 16rpx rgba(155, 140, 255, 0.4);
+				}
+
+				&.frame-silver {
+					border: 5rpx solid #c3cbd8;
+					box-shadow: 0 0 16rpx rgba(195, 203, 216, 0.5);
 				}
 			}
 

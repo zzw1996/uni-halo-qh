@@ -17,7 +17,7 @@ const POINTS_ACTION_LABELS = {
 
 const getPointsConfig = () => {
 	const configs = getAppConfigs() || {};
-	return configs.pointsConfig || configs.pluginConfig?.pointsConfig || {};
+	return configs.pointsConfig || {};
 };
 
 const getTodayKey = () => {

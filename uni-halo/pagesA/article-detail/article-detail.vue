@@ -4,6 +4,42 @@
 			<tm-empty icon="icon-wind-cry" :label="loadErrorMsg || '文章加载失败'"></tm-empty>
 			<tm-button class="mt-24" size="m" theme="light-blue" @click="fnGetData">重新加载</tm-button>
 		</view>
+		<!--
+			付费文章未解锁：后端 ContentTicketFilter 已拦截正文，
+			此处只展示 title/excerpt/cover，不含任何正文内容。
+		-->
+		<view v-else-if="loading === 'locked' && contentLock" class="content-locked ma-24 pa-24 round-12">
+			<view class="locked-title">{{ contentLock.title || '付费内容' }}</view>
+			<image
+				v-if="contentLock.cover"
+				class="locked-cover mt-24"
+				mode="aspectFill"
+				:src="calcUrl(contentLock.cover)"
+				@click="handlePreview(0, [{ url: calcUrl(contentLock.cover) }])"
+			></image>
+			<view v-if="contentLock.excerpt" class="locked-excerpt mt-24">{{ contentLock.excerpt }}</view>
+			<view class="locked-tip mt-24">🔒 {{ contentLock.message || '本文为付费内容，需使用阅读券解锁' }}</view>
+			<view class="locked-balance mt-16">
+				<text>我的阅读券：{{ calcLockTickets }} 张</text>
+				<text>解锁需 {{ calcLockCostTickets }} 张</text>
+			</view>
+			<view class="locked-actions mt-24">
+				<tm-button
+					v-if="calcLockCanUnlock"
+					size="m"
+					theme="bg-gradient-light-blue-accent"
+					:loading="unlocking"
+					@click="fnUnlockContent"
+				>{{ unlocking ? '解锁中...' : '使用阅读券解锁' }}</tm-button>
+				<tm-button
+					v-else
+					size="m"
+					theme="bg-gradient-orange-accent"
+					:disabled="unlocking"
+					@click="fnGoGetTickets"
+				>{{ calcLockIsLogin ? '阅读券不足，去获取' : '登录后查看并解锁' }}</tm-button>
+			</view>
+		</view>
 		<view v-else-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
 			<tm-skeleton model="card"></tm-skeleton>
@@ -100,47 +136,17 @@
 				<!-- markdown渲染 -->
 				<view class="markdown-wrap">
 					<view v-if="checkPostRestrictRead(result)">
-						<view v-if="showContentArr.length == 0">
-							<restrict-read-skeleton
-								:loading="true"
-								:lines="3"
-								:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
-								:button-text="`${getRestrictReadTypeName(result)}`"
-								button-color="#1890ff"
-								skeleton-color="#f0f0f0"
-								skeleton-highlight="#e0e0e0"
-								animation-duration="2"
-								@refresh="readMore"
-							/>
-						</view>
-						<view v-else v-for="showContent in showContentArr">
-							<mp-html
-								class="evan-markdown"
-								lazy-load
-								:domain="markdownConfig.domain"
-								:loading-img="markdownConfig.loadingGif"
-								:scroll-table="true"
-								:selectable="true"
-								:tag-style="markdownConfig.tagStyle"
-								:container-style="markdownConfig.containStyle"
-								:content="showContent"
-								:markdown="true"
-								:showLineNumber="true"
-								:showLanguageName="true"
-								:copyByLongPress="true"
-							/>
-							<restrict-read-skeleton
-								:loading="true"
-								:lines="3"
-								:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
-								:button-text="`${getRestrictReadTypeName(result)}`"
-								button-color="#1890ff"
-								skeleton-color="#f0f0f0"
-								skeleton-highlight="#e0e0e0"
-								animation-duration="2"
-								@refresh="readMore"
-							/>
-						</view>
+						<restrict-read-skeleton
+							:loading="true"
+							:lines="3"
+							:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
+							:button-text="`${getRestrictReadTypeName(result)}`"
+							button-color="#1890ff"
+							skeleton-color="#f0f0f0"
+							skeleton-highlight="#e0e0e0"
+							animation-duration="2"
+							@refresh="readMore"
+						/>
 					</view>
 					<view v-else>
 						<mp-html
@@ -352,51 +358,6 @@
 			</view>
 		</tm-poup>
 
-		<!-- 验证码弹窗 -->
-		<tm-dialog
-			v-model="verificationCodeModal.show"
-			:disabled="true"
-			title="验证提示"
-			:confirmText="verificationCodeModal.confirmText"
-			:showCancel="true"
-			model="verificationCodeModal.model"
-			theme="split"
-			confirmColor="blue shadow-blue-0"
-			@cancel="verificationCodeModal.show = false"
-			@confirm="restrictReadCheckOrViewVideo"
-		>
-			<template #default>
-				<view class="pa-20">
-					<!-- 扫码验证模式 -->
-					<view v-if="verificationCodeModal.type === 'scan'" class="flex flex-col flex-center">
-						<text class="mb-20">请扫描下方二维码获取验证码</text>
-						<tm-images :width="180" :height="180" :src="verificationCodeModal.imgUrl" preview round="5"></tm-images>
-						<tm-input bg-color="grey-lighten-5" required v-model="restrictReadInputCode" placeholder="请输入验证码" :border-bottom="false" :flat="true"></tm-input>
-					</view>
-
-					<!-- 观看视频模式 -->
-					<view v-else class="flex flex-col flex-center">
-						<text class="mb-20">点击观看视频之后，可访问</text>
-					</view>
-				</view>
-			</template>
-		</tm-dialog>
-		<!-- 密码弹窗 -->
-		<tm-dialog
-			v-model="passwordModal.show"
-			:disabled="true"
-			title="验证提示"
-			confirmText="确定"
-			content="请输入密码"
-			:showCancel="true"
-			model="confirm"
-			theme="split"
-			confirmColor="blue shadow-blue-0"
-			:input-val.sync="restrictReadInputCode"
-			@cancel="passwordModal.show = false"
-			@confirm="restrictReadCheck"
-		></tm-dialog>
-
 		<!-- 评论弹窗 -->
 		<block v-if="calcIsShowComment">
 			<comment-modal
@@ -443,7 +404,6 @@ import ArticleDouban from '@/components/article-douban/article-douban.vue';
 import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
  
 import barrage from '@/components/barrage/barrage.vue';
-import { getAppConfigs } from '@/config/index.js';
 import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
 import { getCommentAuthorInfo } from '@/utils/comment.js';
 import { isWxLoginRequired } from '@/utils/wxLogin.js';
@@ -451,20 +411,15 @@ import { upvote } from '@/utils/upvote.js';
 import { recordUserActivity, removeUserActivity, syncArticleUpvoteStatus, USER_ACTIVITY_TYPES } from '@/utils/userActivity.js';
 import { getPointsConfig, isPointsEnabled, tryEarnPointsByAction, checkPointsEarnStatus, POINTS_ACTIONS } from '@/utils/points.js';
 import { getDomainOnly } from '@/utils/url.params.js'
-import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName, getShowableContent } from '@/utils/restrictRead';
+import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName } from '@/utils/restrictRead';
 import HaloTokenConfig from '@/config/uhalo.config';
 import RestrictReadSkeleton from '@/components/restrict-read-skeleton/restrict-read-skeleton.vue';
-import TmImages from '@/tm-vuetify/components/tm-images/tm-images.vue';
-import TmInput from '@/tm-vuetify/components/tm-input/tm-input.vue';
 import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
 import PluginUnavailable from '@/components/plugin-unavailable/plugin-unavailable.vue';
 
-let videoAd = null;
 export default {
 	mixins: [pluginAvailableMixin],
 	components: {
-		TmInput,
-		TmImages,
 		RestrictReadSkeleton,
 		tmSkeleton,
 		tmPoup,
@@ -491,6 +446,24 @@ export default {
 			loadErrorMsg: '',
 			markdownConfig: MarkdownConfig,
 
+			/**
+			 * 付费文章锁定信息（后端 ContentTicketFilter 拦截时随 403 返回）。
+			 *
+			 * <p>结构：{ locked, unlocked, title, excerpt, cover, tickets, costTickets, message }
+			 * 为 null 表示本文不是付费文章或已解锁，走正常渲染。</p>
+			 */
+			contentLock: null,
+			/** 解锁请求进行中，防止重复点击重复扣券 */
+			unlocking: false,
+			/**
+			 * 进入锁定态那一刻的登录状态（响应式快照）。
+			 *
+			 * <p>不能写成 computed 现算：checkHasWxLogin()/getOpenid() 读的是 uni storage，
+			 * 不是 Vue 响应式依赖，computed 会把首次结果永久缓存。那样未登录用户登录成功后，
+			 * 按钮会一直停在「登录后查看并解锁」并反复弹登录框。</p>
+			 */
+			lockIsLogin: false,
+
 			flotButtonActions: [],
 			queryParams: {
 				name: null
@@ -514,19 +487,6 @@ export default {
 			},
 
 			metas: [], // 自定义元数据
-			showContentArr: [],
-			restrictReadInputCode: '',
-			verificationCodeModal: {
-				show: false,
-				model: 'confirm',
-				confirmText: '确定',
-				type: '',
-				imgUrl: '',
-				adId: ''
-			},
-			passwordModal: {
-				show: false
-			},
 			commentModal: {
 				show: false,
 				isComment: false,
@@ -553,7 +513,11 @@ export default {
 			browsePointsCounting: false,
 			browsePointsEarnedToday: false,
 			_browsePointsTimer: null,
-			_browsePointsInterval: null
+			_browsePointsInterval: null,
+			/** 跳转充值页获取阅读券后返回，需要复查锁定态（券可能已增加） */
+			_needRecheckLock: false,
+			/** 券够但未登录时点了解锁，登录成功后自动复查并继续解锁 */
+			pendingLockUnlock: false
 		};
 	},
 		computed: {
@@ -570,11 +534,13 @@ export default {
 		wxLoginDialogTitle() {
 			if (this.pendingPosterShare) return '登录后生成海报';
 			if (this.pendingLike) return '登录后点赞';
+			if (this.pendingLockUnlock) return '登录后解锁';
 			return '登录后评论';
 		},
 		wxLoginDialogDesc() {
 			if (this.pendingPosterShare) return '生成分享海报需要先完成微信授权登录';
 			if (this.pendingLike) return '点赞需要先完成微信授权登录';
+			if (this.pendingLockUnlock) return '解锁付费内容需要先完成微信授权登录';
 			return '发表评论需要先完成微信授权登录';
 		},
 		calcUrl() {
@@ -585,13 +551,6 @@ export default {
 				return getApp().globalData.baseApiUrl + url;
 			};
 		},
-		// 获取博主信息
-		bloggerInfo() {
-			const blogger = this.$tm.vx.getters().getConfigs.authorConfig.blogger;
-			blogger.avatar = this.$utils.checkAvatarUrl(blogger.avatar, true);
-			return blogger;
-		},
-
 		// 原文链接：个人资质=可以打开公众号文章；非个人：任意链接地址（需在小程序后台配置）
 		originalURL() {
 			return this.result?.metadata?.annotations?.unihalo_originalURL || '';
@@ -614,11 +573,25 @@ export default {
 				&& checkHasWxLogin()
 				&& (this.browsePointsCounting || this.browsePointsEarnedToday);
 		},
-		pluginsConfig() {
-			return this.haloConfigs.pluginConfig;
-		},
 		doubanPluginConfig() {
-			return this.pluginsConfig.doubanPlugin;
+			return this.haloConfigs?.pluginIntegrations?.douban || { position: 'bottom' };
+		},
+
+		/** 解锁是否已登录：读进入锁定态时存下的响应式快照，登录成功后会刷新 */
+		calcLockIsLogin() {
+			return this.lockIsLogin;
+		},
+		/** 我的阅读券余额，后端未登录时返回 0 */
+		calcLockTickets() {
+			return Number(this.contentLock?.tickets || 0);
+		},
+		/** 本文解锁所需券数；后端已保证 costTickets ≥ 1 */
+		calcLockCostTickets() {
+			return Math.max(Number(this.contentLock?.costTickets || 1), 1);
+		},
+		/** 登录且券够才展示「解锁」按钮，否则展示「去获取」 */
+		calcLockCanUnlock() {
+			return this.calcLockIsLogin && this.calcLockTickets >= this.calcLockCostTickets;
 		}
 	},
 	watch: {
@@ -655,6 +628,13 @@ export default {
 				this.reloadVote = true;
 			}, 100);
 		}
+		// 从积分充值页获取阅读券后返回：重新拉取锁定态，
+		// 否则卡片仍显示旧的「0 张」，用户以为没到账。只复查一次。
+		if (this._needRecheckLock && this.loading === 'locked') {
+			this._needRecheckLock = false;
+			this.fnGetData();
+			return;
+		}
 		if (this.loading === 'success' && this.calcPointsEnabled && checkHasWxLogin()) {
 			this.fnRefreshBrowsePointsStatus();
 		}
@@ -666,6 +646,16 @@ export default {
 		this.fnClearBrowsePointsTimer();
 	},
 	onShareAppMessage() {
+		// 付费锁定态下 result 为 null（正文被后端拦截），
+		// 直接读 result.spec 会抛错导致分享面板打不开，这里改用锁定信息兜底。
+		if (!this.result) {
+			const lock = this.contentLock;
+			return {
+				path: '/pagesA/article-detail/article-detail?name=' + encodeURIComponent(this.queryParams.name || ''),
+				title: lock?.title || '付费内容',
+				imageUrl: lock?.cover ? this.calcUrl(lock.cover) : ''
+			};
+		}
 		const cover = this.result.spec.cover ? this.calcUrl(this.result.spec.cover) : '';
 		const inviteCode = uni.getStorageSync('invite.code') || '';
 		let path = '/pagesA/article-detail/article-detail?name=' + this.result.metadata.name;
@@ -679,6 +669,15 @@ export default {
 		};
 	},
 	onShareTimeline() {
+		// 同上：锁定态用锁定信息兜底，避免读取空对象报错
+		if (!this.result) {
+			const lock = this.contentLock;
+			return {
+				title: lock?.title || '付费内容',
+				query: { name: this.queryParams.name || '' },
+				imageUrl: lock?.cover ? this.calcUrl(lock.cover) : ''
+			};
+		}
 		const cover = this.result.spec.cover ? this.calcUrl(this.result.spec.cover) : '';
 		return {
 			title: this.result.spec.title,
@@ -700,6 +699,10 @@ export default {
 			}
 			this.loading = 'loading';
 			this.loadErrorMsg = '';
+			// 每次加载都重置锁定态：解锁成功后会重新加载，
+			// 若不重置，已解锁的文章仍会渲染上一次的锁定卡片
+			this.contentLock = null;
+			this.lockIsLogin = false;
 			console.log('[article-detail] 请求文章:', name);
 			this.$httpApi.v2
 				.getPostByName(name)
@@ -714,35 +717,6 @@ export default {
 						this.fnGetOpenid();
 					}
 
-					const toolsPluginEnabled = getAppConfigs().pluginConfig.toolsPlugin?.enabled;
-					const restrictRead = checkPostRestrictRead(tempResult);
-
-					if (restrictRead && toolsPluginEnabled) {
-						let verifyCodeType = getAppConfigs().pluginConfig.toolsPlugin?.verifyCodeType;
-						const postVerifyCodeType = tempResult?.metadata?.annotations?.verifyCodeType;
-						if (postVerifyCodeType) {
-							verifyCodeType = postVerifyCodeType;
-						}
-						if (verifyCodeType === 'scan') {
-							const scanCodeUrl = getAppConfigs().pluginConfig.toolsPlugin?.scanCodeUrl;
-							this.verificationCodeModal.type = 'scan';
-							this.verificationCodeModal.imgUrl = this.$utils.checkImageUrl(scanCodeUrl);
-							this.verificationCodeModal.model = 'confirm';
-							this.verificationCodeModal.confirmText = '立即验证';
-						} else if (verifyCodeType === 'advert') {
-							const rewardedVideoAdId = getAppConfigs().pluginConfig.toolsPlugin?.rewardedVideoAdId;
-							this.verificationCodeModal.type = 'advert';
-							this.verificationCodeModal.adId = rewardedVideoAdId;
-							this.verificationCodeModal.model = 'dialog';
-							this.verificationCodeModal.confirmText = '观看视频';
-							// #ifdef MP-WEIXIN
-							this.adLoad();
-							// #endif
-						}
-
-						const showableContentArr = getShowableContent(tempResult);
-						this.showContentArr = showableContentArr;
-					}
 					this.result = tempResult;
 					this.fnSetPageTitle('文章详情');
 					this.loading = 'success';
@@ -753,6 +727,17 @@ export default {
 					this.fnTrackersCounter();
 				})
 				.catch((err) => {
+					// 付费文章被插件拦截（ContentTicketFilter 返回 403 + ContentLockedDTO）。
+					// 必须与真正的加载失败区分：这里要渲染解锁卡片，而不是「文章加载失败」。
+					const lockData = err?.data;
+					if ((err?.isContentLocked || err?.statusCode === 403) && lockData && lockData.locked === true) {
+						this.contentLock = lockData;
+						// 存登录态快照：卡片按钮要根据它决定「解锁」还是「去登录/去获取」
+						this.lockIsLogin = checkHasWxLogin() && !!getOpenid();
+						this.loading = 'locked';
+						this.fnSetPageTitle(lockData.title || '付费内容');
+						return;
+					}
 					console.error('[article-detail] 加载失败', err);
 					this.loadErrorMsg = err?.message || err?.error || err?.detail || '文章加载失败，请稍后重试';
 					this.loading = 'error';
@@ -854,6 +839,13 @@ export default {
 			// 微信登录已完成，绑定页展示中；待绑定完成后再执行 pending 操作
 		},
 		fnOnWxLoginSuccess() {
+			if (this.pendingLockUnlock) {
+				// 登录后重新拉取：后端此时能识别身份并返回真实券余额。
+				// 这里刻意不自动扣券——解锁是消费行为，必须由用户再点一次确认。
+				this.pendingLockUnlock = false;
+				this.fnGetData();
+				return;
+			}
 			if (this.pendingPosterShare) {
 				this.pendingPosterShare = false;
 				this.fnGeneratePoster();
@@ -874,6 +866,7 @@ export default {
 			this.pendingPosterShare = false;
 			this.pendingCommentPayload = null;
 			this.pendingLike = false;
+			this.pendingLockUnlock = false;
 		},
 		fnOnCommentModalClose({ refresh, isSubmit, needLogin }) {
 			if (needLogin) {
@@ -1289,18 +1282,6 @@ export default {
 					content: posterUser.nickname
 				},
 				{
-					type: 'text',
-					width: 400,
-					height: 40,
-					x: 140,
-					y: 90,
-					color: '#666666',
-					fontSize: 24,
-					lineHeight: 24,
-					bold: false,
-					content: this.bloggerInfo.description
-				},
-				{
 					type: 'image',
 					width: 624,
 					height: 360,
@@ -1599,13 +1580,7 @@ export default {
 		readMore() {
 			const annotations = this.result?.metadata?.annotations;
 			const restrictReadEnable = annotations?.restrictReadEnable;
-			if (restrictReadEnable === 'password') {
-				this.passwordModal.show = true;
-				return;
-			} else if (restrictReadEnable === 'code') {
-				this.verificationCodeModal.show = true;
-				return;
-			} else if (restrictReadEnable === 'comment') {
+			if (restrictReadEnable === 'comment') {
 				this.fnToComment();
 				return;
 			} else if (restrictReadEnable === 'login') {
@@ -1645,87 +1620,6 @@ export default {
 				}
 			});
 			// #endif
-		},
-		restrictReadCheckOrViewVideo() {
-			console.log('restrictReadCheckOrViewVideo', this.verificationCodeModal.type);
-			if (this.verificationCodeModal.type === 'advert') {
-				this.openVideoAd();
-			} else {
-				this.restrictReadCheck();
-			}
-		},
-		//   校验密码
-		restrictReadCheck() {
-			if (!this.restrictReadInputCode) {
-				uni.showToast({
-					title: '请输入内容',
-					icon: 'none'
-				});
-				return;
-			}
-			this.$httpApi.v2
-				.requestRestrictReadCheck(this.result?.metadata?.annotations?.restrictReadEnable, this.restrictReadInputCode, this.result?.metadata?.name)
-				.then((res) => {
-					if (res.code === 200) {
-						this.passwordModal.show = false;
-						this.verificationCodeModal.show = false;
-						this.fnGetData();
-					} else {
-						uni.showToast({
-							title: '密码错误',
-							icon: 'none'
-						});
-					}
-				})
-				.catch((err) => {
-					console.error(err);
-				});
-		},
-		adLoad() {
-			if (wx.createRewardedVideoAd) {
-				videoAd = wx.createRewardedVideoAd({
-					adUnitId: this.verificationCodeModal.adId
-				});
-				videoAd.onError((err) => {});
-				videoAd.onClose((status) => {
-					if ((status && status.isEnded) || status === undefined) {
-						//这里写广告播放完成后的事件
-						this.getVerificationCode();
-					} else {
-						// 广告播放未完成
-					}
-				});
-			}
-		},
-		openVideoAd: function () {
-			if (videoAd && this.verificationCodeModal.adId !== '') {
-				videoAd.show().catch((err) => {
-					// 失败重试
-					console.log('广告拉取失败');
-					videoAd.load().then(() => videoAd.show());
-				});
-			} else {
-				this.getVerificationCode();
-			}
-		},
-		getVerificationCode() {
-			uni.showLoading({
-				title: '正在获取...'
-			});
-			this.$httpApi.v2
-				.createVerificationCode()
-				.then((res) => {
-					if (res.code === 200) {
-						this.verificationCodeModal.show = false;
-						this.restrictReadInputCode = res.data;
-						this.restrictReadCheck();
-					} else {
-						uni.$tm.toast('操作失败，请重试！');
-					}
-				})
-				.catch((err) => {
-					uni.$tm.toast(err.message);
-				});
 		},
 		async qrCodeImageUrl() {
 			const appInfo = this.haloConfigs?.appConfig?.appInfo || {};
@@ -1794,6 +1688,65 @@ export default {
 			}
 
 			return urls;
+		},
+		/**
+		 * 使用阅读券解锁当前付费文章。
+		 *
+		 * <p>后端幂等：已解锁不会重复扣券。成功后重新拉取文章渲染正文。</p>
+		 */
+		fnUnlockContent() {
+			const lock = this.contentLock;
+			const articleName = lock?.articleName || this.queryParams.name;
+			if (!articleName) {
+				uni.$tm.toast('缺少文章参数，无法解锁');
+				return;
+			}
+			if (this.unlocking) return;
+			if (!this.calcLockIsLogin) {
+				// 记录「登录后要继续解锁」，登录成功回调会重新拉取锁定态。
+				// 不会自动扣券：解锁是消费行为，需用户登录后再点一次确认。
+				this.pendingLockUnlock = true;
+				this.wxLoginDialogShow = true;
+				return;
+			}
+			if (this.calcLockTickets < this.calcLockCostTickets) {
+				uni.$tm.toast(`阅读券不足，还需 ${this.calcLockCostTickets - this.calcLockTickets} 张`);
+				return;
+			}
+			this.unlocking = true;
+			uni.showLoading({ title: '解锁中...' });
+			this.$httpApi.v2
+				.unlockContent(articleName)
+				.then(() => {
+					// 后端返回解锁后的 ContentLockedDTO（含剩余券数）。
+					// 这里不回写卡片券数：紧接着就会重新拉取文章，
+					// 锁定卡片会被正文替换，且回写前 contentLock 可能已被置空。
+					uni.$tm.toast('解锁成功');
+					this.fnGetData();
+				})
+				.catch((err) => {
+					console.error('[article-detail] 解锁失败', err);
+					// 网络失败时 detail 是原始错误对象，不能直接当文案展示
+					uni.$tm.toast(err?.error || err?.message || '解锁失败，请稍后重试');
+				})
+				.finally(() => {
+					uni.hideLoading();
+					this.unlocking = false;
+				});
+		},
+
+		/** 阅读券不足：去积分充值页获取（可兑换或购买阅读券） */
+		fnGoGetTickets() {
+			if (!this.calcLockIsLogin) {
+				// 未登录无法查询券余额，先登录再回来复查
+				this.pendingLockUnlock = true;
+				this.wxLoginDialogShow = true;
+				return;
+			}
+			// 标记待复查：从充值页返回后 onShow 会重新拉取锁定态，
+			// 让新到账的阅读券立刻反映在卡片上
+			this._needRecheckLock = true;
+			uni.navigateTo({ url: '/pagesA/points-recharge/points-recharge' });
 		},
 		handlePreview(index, list) {
 			uni.previewImage({
@@ -1941,6 +1894,51 @@ export default {
 				}
 			}
 		}
+	}
+}
+
+.content-locked {
+	background-color: #ffffff;
+	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.03);
+
+	.locked-title {
+		font-size: 36rpx;
+		font-weight: 600;
+		line-height: 1.5;
+		text-align: center;
+	}
+
+	.locked-cover {
+		width: 100%;
+		height: 280rpx;
+		border-radius: 12rpx;
+	}
+
+	.locked-excerpt {
+		font-size: 28rpx;
+		line-height: 1.8;
+		color: #555;
+	}
+
+	.locked-tip {
+		padding: 20rpx 24rpx;
+		background-color: #fff7e6;
+		border-radius: 8rpx;
+		font-size: 26rpx;
+		color: #b26a00;
+		text-align: center;
+	}
+
+	.locked-balance {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 24rpx;
+		font-size: 24rpx;
+		color: #909399;
+	}
+
+	.locked-actions {
+		padding: 0 24rpx;
 	}
 }
 

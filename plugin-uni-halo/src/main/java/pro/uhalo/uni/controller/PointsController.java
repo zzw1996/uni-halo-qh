@@ -10,6 +10,7 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import pro.uhalo.uni.constants.Constants;
 import pro.uhalo.uni.dto.ClaimDailyTaskRequest;
+import pro.uhalo.uni.dto.ContentUnlockRequest;
 import pro.uhalo.uni.dto.ExchangeRequest;
 import pro.uhalo.uni.dto.LuckyClaimRequest;
 import pro.uhalo.uni.dto.OutfitBuyRequest;
@@ -18,13 +19,18 @@ import pro.uhalo.uni.dto.PointsEarnRequest;
 import pro.uhalo.uni.dto.PointsEarnStatusResponse;
 import pro.uhalo.uni.dto.WearTitleRequest;
 import pro.uhalo.uni.exception.WxAuthException;
+import pro.uhalo.uni.services.ContentTicketService;
 import pro.uhalo.uni.services.DailyTaskService;
 import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.LevelService;
 import pro.uhalo.uni.services.LuckyDrawService;
 import pro.uhalo.uni.services.PointsService;
+import pro.uhalo.uni.services.UniHaloService;
 import pro.uhalo.uni.utils.WxRequestParser;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import reactor.core.publisher.Mono;
+import org.springframework.http.codec.multipart.FilePart;
 
 import java.util.Map;
 import java.util.function.Function;
@@ -39,6 +45,8 @@ public class PointsController {
     private final LevelService levelService;
     private final InviteService inviteService;
     private final LuckyDrawService luckyDrawService;
+    private final ContentTicketService contentTicketService;
+    private final UniHaloService uniHaloService;
 
     public Mono<ServerResponse> overview(ServerRequest request) {
         return withOpenid(request, openid -> pointsService.getOverview(openid)
@@ -95,7 +103,9 @@ public class PointsController {
     public Mono<ServerResponse> history(ServerRequest request) {
         var page = parseIntParam(request, "page", 0);
         var size = parseIntParam(request, "size", 10);
-        return withOpenid(request, openid -> pointsService.listHistory(openid, page, size)
+        // 可选动作码过滤：如 action=lucky_draw 只取抽奖消耗明细
+        var action = request.queryParam("action").orElse(null);
+        return withOpenid(request, openid -> pointsService.listHistory(openid, action, page, size)
             .flatMap(this::jsonOk));
     }
 
@@ -147,6 +157,46 @@ public class PointsController {
             .flatMap(this::jsonOk));
     }
 
+    public Mono<ServerResponse> invitePosterGenerate(ServerRequest request) {
+        return withOpenid(request, openid -> inviteService.markPosterGenerated(openid)
+            .flatMap(this::jsonOk));
+    }
+
+    public Mono<ServerResponse> invitePosterUpload(ServerRequest request) {
+        return withOpenid(request, openid -> request.multipartData()
+            .flatMap(parts -> {
+                var part = parts.getFirst("file");
+                if (!(part instanceof FilePart filePart)) {
+                    return badRequest("缺少 file 字段");
+                }
+                return readFileBytes(filePart)
+                    .flatMap(bytes -> uniHaloService.uploadImageToAttachments(
+                            bytes, "invite_poster_" + openid.replaceAll("[^A-Za-z0-9_-]", "_"))
+                        .flatMap(imageUrl -> inviteService.attachPosterImage(openid, imageUrl)
+                            .thenReturn(imageUrl)))
+                    .flatMap(imageUrl -> ServerResponse.ok()
+                        .bodyValue(Map.of("imageUrl", imageUrl)))
+                    .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+                    .onErrorResume(Exception.class, e -> {
+                        log.warn("invite poster upload failed: {}", e.getMessage());
+                        return badRequest("邀请海报上传失败：" + e.getMessage());
+                    });
+            }));
+    }
+
+    private static Mono<byte[]> readFileBytes(FilePart filePart) {
+        return DataBufferUtils.join(filePart.content())
+            .map(dataBuffer -> {
+                try {
+                    byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                    dataBuffer.read(bytes);
+                    return bytes;
+                } finally {
+                    DataBufferUtils.release(dataBuffer);
+                }
+            });
+    }
+
     public Mono<ServerResponse> luckyConfig(ServerRequest request) {
         return luckyDrawService.getConfig()
             .flatMap(this::jsonOk)
@@ -171,6 +221,48 @@ public class PointsController {
     public Mono<ServerResponse> luckyMine(ServerRequest request) {
         return withOpenid(request, openid -> luckyDrawService.getMyClaims(openid)
             .flatMap(this::jsonOk));
+    }
+
+    /**
+     * 付费文章锁定状态查询（不扣券）。
+     *
+     * <p>⚠️ 不使用 {@link #withOpenid}：该方法在缺少 openid 时会直接返回错误，
+     * 但未登录用户同样需要知道「这篇文章要付费、我还没登录」，
+     * 否则文章详情页会显示成加载失败而不是显示解锁引导卡片。</p>
+     */
+    public Mono<ServerResponse> contentStatus(ServerRequest request) {
+        var articleName = request.queryParam("articleName").orElse(null);
+        if (!StringUtils.hasText(articleName)) {
+            return badRequest("articleName 不能为空");
+        }
+        var openid = resolveOpenid(request);
+        return contentTicketService.getStatus(openid, articleName)
+            .flatMap(this::jsonOk)
+            .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("content status failed: articleName={}, {}", articleName, e.getMessage(), e);
+                return badRequest("付费内容状态查询失败，请稍后重试");
+            });
+    }
+
+    /** 用阅读券解锁一篇付费文章（幂等，已解锁不会重复扣券）。 */
+    public Mono<ServerResponse> contentUnlock(ServerRequest request) {
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, ContentUnlockRequest.class))
+            .flatMap(body -> contentTicketService.unlock(openid, body.getArticleName()))
+            .flatMap(this::jsonOk));
+    }
+
+    /** 当前用户的阅读券余额（未登录返回 0，不报错）。 */
+    public Mono<ServerResponse> contentTickets(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        return contentTicketService.getTicketBalance(openid)
+            .map(tickets -> Map.of("tickets", tickets))
+            .flatMap(this::jsonOk)
+            .onErrorResume(Exception.class, e -> {
+                log.warn("content tickets failed: {}", e.getMessage());
+                return jsonOk(Map.of("tickets", 0));
+            });
     }
 
     private Mono<ServerResponse> withOpenid(ServerRequest request,

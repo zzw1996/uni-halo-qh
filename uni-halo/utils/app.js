@@ -62,12 +62,6 @@ export const _DefaultAppSettings = {
 	article: {
 
 	},
-	// 联系博主页面
-	contact: {
-		// 链接是否使用复制的方式，否则直接在内部打开（小程序需要配置对应链接的业务域名）
-		isLinkCopy: true,
-	},
-
 }
 // 应用设置存储key值
 export const _AppSettingsKey = 'APP_GLOBAL_SETTINGS';

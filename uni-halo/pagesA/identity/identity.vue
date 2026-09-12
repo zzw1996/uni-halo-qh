@@ -6,7 +6,7 @@
 			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
-			<tm-button class="mt-16" plan theme="grey" :shadow="0" @click="fnBackHome">返回首页</tm-button>
+			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
 		</view>
 		<template v-else>
 			<view v-if="loading === 'loading'" class="loading-wrap">
@@ -15,112 +15,72 @@
 			</view>
 			<view v-else-if="loading === 'error'" class="content-empty flex flex-center flex-col" style="min-height: 60vh;">
 				<tm-empty icon="icon-shiliangzhinengduixiang-" label="加载失败"></tm-empty>
-				<tm-button class="mt-24" plan theme="grey" :shadow="0" @click="fnLoad">重新加载</tm-button>
+				<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnLoad">重新加载</tm-button>
 			</view>
 			<view v-else class="content">
-				<!-- 身份头部 -->
+			<!-- ========== 身份卡（合并原「身份头部 + 等级卡 + 佩戴称号横幅」） ========== -->
+			<view class="identity-card" :style="themeStyle">
 				<view class="identity-head">
 					<view class="identity-avatar" :class="headAvatarFrameClass">
 						<image v-if="userInfo.avatarUrl" :src="userInfo.avatarUrl" mode="aspectFill"></image>
 						<text v-else class="identity-avatar-placeholder">👤</text>
 					</view>
 					<view class="identity-head-main">
-						<text class="identity-nickname">{{ userInfo.nickname || '微信用户' }}</text>
-						<text class="identity-sub">我的身份 · Lv.{{ levelStatus.level }} {{ levelStatus.levelTitle }}</text>
+						<text class="identity-nickname">{{ headDisplayName }}</text>
+						<view class="identity-badges">
+							<text class="identity-level">Lv.{{ levelStatus.level }} {{ levelStatus.levelTitle }}</text>
+							<text v-if="calcWornTitle" class="identity-worn">{{ calcWornTitle.icon }} {{ calcWornTitle.name }}</text>
+						</view>
+						<text v-if="avatarFrameUnregistered" class="identity-invalid">当前头像框样式未登记，已按无框显示</text>
 					</view>
 				</view>
 
-				<!-- 等级卡 -->
-				<view class="level-card" :style="themeStyle">
-					<view class="level-badge">
-						<text class="level-badge-num">{{ levelStatus.level }}</text>
-						<text class="level-badge-label">LV</text>
+				<!-- 等级进度：一条线表达「累计积分 + 距离下一级」 -->
+				<view class="identity-progress">
+					<view class="identity-progress-head">
+						<text class="identity-progress-label">累计 {{ levelStatus.totalEarned }} 分</text>
+						<text class="identity-progress-label">
+							{{ levelStatus.nextPoints > 0 ? '距 Lv.' + (levelStatus.level + 1) + ' 还差 ' + levelStatus.nextPoints + ' 分' : '已是最高等级' }}
+						</text>
 					</view>
-					<view class="level-card-main">
-						<view class="level-card-top">
-							<text class="level-title">{{ levelStatus.levelTitle }}</text>
-							<text class="level-points">累计 {{ levelStatus.totalEarned }} 分</text>
-						</view>
-						<view class="level-earned">
-							<text v-if="levelStatus.nextPoints > 0">距 Lv.{{ levelStatus.level + 1 }} 还差 {{ levelStatus.nextPoints }} 积分</text>
-							<text v-else>已是最高等级</text>
-							<text v-if="levelStatus.nextPoints > 0" class="level-percent">已完成 {{ levelPercent }}%</text>
-						</view>
-						<view v-if="levelStatus.nextPoints > 0" class="level-track">
-							<view class="level-fill" :style="{ width: levelPercent + '%' }"></view>
-						</view>
+					<view v-if="levelStatus.nextPoints > 0" class="level-track">
+						<view class="level-fill" :style="{ width: levelPercent + '%' }"></view>
+					</view>
+					<text v-if="levelStatus.nextPoints > 0" class="identity-progress-percent">等级进度 {{ levelPercent }}%</text>
+				</view>
+			</view>
+
+			<!-- 称号墙（可折叠：默认展开，收起后只留一行） -->
+			<view class="section-card">
+				<view class="section-title-row" @click="titlesExpanded = !titlesExpanded">
+					<text class="section-title">称号</text>
+					<view class="section-title-action">
+						<text class="section-sub">{{ calcWornTitle ? '佩戴中：' + calcWornTitle.name : '达标自动解锁 · 点击佩戴' }}</text>
+						<text class="section-toggle">{{ titlesExpanded ? '收起 ⌃' : '展开 ⌄' }}</text>
 					</view>
 				</view>
-
-				<!-- 佩戴称号横幅 -->
-				<view v-if="calcWornTitle" class="worn-banner">
-					<text class="worn-banner-icon">{{ calcWornTitle.icon }}</text>
-					<view class="worn-banner-main">
-						<text class="worn-banner-name">{{ calcWornTitle.name }}</text>
-						<text class="worn-banner-sub">已佩戴的称号，可随时更换</text>
-					</view>
-					<text class="worn-banner-flag">佩戴中</text>
-				</view>
-
-				<!-- 称号墙 -->
-				<view class="section-card">
-					<view class="section-title-row">
-						<text class="section-title">称号</text>
-						<text class="section-sub">达标自动解锁 · 点击佩戴</text>
-					</view>
-					<view class="title-grid">
-						<view
-							v-for="title in levelStatus.unlockedTitles"
-							:key="title.id"
-							class="title-item"
-							:class="{ 'is-unlocked': title.unlocked, 'is-worn': title.worn, 'is-loading': claimingTitle === title.id }"
-							@click="fnWearTitle(title)"
-						>
-							<text class="title-icon">{{ titleEmoji(title.type) }}</text>
-							<text class="title-name">{{ title.name }}</text>
-							<view v-if="!title.unlocked" class="title-progress-track">
-								<view class="title-progress-fill" :style="{ width: title.percent + '%' }"></view>
-							</view>
-							<text v-if="!title.unlocked" class="title-progress">{{ title.progress }}/{{ title.target }}</text>
-							<text class="title-desc">{{ title.unlocked ? (title.worn ? '佩戴中' : '点击佩戴') : title.desc }}</text>
+				<view v-if="titlesExpanded" class="title-grid">
+					<view
+						v-for="title in levelStatus.unlockedTitles"
+						:key="title.id"
+						class="title-item"
+						:class="{ 'is-unlocked': title.unlocked, 'is-worn': title.worn, 'is-loading': claimingTitle === title.id }"
+						@click="fnWearTitle(title)"
+					>
+						<text class="title-icon">{{ titleEmoji(title.type) }}</text>
+						<text class="title-name">{{ title.name }}</text>
+						<view v-if="!title.unlocked" class="title-progress-track">
+							<view class="title-progress-fill" :style="{ width: title.percent + '%' }"></view>
 						</view>
+						<text v-if="!title.unlocked" class="title-progress">{{ title.progress }}/{{ title.target }}</text>
+						<text class="title-desc">{{ title.unlocked ? (title.worn ? '佩戴中' : '点击佩戴') : title.desc }}</text>
 					</view>
 				</view>
+				<view v-else class="title-collapsed-tip">称号墙已收起，共 {{ levelStatus.unlockedTitles.length }} 个称号</view>
+			</view>
 
-				<!-- 装扮商店 -->
-				<view class="section-card">
-					<view class="section-title-row">
-						<text class="section-title">装扮商店</text>
-						<text class="section-sub">积分兑换 · 永久持有</text>
-					</view>
-					<view v-if="outfitStatus.items.length === 0" class="empty-tip">暂无装扮，请在插件后台「等级与称号装扮」中配置。</view>
-					<view v-for="item in outfitStatus.items" :key="item.key" class="outfit-item" :class="{ 'is-active': isActive(item) }">
-						<view class="outfit-preview" :class="outfitPreviewClass(item)">
-							<image v-if="item.type === 'avatar_frame'" class="outfit-avatar" :src="previewAvatar" mode="aspectFill"></image>
-							<text v-if="item.type === 'nick_frame'" class="outfit-nick">{{ item.style }}</text>
-							<view v-if="item.type === 'theme'" class="outfit-theme" :style="{ background: themeSwatchStyle(item.style) }"></view>
-						</view>
-						<view class="outfit-main">
-							<view class="outfit-title-row">
-								<text class="outfit-name">{{ item.name }}</text>
-								<text class="outfit-tag">{{ outfitTypeLabel(item.type) }}</text>
-							</view>
-							<text class="outfit-price">{{ item.points }} 积分<text v-if="isActive(item)" class="outfit-using"> · 使用中</text></text>
-						</view>
-						<view class="outfit-action">
-							<tm-button
-								size="s"
-								:theme="outfitButtonTheme(item)"
-								:disabled="outfitBusy(item)"
-								:loading="outfitBusy(item)"
-								@click="fnOutfitAction(item)"
-							>{{ outfitButtonText(item) }}</tm-button>
-						</view>
-					</view>
-				</view>
-
-				<view class="footer-tip">
-					<text>等级按「累计获得积分」自动升级；称号达标自动解锁，可佩戴展示；装扮购买后永久持有，穿戴即时生效。</text>
+			<view class="footer-tip">
+					<text>等级按「累计获得积分」自动升级；称号达标自动解锁，点击即可佩戴展示；装扮在「装扮商店」购买后穿戴即时生效。</text>
 				</view>
 			</view>
 		</template>
@@ -142,7 +102,10 @@
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import pointsToast from '@/components/points-toast/points-toast.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
-	import { emitPointsUpdated } from '@/utils/points.js';
+	// 本页只做装扮「展示」（头像框 / 昵称前缀）与等级称号；购买与穿戴都已移到权益直购页
+	import { avatarFrameClass, isUnregisteredAvatarFrame, nickFramePrefix } from '@/utils/outfitSkin.js';
+	import { applyThemeSkin } from '@/utils/themeSkin.js';
+	import { cacheOwnOutfit } from '@/utils/ownOutfit.js';
 
 	const EMPTY_LEVEL = {
 		level: 1,
@@ -155,6 +118,8 @@
 	const EMPTY_OUTFIT = {
 		items: [],
 		owned: [],
+		ownedDetails: [],
+		orphanOwned: [],
 		avatarFrame: '',
 		nickFrame: '',
 		theme: ''
@@ -186,15 +151,16 @@
 				levelStatus: { ...EMPTY_LEVEL },
 				outfitStatus: { ...EMPTY_OUTFIT },
 				claimingTitle: '',
-				outfitBusyKey: ''
+				/** 称号墙展开态（默认展开；不持久化，每次进入按默认值） */
+				titlesExpanded: true,
+				outfitBusyKey: '',
+				// 装扮现金价：装扮 key → { goodsId, price }（来自支付配置，见 fnLoadCashGoods）
+				cashGoodsMap: {}
 			};
 		},
 		computed: {
 			userInfo() {
 				return getWxLoginInfo() || {};
-			},
-			previewAvatar() {
-				return this.userInfo.avatarUrl || '';
 			},
 			levelPercent() {
 				const status = this.levelStatus;
@@ -212,10 +178,17 @@
 				return {};
 			},
 			headAvatarFrameClass() {
-				const frame = this.outfitStatus.avatarFrame;
-				if (frame === 'gold') return 'frame-gold';
-				if (frame === 'rainbow') return 'frame-rainbow';
-				return '';
+				// 注册表化：未登记的样式回退无框（页面另行提示站长配置错误）。
+				return avatarFrameClass(this.outfitStatus.avatarFrame);
+			},
+			avatarFrameUnregistered() {
+				return isUnregisteredAvatarFrame(this.outfitStatus.avatarFrame);
+			},
+			/** 头部昵称带前缀装饰：与评论列表同一解析口径（注册表 → 透传 style 文本）。 */
+			headDisplayName() {
+				const nickname = this.userInfo.nickname || '微信用户';
+				const prefix = nickFramePrefix(this.outfitStatus.nickFrame);
+				return prefix ? `${prefix} ${nickname}` : nickname;
 			},
 			calcWornTitle() {
 				const wornId = this.levelStatus.wornTitleId;
@@ -250,6 +223,10 @@
 					]);
 					this.levelStatus = this.normalizeLevel(levelRes);
 					this.outfitStatus = this.normalizeOutfit(outfitRes);
+					// 穿戴装扮后立即生效，无需重启小程序（购买/穿戴入口在权益直购页，本页负责应用）
+					applyThemeSkin(this.outfitStatus.theme);
+					// 同步本地装扮缓存：评论列表/输入弹窗等页面读它渲染头像框
+					cacheOwnOutfit(this.outfitStatus);
 					this.loading = 'success';
 				} catch (err) {
 					this.loading = 'error';
@@ -285,6 +262,10 @@
 					enabled: data.enabled !== false,
 					items: Array.isArray(data.items) ? data.items : [],
 					owned: Array.isArray(data.owned) ? data.owned : [],
+					// 到期明细：插件 v1.0.98+ 才下发，旧版插件下为空数组，
+					// 此时按「永久」展示，不影响老版本组合使用。
+					ownedDetails: Array.isArray(data.ownedDetails) ? data.ownedDetails : [],
+					orphanOwned: Array.isArray(data.orphanOwned) ? data.orphanOwned : [],
 					avatarFrame: data.avatarFrame || '',
 					nickFrame: data.nickFrame || '',
 					theme: data.theme || ''
@@ -292,76 +273,6 @@
 			},
 			titleEmoji(type) {
 				return TITLE_ICONS[type] || '🏅';
-			},
-			outfitTypeLabel(type) {
-				return { avatar_frame: '头像框', nick_frame: '昵称前缀', theme: '主题色' }[type] || type;
-			},
-			themeSwatchStyle(style) {
-				if (String(style).includes(',')) {
-					const [from, to] = String(style).split(',');
-					return `linear-gradient(135deg, ${from}, ${to})`;
-				}
-				return style;
-			},
-			outfitPreviewClass(item) {
-				if (item.type === 'avatar_frame' && item.style === 'gold') return 'is-frame-gold';
-				if (item.type === 'avatar_frame' && item.style === 'rainbow') return 'is-frame-rainbow';
-				return '';
-			},
-			isOwned(item) {
-				return this.outfitStatus.owned.includes(item.key);
-			},
-			isActive(item) {
-				if (!this.isOwned(item)) return false;
-				if (item.type === 'avatar_frame') return this.outfitStatus.avatarFrame === item.style;
-				if (item.type === 'nick_frame') return this.outfitStatus.nickFrame === item.style;
-				if (item.type === 'theme') return this.outfitStatus.theme === item.style;
-				return false;
-			},
-			outfitButtonText(item) {
-				if (this.isActive(item)) return '脱下';
-				if (this.isOwned(item)) return '穿戴';
-				return `购买 · ${item.points}`;
-			},
-			outfitButtonTheme(item) {
-				if (this.isActive(item)) return 'grey';
-				if (this.isOwned(item)) return 'primary';
-				return 'green';
-			},
-			outfitBusy(item) {
-				return this.outfitBusyKey === item.key;
-			},
-			async fnOutfitAction(item) {
-				if (this.outfitBusyKey) return;
-				this.outfitBusyKey = item.key;
-				try {
-					if (!this.isOwned(item)) {
-						const res = await this.$httpApi.v2.buyOutfitItem(item.key);
-						const data = res?.data || res || {};
-						if (data?.error && !data?.owned) {
-							uni.showToast({ title: data.error, icon: 'none' });
-							return;
-						}
-						uni.showToast({ title: data?.message || '购买成功', icon: 'none' });
-						if (data?.balance != null) {
-							emitPointsUpdated({ balance: Number(data.balance) });
-						}
-						await this.fnLoad();
-						return;
-					}
-					const res = await this.$httpApi.v2.equipOutfitItem(this.isActive(item) ? '' : item.key);
-					const data = res?.data || res || {};
-					if (data?.error) {
-						uni.showToast({ title: data.error, icon: 'none' });
-						return;
-					}
-					uni.showToast({ title: data?.message || '已更新装扮', icon: 'none' });
-					await this.fnLoad();
-				} catch (err) {
-					uni.showToast({ title: err?.error || '操作失败，请稍后重试', icon: 'none' });
-				} finally {
-					this.outfitBusyKey = '';
-				}
 			},
 			async fnWearTitle(title) {
 				if (!title?.unlocked || title?.worn || this.claimingTitle) return;
@@ -421,11 +332,90 @@
 		padding: 24rpx;
 	}
 
-	/* ===== 身份头部 ===== */
+	/* ===== 身份卡（合并原「身份头部 + 等级卡 + 佩戴称号横幅」） =====
+	   一张卡承载：头像框/昵称前缀展示、等级称号、累计积分与升级进度。 */
+	.identity-card {
+		margin-bottom: 20rpx;
+		padding: 32rpx 28rpx 28rpx;
+		border-radius: 24rpx;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: #fff;
+		box-shadow: 0 12rpx 32rpx rgba(102, 126, 234, 0.35);
+	}
+
 	.identity-head {
 		display: flex;
 		align-items: center;
-		padding: 12rpx 8rpx 24rpx;
+	}
+
+	/* 昵称下方的等级 / 佩戴称号徽标 */
+	.identity-badges {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		margin-top: 8rpx;
+	}
+
+	.identity-level {
+		font-size: 20rpx;
+		color: #fff;
+		background: rgba(255, 255, 255, 0.22);
+		padding: 2rpx 14rpx;
+		border-radius: 999rpx;
+	}
+
+	.identity-worn {
+		margin-left: 10rpx;
+		font-size: 20rpx;
+		color: #ffe9b0;
+		background: rgba(255, 214, 102, 0.22);
+		padding: 2rpx 14rpx;
+		border-radius: 999rpx;
+	}
+
+	/* 等级进度：一条线表达「累计积分 + 距下一级」 */
+	.identity-progress {
+		margin-top: 24rpx;
+		padding-top: 20rpx;
+		border-top: 1rpx solid rgba(255, 255, 255, 0.22);
+	}
+
+	.identity-progress-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	.identity-progress-label {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.92);
+	}
+
+	.identity-progress-percent {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.7);
+	}
+
+	/* 称号墙折叠后的提示 */
+	.section-title-action {
+		display: flex;
+		align-items: center;
+	}
+
+	.section-toggle {
+		margin-left: 12rpx;
+		font-size: 22rpx;
+		color: #7c6bd6;
+	}
+
+	.title-collapsed-tip {
+		padding: 16rpx 0 4rpx;
+		font-size: 22rpx;
+		color: #b0b5c0;
 	}
 
 	.identity-avatar {
@@ -433,7 +423,7 @@
 		height: 108rpx;
 		border-radius: 50%;
 		background: #fff;
-		border: 3rpx solid #e8e8ee;
+		border: 3rpx solid rgba(255, 255, 255, 0.65);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -450,6 +440,11 @@
 			background: linear-gradient(#fff, #fff) padding-box,
 				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
 			box-shadow: 0 0 20rpx rgba(155, 140, 255, 0.45);
+		}
+
+		&.frame-silver {
+			border: 6rpx solid #c3cbd8;
+			box-shadow: 0 0 20rpx rgba(195, 203, 216, 0.5);
 		}
 
 		image {
@@ -471,89 +466,15 @@
 		display: block;
 		font-size: 34rpx;
 		font-weight: 700;
-		color: #303133;
+		color: #ffffff;
 	}
 
-	.identity-sub {
+	/* 头像框样式未登记：配置错误需显式提示，避免用户以为装扮失效 */
+	.identity-invalid {
 		display: block;
 		margin-top: 6rpx;
-		font-size: 22rpx;
-		color: #909399;
-	}
-
-	/* ===== 等级卡 ===== */
-	.level-card {
-		display: flex;
-		align-items: center;
-		padding: 32rpx 28rpx;
-		border-radius: 24rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: #fff;
-		margin-bottom: 20rpx;
-		box-shadow: 0 12rpx 32rpx rgba(102, 126, 234, 0.35);
-	}
-
-	.level-badge {
-		width: 96rpx;
-		height: 96rpx;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.16);
-		border: 4rpx solid rgba(255, 255, 255, 0.65);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		margin-right: 24rpx;
-	}
-
-	.level-badge-num {
-		font-size: 40rpx;
-		font-weight: 800;
-		line-height: 1;
-	}
-
-	.level-badge-label {
-		margin-top: 4rpx;
-		font-size: 18rpx;
-		letter-spacing: 2rpx;
-		opacity: 0.85;
-	}
-
-	.level-card-main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.level-card-top {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 16rpx;
-	}
-
-	.level-title {
-		font-size: 32rpx;
-		font-weight: 700;
-	}
-
-	.level-points {
-		font-size: 22rpx;
-		opacity: 0.85;
-	}
-
-	.level-earned {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		margin-top: 10rpx;
-		font-size: 22rpx;
-		opacity: 0.85;
-	}
-
-	.level-percent {
-		font-weight: 600;
-		opacity: 1;
+		font-size: 21rpx;
+		color: #ffe9b0;
 	}
 
 	.level-track {
@@ -568,50 +489,6 @@
 		height: 100%;
 		border-radius: 7rpx;
 		background: linear-gradient(90deg, #ffffff 0%, #fff7d6 100%);
-	}
-
-	/* ===== 佩戴称号横幅 ===== */
-	.worn-banner {
-		display: flex;
-		align-items: center;
-		padding: 24rpx 28rpx;
-		border-radius: 20rpx;
-		background: linear-gradient(135deg, #fff9e6 0%, #fff3cc 100%);
-		border: 2rpx solid #f5c542;
-		margin-bottom: 20rpx;
-	}
-
-	.worn-banner-icon {
-		font-size: 52rpx;
-		margin-right: 20rpx;
-	}
-
-	.worn-banner-main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.worn-banner-name {
-		display: block;
-		font-size: 28rpx;
-		font-weight: 700;
-		color: #8a6d1a;
-	}
-
-	.worn-banner-sub {
-		display: block;
-		margin-top: 4rpx;
-		font-size: 20rpx;
-		color: #b08d33;
-	}
-
-	.worn-banner-flag {
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #8a6d1a;
-		background: rgba(245, 197, 66, 0.25);
-		border-radius: 999rpx;
-		padding: 6rpx 18rpx;
 	}
 
 	/* ===== 通用卡片 ===== */
@@ -726,117 +603,8 @@
 		white-space: nowrap;
 	}
 
-	/* ===== 装扮商店 ===== */
-	.empty-tip {
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #909399;
-	}
-
-	.outfit-item {
-		display: flex;
-		align-items: center;
-		padding: 20rpx;
-		border-radius: 16rpx;
-		background: #fbfbfd;
-		border: 2rpx solid #f0f1f5;
-		margin-bottom: 16rpx;
-
-		&:last-child {
-			margin-bottom: 0;
-		}
-
-		&.is-active {
-			background: #f2fbe8;
-			border-color: #a8e06a;
-		}
-	}
-
-	.outfit-preview {
-		position: relative;
-		width: 100rpx;
-		height: 100rpx;
-		border-radius: 20rpx;
-		background: #f3f4f7;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		overflow: hidden;
-
-		&.is-frame-gold {
-			border-radius: 50%;
-			border: 5rpx solid #f5c542;
-			box-shadow: 0 0 14rpx rgba(245, 197, 66, 0.4);
-		}
-
-		&.is-frame-rainbow {
-			border-radius: 50%;
-			border: 5rpx solid transparent;
-			background: linear-gradient(#f3f4f7, #f3f4f7) padding-box,
-				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
-			box-shadow: 0 0 14rpx rgba(155, 140, 255, 0.35);
-		}
-	}
-
-	.outfit-avatar {
-		width: 100%;
-		height: 100%;
-	}
-
-	.outfit-nick {
-		font-size: 52rpx;
-		line-height: 1;
-	}
-
-	.outfit-theme {
-		position: absolute;
-		left: 0;
-		top: 0;
-		right: 0;
-		bottom: 0;
-	}
-
-	.outfit-main {
-		flex: 1;
-		min-width: 0;
-		margin: 0 16rpx;
-	}
-
-	.outfit-title-row {
-		display: flex;
-		align-items: center;
-		gap: 10rpx;
-	}
-
-	.outfit-name {
-		font-size: 28rpx;
-		font-weight: 600;
-		color: #303133;
-	}
-
-	.outfit-tag {
-		font-size: 18rpx;
-		color: #909399;
-		background: #eef0f4;
-		padding: 2rpx 10rpx;
-		border-radius: 6rpx;
-	}
-
-	.outfit-price {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		color: #f56c6c;
-	}
-
-	.outfit-using {
-		color: #67a23a;
-		font-weight: 600;
-	}
-
-	.outfit-action {
-		flex-shrink: 0;
+	.outfit-action > * + * {
+		margin-top: 12rpx;
 	}
 
 	.footer-tip {
@@ -852,4 +620,5 @@
 		line-height: 1.7;
 		color: #b3800a;
 	}
+
 </style>

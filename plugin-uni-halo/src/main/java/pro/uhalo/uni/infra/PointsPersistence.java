@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 
 import static run.halo.app.extension.index.query.QueryFactory.equal;
+import static run.halo.app.extension.index.query.QueryFactory.in;
 
 /**
  * 积分账户与流水持久化：以微信 openid（Wechat-Session-Id）为唯一业务键，
@@ -47,6 +48,21 @@ public class PointsPersistence {
         var listOptions = new ListOptions();
         listOptions.setFieldSelector(FieldSelector.of(equal("wxOpenid", openid)));
         return client.listAll(UserPoints.class, listOptions, null).next();
+    }
+
+    /**
+     * 按 openid 集合批量查询账户（用于装扮全站可见时的评论/瞬间列表注入）。
+     * 返回 Map<openid, UserPoints>，缺失的 openid 不包含。
+     */
+    public Mono<java.util.Map<String, UserPoints>> findAccountsByOpenidsIn(java.util.Set<String> openids) {
+        if (openids == null || openids.isEmpty()) {
+            return Mono.just(java.util.Map.of());
+        }
+        var listOptions = new ListOptions();
+        listOptions.setFieldSelector(FieldSelector.of(
+            in("wxOpenid", openids.toArray(new String[0]))));
+        return client.listAll(UserPoints.class, listOptions, null)
+            .collectMap(UserPoints::getWxOpenid, account -> account);
     }
 
     public Mono<PointsRecord> findRecordByEarnKey(String earnKey) {
