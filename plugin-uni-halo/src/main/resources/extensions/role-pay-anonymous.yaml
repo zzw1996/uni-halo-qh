@@ -9,6 +9,9 @@ metadata:
     rbac.authorization.halo.run/module: "UniHalo 虚拟支付"
     rbac.authorization.halo.run/display-name: "虚拟支付接口（UniHalo）"
 rules:
+  # 「我的订单」（plugins/pay/orders）比 plugins/pay 多一层路径，
+  # 不同 Halo 版本对 resource 的推导粒度不同，两种形态都放行，
+  # 避免因推导差异让用户查不到自己的订单（与 role-anonymous 里 plugins/* 同一思路）。
   - apiGroups: [ "api.uni.uhalo.pro" ]
-    resources: [ "plugins/pay" ]
+    resources: [ "plugins/pay", "plugins/pay/orders", "plugins/pay/*" ]
     verbs: [ "get", "list", "create" ]

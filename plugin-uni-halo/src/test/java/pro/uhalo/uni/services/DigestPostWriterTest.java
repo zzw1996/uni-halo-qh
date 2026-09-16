@@ -40,6 +40,7 @@ class DigestPostWriterTest {
     void setUp() {
         // 用 2 秒的确认窗口，避免单测等满两分钟
         writer = new DigestPostWriter(client, new DigestMarkdownRenderer(),
+            new pro.uhalo.uni.services.DigestTaxonomyService(client),
             java.time.Duration.ofSeconds(2), java.time.Duration.ofMillis(200));
     }
 
@@ -124,6 +125,80 @@ class DigestPostWriterTest {
         // 文章协调失败（发不出去、打不开、删不掉）
         assertThat(snapshot.getMetadata().getAnnotations())
             .containsEntry(run.halo.app.core.extension.content.Snapshot.KEEP_RAW_ANNO, "true");
+    }
+
+    /**
+     * AI 判定的分类与关键词必须真的落到文章的 {@code spec.categories / spec.tags} 上。
+     *
+     * <p>回归测试。早前这条路径只解析手填的 categoryNames / tagNames，AI 分类与关键词被
+     * 静默丢掉，发布出来的文章分类标签全空——站点主题与小程序都从内容接口的
+     * categories / tags 取数据，于是文章页上一条分类标签都不显示。这条测试就是钉住它。</p>
+     */
+    @Test
+    void shouldAttachAiCategoriesAndKeywordsToPublishedPost() {
+        var capturedPost = new AtomicReference<Post>();
+        var draftCategories = new java.util.concurrent.atomic.AtomicReference<java.util.List<String>>();
+        var draftTags = new java.util.concurrent.atomic.AtomicReference<java.util.List<String>>();
+        var createdCategoryNames = new java.util.ArrayList<String>();
+        var createdTagNames = new java.util.ArrayList<String>();
+
+        when(client.create(any(Post.class))).thenAnswer(invocation -> {
+            Post draft = invocation.getArgument(0);
+            capturedPost.set(draft);
+            draftCategories.set(draft.getSpec().getCategories());
+            draftTags.set(draft.getSpec().getTags());
+            return Mono.just(draft);
+        });
+        when(client.create(any(Snapshot.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        // 站点上还没有这些分类/标签 → 走「不存在则创建」
+        when(client.create(any(run.halo.app.core.extension.content.Category.class)))
+            .thenAnswer(invocation -> {
+                run.halo.app.core.extension.content.Category category = invocation.getArgument(0);
+                createdCategoryNames.add(category.getMetadata().getName());
+                return Mono.just(category);
+            });
+        when(client.create(any(run.halo.app.core.extension.content.Tag.class)))
+            .thenAnswer(invocation -> {
+                run.halo.app.core.extension.content.Tag tag = invocation.getArgument(0);
+                createdTagNames.add(tag.getMetadata().getName());
+                return Mono.just(tag);
+            });
+        lenient().when(client.fetch(eq(Post.class), anyString())).thenAnswer(invocation -> {
+            Post post = capturedPost.get();
+            var status = new Post.PostStatus();
+            status.setPhase(Post.PostPhase.PUBLISHED.name());
+            post.setStatus(status);
+            return Mono.just(post);
+        });
+        lenient().when(client.update(any(Post.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        // 已有分类/标签：一个都没有
+        lenient().when(client.listAll(any(), any(), any()))
+            .thenReturn(reactor.core.publisher.Flux.empty());
+
+        var dto = HaloPostPublishDTO.builder()
+            .title("AI 日报 · 2026-09-11")
+            .slug("ai-digest-2026-09-11")
+            .markdown("# 标题\n\n正文一段")
+            .owner("lxfzzw")
+            .cover("https://example.com/a.jpg")
+            .categoryNames(List.of("技术"))
+            .tagNames(List.of())
+            .aiCategories(List.of("ai-ml"))
+            .keywords(List.of("LLM", "Transformer"))
+            .build();
+
+        writer.writeAndPublish(dto).as(StepVerifier::create)
+            .assertNext(result -> assertThat(result.getState()).isEqualTo("PUBLISHED"))
+            .verifyComplete();
+
+        // 文章真的带上了分类与标签（这正是文章页能显示它们的前提）
+        assertThat(draftCategories.get()).containsExactly("ai-ml");
+        assertThat(draftTags.get()).containsExactly("llm", "transformer");
+        // 而且分类与标签是「不存在就创建」，不是忽略
+        assertThat(createdCategoryNames).containsExactly("ai-ml");
+        assertThat(createdTagNames).containsExactly("llm", "transformer");
     }
 
     @Test

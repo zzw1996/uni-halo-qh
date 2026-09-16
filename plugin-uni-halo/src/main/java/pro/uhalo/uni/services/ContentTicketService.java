@@ -1,6 +1,7 @@
 package pro.uhalo.uni.services;
 
 import pro.uhalo.uni.dto.ContentLockedDTO;
+import pro.uhalo.uni.dto.UnlockedArticleListResponse;
 import reactor.core.publisher.Mono;
 
 /**
@@ -46,4 +47,15 @@ public interface ContentTicketService {
 
     /** 当前用户持有的阅读券张数（未登录返回 0） */
     Mono<Integer> getTicketBalance(String openid);
+
+    /**
+     * 「已解锁文章」列表：该用户的解锁历史（解锁时间倒序），附当前券余额。
+     *
+     * <p>券花掉之后用户此前无处可查自己买过什么，券就只是一次性消耗品。
+     * 列出解锁历史后券变成可回溯的资产。已下架或已删除的文章仍会列出，
+     * 但标记为不可访问，避免给用户一个点进去 404 的链接。</p>
+     *
+     * @param limit 最多返回条数
+     */
+    Mono<UnlockedArticleListResponse> listUnlocked(String openid, int limit);
 }

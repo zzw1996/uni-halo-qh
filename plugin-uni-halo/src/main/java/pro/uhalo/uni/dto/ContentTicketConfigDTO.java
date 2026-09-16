@@ -36,4 +36,13 @@ public class ContentTicketConfigDTO {
 
     /** 解锁后是否永久有效（当前恒为 true，保留字段以便将来支持限时） */
     private Boolean permanent;
+
+    /**
+     * AI 日报生成的文章免券（默认开启）。
+     *
+     * <p>日报是拉新与留存的入口：如果它也被付费墙拦下，从分享/搜索进来的新用户
+     * 点开第一篇就被要求用券解锁，转化直接归零，而且这种「内容被拦」很难归因到配置上。
+     * 因此默认豁免；确实想让日报也收费时把这个开关关掉即可。</p>
+     */
+    private Boolean freeForDigest;
 }

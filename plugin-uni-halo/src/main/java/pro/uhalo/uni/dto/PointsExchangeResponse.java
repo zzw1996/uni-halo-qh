@@ -18,6 +18,17 @@ public class PointsExchangeResponse {
     /** 当前余额 */
     private Long balance;
 
+    /**
+     * 兑换后的阅读券余额。
+     *
+     * <p>券类兑换必须回传：兑换前用户看到「0 张」，若响应里不带新余额，
+     * 前端只能等下一次拉取才更新，用户会以为兑换没生效而重复点。</p>
+     */
+    private Integer contentTickets;
+
+    /** 兑换后的发布券余额（历史券种，保留兼容） */
+    private Integer publishTickets;
+
     /** 可兑换权益列表（含今日已兑换次数），由插件后台 exchangeConfig 配置 */
     private java.util.List<ExchangeItemDTO> items;
 

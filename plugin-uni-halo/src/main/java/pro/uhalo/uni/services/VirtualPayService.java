@@ -3,6 +3,7 @@ package pro.uhalo.uni.services;
 import pro.uhalo.uni.dto.AdminPayOrderListResponse;
 import pro.uhalo.uni.dto.CreatePayOrderRequest;
 import pro.uhalo.uni.dto.CreatePayOrderResponse;
+import pro.uhalo.uni.dto.MyPayOrderListResponse;
 import pro.uhalo.uni.dto.PayPublicConfigDTO;
 import pro.uhalo.uni.dto.QueryPayOrderRequest;
 import pro.uhalo.uni.dto.QueryPayOrderResponse;
@@ -33,4 +34,12 @@ public interface VirtualPayService {
      * @param size   每页条数
      */
     Mono<AdminPayOrderListResponse> listOrdersForAdmin(String status, int page, int size);
+
+    /**
+     * 用户侧「我的订单」：只返回该 openid 自己的订单，创建时间倒序。
+     *
+     * @param page 页码，从 0 开始
+     * @param size 每页条数
+     */
+    Mono<MyPayOrderListResponse> listMyOrders(String openid, int page, int size);
 }

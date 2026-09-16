@@ -21,6 +21,13 @@ public interface DigestService {
     Mono<DigestReport> getReport(String name);
 
     /**
+     * 删除一条运行记录（只删记录本身，已经发布出去的文章不受影响）。
+     *
+     * <p>正在运行中的记录不允许删除，避免把任务状态删掉后再也看不到结果。</p>
+     */
+    Mono<Void> deleteReport(String name);
+
+    /**
      * 把一条已生成的报告重新发布一次（生成成功但发布失败的补救入口）。
      */
     Mono<DigestReport> publishReport(String name);

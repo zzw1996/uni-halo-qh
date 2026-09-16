@@ -34,19 +34,44 @@ public class DigestRenderer {
     private static final int TAG_CLOUD_LIMIT = 20;
     private static final int ASCII_BAR_WIDTH = 20;
 
-    private record CategoryMeta(String emoji, String label) {
+    private record CategoryMeta(String emoji, String label, String description) {
     }
 
     private static final Map<String, CategoryMeta> CATEGORY_META = Map.of(
-        "ai-ml", new CategoryMeta("🤖", "AI / ML"),
-        "security", new CategoryMeta("🔒", "安全"),
-        "engineering", new CategoryMeta("⚙️", "工程"),
-        "tools", new CategoryMeta("🛠", "工具 / 开源"),
-        "opinion", new CategoryMeta("💡", "观点 / 杂谈"),
-        "other", new CategoryMeta("📝", "其他"));
+        "ai-ml", new CategoryMeta("🤖", "AI / ML", "AI、机器学习、大模型、深度学习相关"),
+        "security", new CategoryMeta("🔒", "安全", "安全、隐私、漏洞、加密相关"),
+        "engineering", new CategoryMeta("⚙️", "工程", "软件工程、架构、编程语言、系统设计"),
+        "tools", new CategoryMeta("🛠", "工具 / 开源", "开发工具、开源项目、新发布的库与框架"),
+        "opinion", new CategoryMeta("💡", "观点 / 杂谈", "行业观点、个人思考、职业发展与文化评论"),
+        "other", new CategoryMeta("📝", "其他", "暂时不适合归入其余主题的内容"));
 
     private static CategoryMeta metaOf(String category) {
         return CATEGORY_META.getOrDefault(category, CATEGORY_META.get("other"));
+    }
+
+    /**
+     * 分类中文名（公开）。
+     *
+     * <p>给小程序端用的：分类名与图标只在 {@link #CATEGORY_META} 里定义一份，
+     * 前端不要另抄一套映射，否则加新分类时两边会不一致。</p>
+     */
+    public static String categoryLabel(String category) {
+        return metaOf(category).label();
+    }
+
+    /**
+     * 分类的说明文字（公开）。
+     *
+     * <p>自动创建分类时写进 {@code spec.description}：站点分类页的卡片要展示描述，
+     * 写给站长看的「由某插件自动创建」在访客眼里是噪音，一句主题定义才是有效信息。</p>
+     */
+    public static String categoryDescription(String category) {
+        return metaOf(category).description();
+    }
+
+    /** 分类图标（公开），口径同 {@link #categoryLabel}。 */
+    public static String categoryEmoji(String category) {
+        return metaOf(category).emoji();
     }
 
     public String render(List<DigestArticleDTO> articles, DigestAiHelper.Overview overview,

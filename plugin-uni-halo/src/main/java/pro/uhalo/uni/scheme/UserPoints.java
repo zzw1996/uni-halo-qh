@@ -5,6 +5,8 @@ import lombok.EqualsAndHashCode;
 import run.halo.app.extension.AbstractExtension;
 import run.halo.app.extension.GVK;
 
+import java.time.Instant;
+
 import static pro.uhalo.uni.constants.Constants.BASIC_DOMAIN_NAME;
 import static pro.uhalo.uni.constants.Constants.PLUGIN_API_VERSION;
 
@@ -48,4 +50,16 @@ public class UserPoints extends AbstractExtension {
     private String activeNickFrame;
 
     private String activeTheme;
+
+    /**
+     * 会员到期时间（null = 从未开通或已过期后清空）。
+     *
+     * <p>「单次购买的会员卡」的权益凭据：会员期内全站付费文章免券（可通过
+     * memberConfig.freeContent 关闭）。续费时在<b>当前到期时间</b>上叠加天数，
+     * 而不是从当下重新计时——否则用户在有效期内续费会白白损失剩余天数。</p>
+     *
+     * <p>不做自动续费订阅：该能力需单独签约、协议报审与交易保证金，
+     * 详见 {@code MemberConfigDTO} 的说明。</p>
+     */
+    private Instant memberExpireAt;
 }

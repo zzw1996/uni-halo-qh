@@ -24,6 +24,9 @@ rules:
       - "digest/reports"
       - "digest/run"
       - "digest/cleanup"
+      # 旧文章归类（status/preview/apply 三条都在这个前缀下）
+      - "digest/classify"
+      - "digest/classify/*"
       - "plugins/digest"
       - "plugins/digest/*"
-    verbs: [ "get", "list", "create", "update" ]
+    verbs: [ "get", "list", "create", "update", "delete" ]

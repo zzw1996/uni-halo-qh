@@ -194,8 +194,15 @@ public class DigestScheduler implements InitializingBean {
             && report.getStartedAt() != null && report.getStartedAt().isAfter(staleBefore))) {
             return true;
         }
-        // 失败、或陈旧的 RUNNING：允许重试，但一天最多 MAX_ATTEMPTS_PER_SLOT 次
-        return forSlot.size() >= MAX_ATTEMPTS_PER_SLOT;
+        // 失败、或陈旧的 RUNNING：允许重试，但每个时段最多 MAX_ATTEMPTS_PER_SLOT 次。
+        //
+        // 必须按「尝试次数」而不是「记录条数」来判：重试复用同一条记录
+        // （资源名按日期+时段固定），条数永远是 1，按条数算则上限永远达不到，
+        // 失败后会每分钟无限重试——线上的「一直不停开始抓取 RSS 源」就是这么来的。
+        var attempts = forSlot.stream()
+            .mapToInt(report -> report.getAttempts() == null ? 1 : Math.max(1, report.getAttempts()))
+            .sum();
+        return attempts >= MAX_ATTEMPTS_PER_SLOT;
     }
 
     /** 把该时段已有的记录状态拼成一句人话，方便看出「为什么跳过」 */

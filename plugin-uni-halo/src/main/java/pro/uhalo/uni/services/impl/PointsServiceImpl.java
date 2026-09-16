@@ -21,15 +21,18 @@ import pro.uhalo.uni.dto.PointsHistoryItemDTO;
 import pro.uhalo.uni.dto.PointsHistoryResponse;
 import pro.uhalo.uni.dto.PointsOverviewResponse;
 import pro.uhalo.uni.dto.PointsSignInStatusDTO;
+import pro.uhalo.uni.dto.TicketRewardConfigDTO;
 import pro.uhalo.uni.enums.PointsAction;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.PointsEvidenceService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.services.WxUserService;
+import pro.uhalo.uni.utils.ContentTicketConfigHelper;
 import pro.uhalo.uni.utils.PointsConfigHelper;
 import pro.uhalo.uni.utils.PointsRecordHelper;
 import pro.uhalo.uni.utils.RateLimiter;
@@ -102,7 +105,13 @@ public class PointsServiceImpl implements PointsService {
      * <p>兑换项 repeater 目前没有「数量」字段，固定发 1 张。
      * 站长若要一次发多张，需要新增字段（见方案文档的后续优化项）。</p>
      */
-    private static final int TICKETS_PER_EXCHANGE = 1;
+    /**
+     * 兑换项未显式配置 tickets 时每次发放的券张数。
+     *
+     * <p>内置券兑换项的实际张数由 ticketConfig.exchangeTickets 决定
+     * （见 {@link #withBuiltInTicketItem}），此处作为解析阶段的占位与兜底。</p>
+     */
+    private static final int EXCHANGE_TICKETS_FALLBACK = 1;
 
     private static final SecureRandom PRIZE_RANDOM = new SecureRandom();
 
@@ -111,6 +120,7 @@ public class PointsServiceImpl implements PointsService {
     private final WxUserService wxUserService;
     private final PointsEvidenceService pointsEvidenceService;
     private final RateLimiter rateLimiter;
+    private final TicketRewardService ticketRewardService;
 
     @Override
     public Mono<PointsOverviewResponse> getOverview(String openid) {
@@ -221,21 +231,54 @@ public class PointsServiceImpl implements PointsService {
                 .flatMap(config -> {
                     ensureEnabled(config);
                     var giftRule = config.getRules() == null ? null : config.getRules().getNewUserGift();
-                    if (giftRule == null || giftRule.getPoints() <= 0) {
-                        return Mono.just(PointsEarnResponse.builder()
-                            .earned(0)
-                            .message("新人礼未开启")
-                            .build());
-                    }
-                    var earnKey = buildEarnKey(id, NEW_USER_ACTION, "gift");
-                    return persistence.findRecordByEarnKey(earnKey)
-                        .flatMap(existing -> Mono.just(PointsEarnResponse.builder()
-                            .earned(0)
-                            .balance(existing.getBalance())
-                            .message("新人礼已领取")
-                            .build()))
-                        .switchIfEmpty(Mono.defer(() -> grantNewUserGift(id, giftRule.getPoints(), earnKey)));
+                    var giftPoints = giftRule == null ? 0 : Math.max(0, giftRule.getPoints());
+                    return ticketRewardService.loadConfig()
+                        .flatMap(ticketConfig -> {
+                            var giftTickets = Math.max(0, ticketConfig.getNewUserTickets());
+                            // 积分与券都为 0 才算「新人礼未开启」：只配了送券不送积分也是合法配置
+                            if (giftPoints <= 0 && giftTickets <= 0) {
+                                return Mono.just(PointsEarnResponse.builder()
+                                    .earned(0)
+                                    .message("新人礼未开启")
+                                    .build());
+                            }
+                            var earnKey = buildEarnKey(id, NEW_USER_ACTION, "gift");
+                            return persistence.findRecordByEarnKey(earnKey)
+                                .flatMap(existing -> claimNewUserTickets(id, giftTickets)
+                                    .map(tickets -> PointsEarnResponse.builder()
+                                        .earned(0)
+                                        .balance(existing.getBalance())
+                                        .tickets(tickets)
+                                        .message(tickets > 0
+                                            ? "新人礼已领取，另赠 " + tickets + " 张阅读券"
+                                            : "新人礼已领取")
+                                        .build()))
+                                .switchIfEmpty(Mono.defer(() -> claimNewUserTickets(id, giftTickets)
+                                    .flatMap(tickets -> grantNewUserGift(id, giftPoints, earnKey)
+                                        .map(resp -> PointsEarnResponse.builder()
+                                            .earned(resp.getEarned())
+                                            .balance(resp.getBalance())
+                                            .tickets(tickets)
+                                            .message(earnMessage((int) resp.getEarned(), tickets))
+                                            .build()))));
+                        });
                 }));
+    }
+
+    /**
+     * 新人见面礼赠送阅读券。
+     *
+     * <p>独立于积分赠礼的 earnKey，因此升级前已领过积分新人礼的老用户
+     * 下次登录仍会补到这一次券——这是有意的：他们此前从没拿到过免费券，
+     * 让老用户也体验一次「券能解锁什么」正是赠券钩子的目的。</p>
+     */
+    private Mono<Integer> claimNewUserTickets(String openid, int count) {
+        if (count <= 0) {
+            return Mono.just(0);
+        }
+        return ticketRewardService.grant(openid, count, TicketRewardService.ACTION_NEW_USER,
+            "新人见面礼 · 阅读券 x" + count,
+            buildEarnKey(openid, TicketRewardService.ACTION_NEW_USER, "gift"), "新人礼", null);
     }
 
     @Override
@@ -371,6 +414,9 @@ public class PointsServiceImpl implements PointsService {
                                                 -cfg.points(), newBalance,
                                                 cfg.name(), cfg.description(), earnKey,
                                                 account.getWxUserId());
+                                            // 券类兑换项记下券变动量（正=获得），供后台算券的发放/消耗比；
+                                            // 非券类返回 null，表示这笔流水与券无关
+                                            record.setTickets(ticketDeltaOf(itemKey, cfg.ticketCount()));
                                             // 顺序要求：**先写幂等流水，成功后再改账户**。
                                             // 流水资源名由 earnKey 派生故唯一，并发兑换同一权益时
                                             // 只有一个 create 能成功；若先改账户，两个并发请求会读到
@@ -387,7 +433,8 @@ public class PointsServiceImpl implements PointsService {
                                                 .flatMap(saved -> {
                                                     // 拿到幂等位后才允许改账户：扣积分 + 按权益类型发券
                                                     account.setBalance(newBalance);
-                                                    applyTicketGrant(account, itemKey);
+                                                    applyTicketGrant(account, itemKey,
+                                                        cfg.ticketCount());
                                                     return persistence.saveAccount(account)
                                                         .thenReturn(PointsExchangeResponse.builder()
                                                             .item(itemKey)
@@ -450,13 +497,54 @@ public class PointsServiceImpl implements PointsService {
             .flatMap(items -> items.isEmpty()
                 ? legacyExchangeItems()
                 : Mono.just(items))
-            .switchIfEmpty(legacyExchangeItems());
+            .switchIfEmpty(legacyExchangeItems())
+            .flatMap(this::withBuiltInTicketItem);
     }
 
     private Mono<List<ExchangeItem>> legacyExchangeItems() {
         return settingFetcher.get(EXCHANGE_CONFIG_GROUP)
             .map(this::parseExchangeItems)
             .defaultIfEmpty(defaultExchangeItems());
+    }
+
+    /**
+     * 保证「兑换阅读券」这一项一定可用。
+     *
+     * <p>站长在「积分商城」里手工维护兑换项，很容易漏掉券——而券恰好是付费文章的
+     * 唯一免费入口。漏掉的结果是：未开通虚拟支付的站点上，用户完全没有任何途径
+     * 拿到券，付费文章形同锁死。因此当配置里没有 {@code content_ticket} 时，
+     * 由插件补一条内置项（定价取 ticketConfig.exchangePoints）。</p>
+     *
+     * <p>只在付费内容开启时补：付费墙关着的时候券没有任何用途，
+     * 补出来只会诱导用户把积分换成用不上的券。</p>
+     */
+    private Mono<List<ExchangeItem>> withBuiltInTicketItem(List<ExchangeItem> items) {
+        if (items.stream().anyMatch(item -> EXCHANGE_CONTENT_TICKET.equals(item.key()))) {
+            return Mono.just(items);
+        }
+        return settingFetcher.get(ContentTicketConfigHelper.groupName())
+            .map(ContentTicketConfigHelper::parse)
+            .defaultIfEmpty(ContentTicketConfigHelper.disabled())
+            .flatMap(contentConfig -> {
+                if (!Boolean.TRUE.equals(contentConfig.getEnabled())) {
+                    return Mono.just(items);
+                }
+                return ticketRewardService.loadConfig().map(ticketConfig -> {
+                    var merged = new ArrayList<>(items);
+                    var count = Math.max(1, ticketConfig.getExchangeTickets());
+                    merged.add(new ExchangeItem(EXCHANGE_CONTENT_TICKET,
+                        "阅读券 x" + count,
+                        Math.max(1, ticketConfig.getExchangePoints()),
+                        1,
+                        "兑换 " + count + " 张阅读券，用于解锁付费文章",
+                        count));
+                    return List.copyOf(merged);
+                });
+            })
+            .onErrorResume(ex -> {
+                log.warn("补内置阅读券兑换项失败（按原兑换项处理）：{}", ex.getMessage());
+                return Mono.just(items);
+            });
     }
 
     /** 解析 mallConfig.exchangeItems 数组（权益 repeater） */
@@ -469,9 +557,11 @@ public class PointsServiceImpl implements PointsService {
                 var points = itemNode.path("points").asInt(0);
                 var dailyMax = itemNode.path("dailyMaxCount").asInt(0);
                 var description = itemNode.path("description").asText("").trim();
+                var tickets = itemNode.path("tickets").asInt(EXCHANGE_TICKETS_FALLBACK);
                 if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
                     items.add(new ExchangeItem(key, name, points, dailyMax,
-                        StringUtils.hasText(description) ? description : name));
+                        StringUtils.hasText(description) ? description : name,
+                        tickets > 0 ? tickets : EXCHANGE_TICKETS_FALLBACK));
                 }
             });
         }
@@ -495,7 +585,8 @@ public class PointsServiceImpl implements PointsService {
                 var description = parts.length >= 5 ? parts[4].trim() : "";
                 if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
                     items.add(new ExchangeItem(key, name, points, dailyMax,
-                        StringUtils.hasText(description) ? description : name));
+                        StringUtils.hasText(description) ? description : name,
+                        EXCHANGE_TICKETS_FALLBACK));
                 }
             }
         } else {
@@ -508,9 +599,11 @@ public class PointsServiceImpl implements PointsService {
                     var points = itemNode.path("points").asInt(0);
                     var dailyMax = itemNode.path("dailyMaxCount").asInt(0);
                     var description = itemNode.path("description").asText("").trim();
+                    var tickets = itemNode.path("tickets").asInt(EXCHANGE_TICKETS_FALLBACK);
                     if (StringUtils.hasText(key) && StringUtils.hasText(name) && points > 0 && dailyMax > 0) {
                         items.add(new ExchangeItem(key, name, points, dailyMax,
-                            StringUtils.hasText(description) ? description : name));
+                            StringUtils.hasText(description) ? description : name,
+                            tickets > 0 ? tickets : EXCHANGE_TICKETS_FALLBACK));
                     }
                 });
             }
@@ -528,11 +621,17 @@ public class PointsServiceImpl implements PointsService {
 
     private static List<ExchangeItem> defaultExchangeItems() {
         return List.of(new ExchangeItem(EXCHANGE_DASHBOARD, "数据看板高级版", 30, 1,
-            "解锁当日数据看板高级版（30 日趋势与数据摘要导出）"));
+            "解锁当日数据看板高级版（30 日趋势与数据摘要导出）", EXCHANGE_TICKETS_FALLBACK));
     }
 
+    /**
+     * 兑换项。
+     *
+     * @param ticketCount 该兑换项每次发放的券张数，仅券类（content_ticket / publish_ticket）有意义；
+     *                    内置券兑换项由 {@link #withBuiltInTicketItem} 按 ticketConfig 补齐
+     */
     private record ExchangeItem(String key, String name, int points, int dailyMax,
-        String description) {
+        String description, int ticketCount) {
         boolean enabled() {
             return StringUtils.hasText(key) && points > 0 && dailyMax > 0;
         }
@@ -840,37 +939,102 @@ public class PointsServiceImpl implements PointsService {
             account.getConsecutiveDays(), today);
         var bonus = calcConsecutiveBonus(signInRule, consecutiveDays);
         var earned = basePoints + bonus;
-        if (earned <= 0) {
-            return Mono.error(new WxAuthException("签到积分未配置"));
-        }
-        return resolveWxUserId(openid, account)
-            .flatMap(wxUserId -> {
-                account.setBalance(safeBalance(account) + earned);
-                account.setConsecutiveDays(consecutiveDays);
-                account.setLastSignInDate(today);
-                if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
-                    account.setWxUserId(wxUserId);
+        return ticketRewardService.loadConfig()
+            .flatMap(ticketConfig -> {
+                var tickets = signInTicketCount(ticketConfig, consecutiveDays);
+                // 积分与券都为 0 才算「签到未配置」：只配了送券不送积分也是合法配置
+                if (earned <= 0 && tickets <= 0) {
+                    return Mono.error(new WxAuthException("签到奖励未配置"));
                 }
-                var description = bonus > 0
-                    ? String.format("连续签到 %d 天（含额外奖励 %d 分）", consecutiveDays, bonus)
-                    : String.format("连续签到 %d 天", consecutiveDays);
-                var record = PointsPersistence.newRecord(openid, PointsAction.SIGN_IN.value(), earned,
-                    account.getBalance(), description, null,
-                    buildEarnKey(openid, PointsAction.SIGN_IN.value(), today),
-                    wxUserId);
-                return persistence.saveAccount(account)
-                    .then(persistence.appendRecord(record))
-                    .then(sumTodayEarned(openid)
-                        .flatMap(todayEarned -> buildSignInStatus(account, openid)
-                            .map(status -> PointsEarnResponse.builder()
-                                .earned(earned)
-                                .balance(safeBalance(account))
-                                .todayEarned(todayEarned)
-                                .message("+" + earned + " 积分")
-                                .signedToday(true)
-                                .signInStatus(status)
-                                .build())));
+                return resolveWxUserId(openid, account)
+                    .flatMap(wxUserId -> {
+                        account.setBalance(safeBalance(account) + earned);
+                        account.setConsecutiveDays(consecutiveDays);
+                        account.setLastSignInDate(today);
+                        if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                            account.setWxUserId(wxUserId);
+                        }
+                        var description = signInDescription(consecutiveDays, bonus, tickets);
+                        // 即使积分为 0 也写流水：签到流水的 earnKey 是「今日是否已签到」的幂等锚点，
+                        // 少了它，只送券不送积分的配置下并发请求会重复发券
+                        var record = PointsPersistence.newRecord(openid, PointsAction.SIGN_IN.value(),
+                            earned, account.getBalance(), description, null,
+                            buildEarnKey(openid, PointsAction.SIGN_IN.value(), today), wxUserId);
+                        return persistence.saveAccount(account)
+                            .then(persistence.appendRecord(record))
+                            .then(grantSignInTickets(openid, ticketConfig, consecutiveDays, tickets,
+                                wxUserId))
+                            .then(sumTodayEarned(openid)
+                                .flatMap(todayEarned -> buildSignInStatus(account, openid)
+                                    .map(status -> PointsEarnResponse.builder()
+                                        .earned(earned)
+                                        .balance(safeBalance(account))
+                                        .todayEarned(todayEarned)
+                                        .tickets(tickets)
+                                        .message(earnMessage(earned, tickets))
+                                        .signedToday(true)
+                                        .signInStatus(status)
+                                        .build())));
+                    });
             });
+    }
+
+    /**
+     * 本次签到应发放的阅读券张数：每日基础 + 连签周期奖励。
+     *
+     * <p>连签奖励按「周期整除」结算（{@code consecutiveDays % streakDays == 0}），
+     * 因此连签 7/14/21 天各发一次，而不是只在第 7 天发一次——
+     * 后者会让坚持到第 8 天的用户觉得「奖励已经拿完了」，正好在养成习惯的节点上失去动力。</p>
+     */
+    static int signInTicketCount(TicketRewardConfigDTO config, int consecutiveDays) {
+        if (config == null) {
+            return 0;
+        }
+        var tickets = Math.max(0, config.getSignInTickets());
+        if (config.getStreakDays() > 0 && config.getStreakTickets() > 0 && consecutiveDays > 0
+            && consecutiveDays % config.getStreakDays() == 0) {
+            tickets += config.getStreakTickets();
+        }
+        return tickets;
+    }
+
+    /** 签到赠券：按天幂等（同一用户同一天只会成功写一条赠券流水）。 */
+    private Mono<Integer> grantSignInTickets(String openid, TicketRewardConfigDTO config,
+        int consecutiveDays, int totalTickets, String wxUserId) {
+        if (totalTickets <= 0) {
+            return Mono.just(0);
+        }
+        var streakHit = config.getStreakDays() > 0 && config.getStreakTickets() > 0
+            && consecutiveDays > 0 && consecutiveDays % config.getStreakDays() == 0;
+        var action = streakHit ? TicketRewardService.ACTION_STREAK : TicketRewardService.ACTION_SIGN_IN;
+        var description = streakHit
+            ? String.format("连签 %d 天 · 阅读券 x%d", consecutiveDays, totalTickets)
+            : "每日签到 · 阅读券 x" + totalTickets;
+        return ticketRewardService.grant(openid, totalTickets, action, description,
+            buildEarnKey(openid, action, today()), null, wxUserId);
+    }
+
+    /** 签到文案：券与积分分开说，避免用户看不出券是从哪来的。 */
+    private static String signInDescription(int consecutiveDays, int bonus, int tickets) {
+        var builder = new StringBuilder(String.format("连续签到 %d 天", consecutiveDays));
+        if (bonus > 0) {
+            builder.append(String.format("（含额外奖励 %d 分）", bonus));
+        }
+        if (tickets > 0) {
+            builder.append(String.format("，赠阅读券 %d 张", tickets));
+        }
+        return builder.toString();
+    }
+
+    /** 提示语：只发券不发积分时不能显示「+0 积分」。 */
+    private static String earnMessage(int earned, int tickets) {
+        if (earned > 0 && tickets > 0) {
+            return "+" + earned + " 积分 +" + tickets + " 张阅读券";
+        }
+        if (tickets > 0) {
+            return "+" + tickets + " 张阅读券";
+        }
+        return "+" + earned + " 积分";
     }
 
     private Mono<PointsEarnResponse> buildDuplicateEarnResponse(String openid) {
@@ -1222,15 +1386,34 @@ public class PointsServiceImpl implements PointsService {
      * <p>调用时机必须在幂等流水写入成功之后，与扣积分在同一次 saveAccount 内完成，
      * 保证「扣积分」与「发券」要么都成功、要么都不发生。</p>
      */
-    private static void applyTicketGrant(UserPoints account, String itemKey) {
+    /**
+     * 券类兑换项的券变动量（正=获得）；非券类返回 null（表示这笔流水与券无关）。
+     *
+     * <p>与 {@link #applyTicketGrant} 用同一套判定，避免「实际发了券但流水没记」
+     * 导致后台的券发放合计偏小、把经营判断带偏。</p>
+     */
+    private static Integer ticketDeltaOf(String itemKey, int ticketCount) {
+        if (!StringUtils.hasText(itemKey)) {
+            return null;
+        }
+        var key = itemKey.trim().toLowerCase();
+        if (EXCHANGE_CONTENT_TICKET.equals(key) || EXCHANGE_PUBLISH_TICKET.equals(key)) {
+            return ticketCount > 0 ? ticketCount : EXCHANGE_TICKETS_FALLBACK;
+        }
+        return null;
+    }
+
+    private static void applyTicketGrant(UserPoints account, String itemKey, int ticketCount) {
         if (account == null || !StringUtils.hasText(itemKey)) {
             return;
         }
+        // 张数兜底为 1：配成 0 会让兑换项「扣了积分却不发券」，是实打实的资损
+        var count = ticketCount > 0 ? ticketCount : EXCHANGE_TICKETS_FALLBACK;
         switch (itemKey.trim().toLowerCase()) {
             case EXCHANGE_PUBLISH_TICKET -> account.setPublishTickets(
-                safeTickets(account.getPublishTickets()) + TICKETS_PER_EXCHANGE);
+                safeTickets(account.getPublishTickets()) + count);
             case EXCHANGE_CONTENT_TICKET -> account.setContentTickets(
-                safeTickets(account.getContentTickets()) + TICKETS_PER_EXCHANGE);
+                safeTickets(account.getContentTickets()) + count);
             default -> {
                 // 其余兑换项（如看板高级版）靠流水判定生效，不改账户字段
             }

@@ -3,6 +3,8 @@ package pro.uhalo.uni.dto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+
+import java.util.List;
 import lombok.NoArgsConstructor;
 
 /**
@@ -29,4 +31,15 @@ public class DigestPostPayloadDTO {
     private String markdown;
 
     private String cover;
+
+    /**
+     * 这篇文章的 AI 分类（{@code ai-ml} / {@code security} …）。
+     *
+     * <p>必须随载荷一起带上：发布阶段原本拿不到它，于是「逐篇发布」时每篇文章
+     * 只能共用站长手填的那一组分类，机器判定的分类在打包那一刻就丢了。</p>
+     */
+    private List<String> aiCategories;
+
+    /** 这篇文章的 AI 关键词（已按整轮频次门槛筛过，用来打标签） */
+    private List<String> keywords;
 }

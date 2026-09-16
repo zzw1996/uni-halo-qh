@@ -14,6 +14,7 @@ import pro.uhalo.uni.dto.HaloPostPublishResultDTO;
 import pro.uhalo.uni.services.DigestHaloClient;
 import pro.uhalo.uni.services.DigestMarkdownRenderer;
 import pro.uhalo.uni.services.DigestPostWriter;
+import pro.uhalo.uni.services.DigestTaxonomyService;
 import pro.uhalo.uni.services.HaloPostPublisher;
 import pro.uhalo.uni.utils.DigestConfigHelper;
 import reactor.core.publisher.Flux;
@@ -66,12 +67,15 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
     private final DigestHaloClient haloClient;
     private final DigestMarkdownRenderer markdownRenderer;
     private final DigestPostWriter postWriter;
+    private final DigestTaxonomyService taxonomy;
 
     public HaloPostPublisherImpl(DigestHaloClient haloClient,
-        DigestMarkdownRenderer markdownRenderer, DigestPostWriter postWriter) {
+        DigestMarkdownRenderer markdownRenderer, DigestPostWriter postWriter,
+        DigestTaxonomyService taxonomy) {
         this.haloClient = haloClient;
         this.markdownRenderer = markdownRenderer;
         this.postWriter = postWriter;
+        this.taxonomy = taxonomy;
     }
 
     @Override
@@ -333,26 +337,51 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
         var categories = DigestConfigHelper.splitNames(config.getPostCategories());
         var tags = DigestConfigHelper.splitNames(config.getPostTags());
         return Mono.zip(
-                resolveNames(Constants.HALO_CONTENT_CATEGORIES_API, categories),
-                resolveNames(Constants.HALO_CONTENT_TAGS_API, tags))
+                taxonomy.resolveExistingCategories(categories),
+                taxonomy.resolveExistingTags(tags))
             .map(tuple -> List.of(
-                refItem("文章分类", categories, tuple.getT1()),
-                refItem("文章标签", tags, tuple.getT2())))
+                refItem("额外附加分类", categories, tuple.getT1()),
+                refItem("额外附加标签", tags, tuple.getT2()),
+                autoRefItem(config)))
             .defaultIfEmpty(List.of());
+    }
+
+    /**
+     * 自动打标的说明项。
+     *
+     * <p>早前自检会告诉你「哪些名字匹配不到、发布时会被忽略」，言下之意是「你得先去后台把
+     * 分类标签建好」。现在主题分类与关键词标签由插件自动创建，无需预建——自检要把这层
+     * 变化讲清楚，否则站长还会以为要手工配。</p>
+     */
+    private static DigestPreflightItemDTO autoRefItem(DigestConfigDTO config) {
+        var parts = new ArrayList<String>();
+        if (config.isAutoCategoryEnabled()) {
+            parts.add("按文章主题自动归入站点分类（不存在则创建）");
+        }
+        if (config.isAutoTagEnabled()) {
+            parts.add("把一轮里出现 ≥" + config.getAutoTagMinCount() + " 次的关键词建成标签");
+        }
+        if (parts.isEmpty()) {
+            return preflightItem("自动分类/标签", true, "已关闭，文章只会带上你填的额外附加项");
+        }
+        return preflightItem("自动分类/标签", true, "已开启：" + String.join("；", parts)
+            + "。自动建出来的分类/标签带 " + DigestTaxonomyService.AUTO_GENERATED_LABEL
+            + " 标签，便于在后台区分。");
     }
 
     private static DigestPreflightItemDTO refItem(String label, List<String> wanted,
         List<String> matched) {
         if (wanted.isEmpty()) {
-            return preflightItem(label, true, "未配置，发布时不会设置" + label.replace("文章", ""));
+            return preflightItem(label, true, "未填写（可不填：自动分类已覆盖常见场景）");
         }
         if (matched.size() == wanted.size()) {
             return preflightItem(label, true, "全部匹配：" + String.join("、", matched));
         }
         var missing = wanted.stream().filter(name -> !matched.contains(name)).toList();
-        // 匹配不到只会被忽略，不影响发布成功，因此仍算通过但要提醒
+        // 手填的名字匹配不到只会被忽略，不影响发布成功，因此仍算通过但要提醒
         return preflightItem(label, true, "匹配到 " + matched.size() + "/" + wanted.size()
-            + "，未匹配的会被忽略：" + String.join("、", missing));
+            + "，未匹配的会被忽略（手填项不会自动创建，避免笔误造出分类）："
+            + String.join("、", missing));
     }
 
     private static DigestPreflightItemDTO preflightItem(String item, boolean ok, String message) {
@@ -700,10 +729,33 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
 
     // ── 分类 / 标签解析 ──
 
+    /**
+     * 解析分类与标签。
+     *
+     * <p>这里统一交给 {@link DigestTaxonomyService}，两条发布路径（本类的 HTTP 路径与
+     * {@code DigestPostWriter} 的扩展客户端路径）共用同一套逻辑——
+     * 否则会出现「一边把分类建出来了、另一边还在静默忽略」的分裂行为。</p>
+     *
+     * <p>两类名字的处理方式刻意不同：手填的「额外附加」只匹配已有（手误不该造出分类），
+     * 而 AI 判定出来的分类与关键词会<b>不存在则自动创建</b>，这才是「不需要站长手工配置」。</p>
+     */
     private Mono<ResolvedRefs> resolveRefs(HaloPostPublishDTO post) {
-        return resolveNames(Constants.HALO_CONTENT_CATEGORIES_API, post.getCategoryNames())
-            .zipWith(resolveNames(Constants.HALO_CONTENT_TAGS_API, post.getTagNames()))
+        return Mono.zip(
+                merge(taxonomy.resolveExistingCategories(post.getCategoryNames()),
+                    taxonomy.resolveOrCreateCategories(post.getAiCategories())),
+                merge(taxonomy.resolveExistingTags(post.getTagNames()),
+                    taxonomy.resolveOrCreateTags(post.getKeywords())))
             .map(tuple -> new ResolvedRefs(tuple.getT1(), tuple.getT2()));
+    }
+
+    /** 合并两类来源的分类/标签名：去重并保持先后顺序 */
+    private static Mono<List<String>> merge(Mono<List<String>> manual, Mono<List<String>> auto) {
+        return manual.zipWith(auto).map(tuple -> {
+            var merged = new java.util.LinkedHashSet<String>();
+            merged.addAll(tuple.getT1());
+            merged.addAll(tuple.getT2());
+            return List.copyOf(merged);
+        });
     }
 
     /**

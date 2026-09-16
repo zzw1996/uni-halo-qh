@@ -50,7 +50,7 @@
 
     <div v-if="progressText" class="table-card">
       <div class="progress-head">
-        <span class="progress-title">{{ overview?.progress?.running ? "⏳ 进行中" : "✅ 已完成" }}</span>
+        <span class="progress-title">{{ progressTitle }}</span>
         <span class="progress-text">{{ progressText }}</span>
       </div>
       <div class="progress-bar">
@@ -80,6 +80,91 @@
       <p class="preflight-tip">
         自检只读取信息、不会发布任何内容；不通过的项按提示改完再点「发布」。
       </p>
+    </div>
+
+    <!--
+      AI 文章归类：只服务插件自己发布的日报文章。
+      你自己写的文章不在这里分析（你归好的类机器不该重判），
+      这里要做的只是把「发布时漏掉分类的那批 AI 文章」补齐。
+    -->
+    <div class="table-card">
+      <div class="classify-head">
+        <div class="classify-title-box">
+          <span class="classify-title">🗂 AI 文章归类</span>
+          <span class="classify-summary">{{ classifySummary }}</span>
+        </div>
+        <div class="classify-ops">
+          <button class="btn-ghost" :disabled="busy || classifyLoading" @click="loadClassifyStatus">
+            刷新统计
+          </button>
+          <button
+            class="btn-primary"
+            :disabled="busy || classifyLoading || !canPreview"
+            :title="previewHint"
+            @click="previewClassify"
+          >
+            {{ classifyLoading ? "分析中…" : `🤖 分析下一批（${classifyStatus?.batchSize || 15} 篇）` }}
+          </button>
+        </div>
+      </div>
+
+      <p class="classify-hint" :class="{ 'hint-bad': classifyBlocked }">{{ classifyHint }}</p>
+
+      <div v-if="classifyItems.length" class="classify-body">
+        <div class="classify-bar">
+          <label class="classify-check">
+            <input type="checkbox" :checked="allAdopted" @change="toggleAllAdopt" />
+            全选（已勾选 {{ adoptedCount }} 篇）
+          </label>
+          <button class="btn-primary" :disabled="busy || !adoptedCount" @click="applyClassify">
+            应用到勾选的 {{ adoptedCount }} 篇
+          </button>
+        </div>
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>采纳</th>
+              <th>文章</th>
+              <th>现有分类</th>
+              <th>建议主题</th>
+              <th>建议标签</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(item, idx) in classifyItems" :key="item.name || idx">
+              <td><input v-model="item.adopted" type="checkbox" /></td>
+              <td class="classify-post">{{ item.title || "（无标题）" }}</td>
+              <td>{{ (item.categories || []).join("、") || "—" }}</td>
+              <td>
+                <span v-if="item.suggestedCategoryLabel" class="pill pill-ok">
+                  {{ item.suggestedCategoryLabel }}
+                </span>
+                <span v-else class="mono">—</span>
+              </td>
+              <td>{{ (item.suggestedKeywords || []).join("、") || "—" }}</td>
+              <td class="classify-note">{{ item.note || "—" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="classifyResult" class="classify-result">
+        <div class="post-list-title">{{ classifyResult.message }}</div>
+        <div
+          v-for="(item, idx) in classifyResult.items || []"
+          :key="item.name || idx"
+          class="post-item"
+        >
+          <span class="pill" :class="classifyStateClass(item.state)">
+            {{ classifyStateText(item.state) }}
+          </span>
+          <span>{{ item.title || item.name }}</span>
+          <span v-if="item.category" class="mono">分类：{{ item.category }}</span>
+          <span v-if="(item.tags || []).length" class="mono">标签：{{ (item.tags || []).join("、") }}</span>
+          <span v-if="item.message" class="post-msg">{{ item.message }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="table-card">
@@ -130,6 +215,14 @@
                 @click="republish(item.name)"
               >
                 {{ publishActionLabel(item) }}
+              </button>
+              <button
+                class="btn-link btn-link-danger"
+                :disabled="busy || item.status === 'RUNNING'"
+                title="删除这条运行记录（只删记录，已发布的文章不受影响）"
+                @click="removeReport(item)"
+              >
+                删除
               </button>
             </td>
           </tr>
@@ -234,7 +327,32 @@ interface DigestProgress {
   updatedAt: string | null;
 }
 
-const { apiGet, apiPost } = useConsoleApi();
+interface ClassifyStatus {
+  digestPosts: number;
+  classifiedPosts: number;
+  pendingPosts: number;
+  batchSize: number;
+  aiReady: boolean;
+  autoCategoryEnabled: boolean;
+  autoTagEnabled: boolean;
+}
+
+interface ClassifyCandidate {
+  name: string;
+  title: string | null;
+  excerpt: string | null;
+  categories: string[] | null;
+  tags: string[] | null;
+  publishTime: string | null;
+  suggestedCategory: string | null;
+  suggestedCategoryLabel: string | null;
+  suggestedKeywords: string[] | null;
+  note: string | null;
+  /** 页面上勾选状态：默认勾选「AI 给出了建议」的那些 */
+  adopted: boolean;
+}
+
+const { apiGet, apiPost, apiDelete } = useConsoleApi();
 
 const overview = ref<DigestOverview | null>(null);
 const history = ref<DigestSummary[]>([]);
@@ -244,6 +362,11 @@ const loading = ref(false);
 const busy = ref(false);
 const error = ref("");
 const tip = ref("定时执行依赖服务器出网能力；正文较长时发布可能需要几分钟才会确认完成");
+
+const classifyStatus = ref<ClassifyStatus | null>(null);
+const classifyItems = ref<ClassifyCandidate[]>([]);
+const classifyResult = ref<any>(null);
+const classifyLoading = ref(false);
 
 let timer: number | undefined;
 /** 触发生成/发布后的自动刷新截止时间：后台任务在跑，但 running 标记可能还没翻过来 */
@@ -275,6 +398,19 @@ const lastReportSub = computed(() => {
   return parts.join(" · ");
 });
 
+/**
+ * 进度标题。
+ *
+ * <p>必须区分三种状态：原先只判断 running，于是失败时标题仍是「进行中」，
+ * 而旁边的说明文字写着失败原因——自相矛盾，也让人以为任务卡死了。</p>
+ */
+const progressTitle = computed(() => {
+  const progress = overview.value?.progress;
+  if (!progress) return "";
+  if (progress.running) return "⏳ 进行中";
+  return progress.stage === "FAILED" ? "❌ 生成失败" : "✅ 已完成";
+});
+
 const progressText = computed(() => {
   const progress = overview.value?.progress;
   if (!progress?.message) return "";
@@ -285,6 +421,148 @@ const progressText = computed(() => {
   }
   return progress.message;
 });
+
+// ── 旧文章归类 ──
+
+const classifySummary = computed(() => {
+  const status = classifyStatus.value;
+  if (!status) return "读取中…";
+  if (status.digestPosts === 0) return "还没有 AI 日报生成的文章";
+  return `AI 日报文章 ${status.digestPosts} 篇，已归类 ${status.classifiedPosts} 篇，还剩 ${status.pendingPosts} 篇未归类`;
+});
+
+/** 归类能不能用：没配密钥、开关关着、已经归完，三种情况各说各的原因 */
+const classifyBlocked = computed(() => {
+  const status = classifyStatus.value;
+  if (!status) return false;
+  return !status.aiReady || !status.autoCategoryEnabled || !status.autoTagEnabled;
+});
+
+const classifyHint = computed(() => {
+  const status = classifyStatus.value;
+  if (!status) return "读取归类进度中…";
+  if (!status.aiReady) {
+    return "还没配置 AI 接口密钥（插件设置 - AI 日报 - API Key），配置后才能判定文章主题";
+  }
+  if (!status.autoCategoryEnabled || !status.autoTagEnabled) {
+    return "插件设置里关闭了「自动分类 / 自动打标」，这里不会给出建议。想用归类就先在 "
+      + "「插件设置 - AI 日报 - 发布」里把这两项打开。";
+  }
+  if (status.pendingPosts === 0) {
+    return "AI 日报生成的文章都已有分类，没有需要补的文章了";
+  }
+  return "只分析 AI 日报生成、且一篇分类都没有的文章；你自己写的文章、"
+    + "以及已经归好类的文章都不会出现在下面的清单里。"
+    + "分析只花 AI 调用、不改任何文章，勾选采纳后再点「应用」才落库。";
+});
+
+const previewHint = computed(() => {
+  if (!classifyStatus.value?.aiReady) return "请先在插件设置里配置 AI 接口密钥";
+  if (!classifyStatus.value?.pendingPosts) return "没有需要补分类的 AI 文章了";
+  return "让 AI 判定下一批待归类 AI 文章属于哪个主题（只给建议，不改文章）";
+});
+
+const adoptedCount = computed(() => classifyItems.value.filter((item) => item.adopted).length);
+
+const allAdopted = computed(
+  () => classifyItems.value.length > 0 && classifyItems.value.every((item) => item.adopted)
+);
+
+const canPreview = computed(
+  () => !!classifyStatus.value?.aiReady
+    && (classifyStatus.value?.pendingPosts ?? 0) > 0
+    && !!classifyStatus.value?.autoCategoryEnabled
+);
+
+function toggleAllAdopt(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  classifyItems.value.forEach((item) => {
+    item.adopted = checked;
+  });
+}
+
+function classifyStateClass(state: string): string {
+  if (state === "APPLIED") return "pill-ok";
+  return state === "FAILED" ? "pill-bad" : "pill-idle";
+}
+
+function classifyStateText(state: string): string {
+  if (state === "APPLIED") return "已归类";
+  return state === "FAILED" ? "失败" : "跳过";
+}
+
+async function loadClassifyStatus() {
+  try {
+    classifyStatus.value = (await apiGet("/digest/classify/status")) as ClassifyStatus;
+  } catch (err: any) {
+    // 归类统计取不到不该影响整页（运行历史仍然可用），只在提示条里说一声
+    tip.value = err?.message ? `归类进度读取失败：${err.message}` : "归类进度读取失败";
+  }
+}
+
+/** 分析下一批：只预览不写库 */
+async function previewClassify() {
+  classifyLoading.value = true;
+  error.value = "";
+  classifyResult.value = null;
+  try {
+    const batchSize = classifyStatus.value?.batchSize || 15;
+    const result: any = await apiPost(`/digest/classify/preview?limit=${batchSize}`, {});
+    // 默认只勾选「AI 确实给出了建议」的那些：判不出来的留给站长自己看
+    classifyItems.value = (result?.items || []).map((item: any) => ({
+      ...item,
+      adopted: !!(item.suggestedCategory || (item.suggestedKeywords || []).length),
+    }));
+    tip.value = result?.message || "";
+    await loadClassifyStatus();
+  } catch (err: any) {
+    error.value = err?.message || "分析失败";
+  } finally {
+    classifyLoading.value = false;
+  }
+}
+
+/** 应用勾选的建议：这是唯一会写文章的步骤，所以先确认 */
+async function applyClassify() {
+  const adopted = classifyItems.value.filter((item) => item.adopted);
+  if (!adopted.length) {
+    tip.value = "还没有勾选任何条目";
+    return;
+  }
+  const names = adopted
+    .map((item) => item.title || item.name)
+    .slice(0, 8)
+    .join("、");
+  const confirmed = window.confirm(
+    `将给 ${adopted.length} 篇文章追加分类/标签：
+${names}${adopted.length > 8 ? " 等" : ""}
+
+只追加，不影响文章原有的分类标签、标题与正文。确认应用？`
+  );
+  if (!confirmed) {
+    tip.value = "已取消，未改动任何文章";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  try {
+    const result: any = await apiPost("/digest/classify/apply", {
+      items: adopted.map((item) => ({
+        name: item.name,
+        category: item.suggestedCategory || "",
+        keywords: item.suggestedKeywords || [],
+      })),
+    });
+    classifyResult.value = result;
+    classifyItems.value = [];
+    tip.value = result?.message || "已应用";
+    await loadClassifyStatus();
+  } catch (err: any) {
+    error.value = err?.message || "应用失败";
+  } finally {
+    busy.value = false;
+  }
+}
 
 const progressDone = computed(() => overview.value?.progress?.done ?? 0);
 
@@ -445,6 +723,31 @@ ${names}
   }
 }
 
+/** 删除一条运行记录（只删记录，不动已发布的文章） */
+async function removeReport(item: DigestSummary) {
+  const label = `${item.date} ${triggerText(item.slot)}`;
+  if (!window.confirm(`确认删除这条运行记录？
+${label}
+
+只删除记录，已经发布的文章不受影响。`)) {
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  try {
+    await apiDelete(`/digest/reports/${item.name}`);
+    if (detail.value?.summary?.name === item.name) {
+      detail.value = null;
+    }
+    tip.value = `已删除运行记录：${label}`;
+  } catch (err: any) {
+    error.value = err?.message || "删除失败";
+  } finally {
+    busy.value = false;
+    await load();
+  }
+}
+
 async function runPreflight() {
   busy.value = true;
   error.value = "";
@@ -479,6 +782,8 @@ async function load() {
     if (overview.value?.enabled === false) {
       tip.value = "AI 日报当前是关闭状态，请到「插件设置 - AI 日报」中开启后再生成";
     }
+    // 归类统计与运行历史一起读：两者是同一页面的两块信息，分开刷新反而容易出现"历史变了、进度没变"
+    await loadClassifyStatus();
   } catch (err: any) {
     error.value = err?.message || "加载失败";
   } finally {
@@ -567,6 +872,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary { background: linear-gradient(90deg, #5b6ee8, #7d57e0); color: #fff; }
 .btn-ghost { background: #eef1fb; color: #4c5480; }
 .btn-link { background: none; color: #5b6ee8; padding: 2px 6px; font-size: 12.5px; }
+/* 自定义类名：Halo 控制台全局有 .btn-danger，会把它渲染成红色实心按钮 */
+.btn-link-danger { color: #d94a4a; }
 
 .error-banner { background: #ffefef; color: #e05555; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 13px; }
 
@@ -623,4 +930,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .msg-bad { color: #d94a4a; }
 .preflight-tip { padding: 0 14px 12px; font-size: 12px; color: #9aa1b5; }
 .markdown-view { flex: 1; margin: 0; background: #fbfcff; border: 1px solid #eef1fb; border-radius: 10px; padding: 14px; font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: #3c4160; }
+
+/* 旧文章归类 */
+.classify-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 0; flex-wrap: wrap; }
+.classify-title-box { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.classify-title { font-size: 14px; font-weight: 700; color: #3c4160; }
+.classify-summary { font-size: 12.5px; color: #6b7290; }
+.classify-ops { display: flex; gap: 8px; }
+.classify-hint { padding: 6px 14px 0; margin: 0; font-size: 12px; color: #9aa1b5; line-height: 1.6; }
+.hint-bad { color: #d1851a; }
+.classify-body { padding-top: 10px; }
+.classify-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px 10px; flex-wrap: wrap; }
+.classify-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #4c5480; cursor: pointer; }
+.classify-check input { cursor: pointer; }
+.classify-post { max-width: 300px; }
+.classify-note { max-width: 260px; color: #b0b5c0; font-size: 12px; }
+.classify-result { padding: 4px 14px 14px; }
 </style>

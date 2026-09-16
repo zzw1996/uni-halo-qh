@@ -13,6 +13,9 @@ public class ClaimDailyTaskResponse {
     /** 本次获得积分（已领取时为 0） */
     private int earned;
 
+    /** 本次同时获得的阅读券张数（0 = 无） */
+    private int tickets;
+
     private long balance;
 
     private String message;

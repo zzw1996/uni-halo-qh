@@ -41,6 +41,10 @@ public class DigestPersistence {
         return client.fetch(DigestReport.class, name);
     }
 
+    public Mono<DigestReport> delete(DigestReport report) {
+        return client.delete(report);
+    }
+
     /** 某一天的全部运行记录（一天可能有多条：多个触发时段 + 手动重跑） */
     public Mono<List<DigestReport>> listByDate(String date) {
         var listOptions = new ListOptions();
@@ -82,6 +86,8 @@ public class DigestPersistence {
         report.setStatus("RUNNING");
         report.setPublishState("PENDING");
         report.setStartedAt(Instant.now());
+        // 新建即第 1 次尝试；后续重试在同一记录上累加
+        report.setAttempts(1);
         var metadata = new Metadata();
         metadata.setName(resourceName(date, slot));
         metadata.setCreationTimestamp(Instant.now());

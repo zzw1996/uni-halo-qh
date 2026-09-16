@@ -68,6 +68,15 @@ public class DigestConfigDTO {
     @Builder.Default
     private boolean imageEnabled = true;
 
+    /**
+     * 只发布带封面图的文章。
+     *
+     * <p>开启后，没配到头图（或头图上传失败）的文章不会进入成稿与发布，
+     * 由后续名次的文章补位；全部都没图时本轮直接失败并给出原因，不发无图文章。</p>
+     */
+    @Builder.Default
+    private boolean requireImage = true;
+
     /** 附件策略名，留空则复用「应用配置」里的 appConfig.appInfo.policyName */
     @Builder.Default
     private String attachmentPolicyName = "";
@@ -111,9 +120,31 @@ public class DigestConfigDTO {
     @Builder.Default
     private String postTitleTemplate = "AI 日报 · {date}";
 
-    /** 文章分类名（逗号分隔，按 displayName 或 name 匹配，匹配不到的忽略） */
+    /**
+     * 额外附加的分类名（逗号分隔，按 displayName 或 name 匹配，匹配不到的忽略）。
+     *
+     * <p>自动分类上线后这一项基本用不上了：每篇文章的 AI 分类会自动落到站点分类上。
+     * 保留它是为了需要时再钉一个固定分类（例如「AI 日报」）。</p>
+     */
     @Builder.Default
     private String postCategories = "";
+
+    /** 自动按 AI 分类打标（不存在则创建站点分类） */
+    @Builder.Default
+    private boolean autoCategoryEnabled = true;
+
+    /** 自动按 AI 关键词打标签（不存在则创建站点标签） */
+    @Builder.Default
+    private boolean autoTagEnabled = true;
+
+    /**
+     * 建标签的关键词频次门槛。
+     *
+     * <p>一轮里至少有多少篇文章提到这个词，才值得为它建一个标签。
+     * 默认 2：否则一轮就能造出十几个只出现一次的标签，标签墙很快没法看。</p>
+     */
+    @Builder.Default
+    private int autoTagMinCount = 2;
 
     /** 文章标签名（逗号分隔，按 displayName 或 name 匹配，匹配不到的忽略） */
     @Builder.Default

@@ -189,6 +189,8 @@ public final class LevelConfigHelper {
                     .key(key).name(name).type(type).points(points)
                     .durationDays(Math.max(0, item.path("durationDays").asInt(0)))
                     .style(item.path("style").asText(""))
+                    // 消费门槛：负数按无门槛处理，避免误填 -1 变成「永远不可兑换」
+                    .minSpend(Math.max(0, item.path("minSpend").asInt(0)))
                     .build());
             }
         });

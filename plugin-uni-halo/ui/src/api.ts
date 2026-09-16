@@ -33,6 +33,8 @@ export function useConsoleApi() {
     }
     const res = await fetch(url, {
       method,
+      // 管理页面的列表要实时：禁用浏览器缓存，否则删完/发完看到的还是旧数据
+      cache: "no-store",
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body ? { "Content-Type": "application/json" } : {}),

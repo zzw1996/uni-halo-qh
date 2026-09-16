@@ -883,8 +883,14 @@ spec:
               name: points
               label: 奖励积分
               value: 10
-              min: 1
-              validation: required
+              min: 0
+              help: 可为 0（表示只送阅读券不送积分）。「奖励积分」与「奖励阅读券」至少填一个，两者都为 0 的任务不会下发。
+            - $formkit: number
+              name: tickets
+              label: 奖励阅读券张数
+              value: 0
+              min: 0
+              help: 完成该任务额外赠送的阅读券张数，填 0 表示不送券。这是比「签到送券」更可控的赠券方式——按完成次数结算，力度天然受限，建议优先用它把券送给真正活跃的用户。
             - $formkit: switch
               name: enabled
               label: 启用该任务
@@ -903,7 +909,13 @@ spec:
               points: 30
               dailyMaxCount: 1
               description: 解锁当日数据看板高级版（30 日趋势与数据摘要导出）
-          help: 积分仅限站内权益兑换；key 唯一，功能页按 key 判断是否已开通。每日可兑次数受 dailyMaxCount 限制。
+            - key: content_ticket
+              name: 阅读券 x1
+              points: 30
+              dailyMaxCount: 1
+              tickets: 1
+              description: 兑换 1 张阅读券，用于解锁付费文章
+          help: 积分仅限站内权益兑换；key 唯一，功能页按 key 判断是否已开通。每日可兑次数受 dailyMaxCount 限制。<br /><b>阅读券</b>：key 填 content_ticket 即成为「用积分换券」的入口（发放张数由本项的「每次发放阅读券张数」或「阅读券获取 → 积分兑换每次发放张数」决定）。<b>删掉这一项也不会让券失去入口</b>：只要「付费内容」是开启的，插件会自动补一条内置的阅读券兑换项，定价取「阅读券获取 → 积分兑换默认定价」。
           children:
             - $formkit: text
               name: key
@@ -931,6 +943,12 @@ spec:
               name: description
               label: 权益说明（前端展示）
               value: ""
+            - $formkit: number
+              name: tickets
+              label: 每次发放阅读券张数（仅 key=content_ticket 时有效）
+              value: 1
+              min: 1
+              help: 仅当「权益 key」填 content_ticket 时生效。留空或填 0 时会回落到「阅读券获取 → 积分兑换每次发放张数」。
         - $formkit: switch
           name: luckyEnabled
           label: 开启幸运礼盒（抽奖）
@@ -1208,6 +1226,12 @@ spec:
               name: style
               label: 样式值（头像框填 gold/rainbow/silver；昵称前缀填前缀文本；主题填主题名）
               value: ""
+            - $formkit: number
+              name: minSpend
+              label: 累计消费门槛（元，0=无门槛）
+              value: 0
+              min: 0
+              help: 填 0 为普通装扮（谁都能用积分兑换）；大于 0 时该装扮变成「消费回馈限定款」——只有在本站累计消费达到该金额的用户才能兑换。这是消费里程碑的载体：用户为了凑门槛会主动多买，而限定装扮在评论区、榜单、我的页、身份中心都会展示，戴着它等于替站点做宣传。<br />注意单位为「元」，与「虚拟支付」里道具价格的「分」不同（填 30 就是消费满 30 元）。只统计已到账订单，待支付与需退款的不计。
     - group: inviteConfig
       label: 邀请奖励
       formSchema:
@@ -1309,14 +1333,58 @@ spec:
                   label: 阅读券（解锁付费文章）
                 - value: outfit
                   label: 装扮（在身份中心穿戴）
+                - value: membership
+                  label: 会员卡（单次购买的有效期权益）
+                - value: bundle
+                  label: 套餐（一条商品含多种权益）
               validation: required
-              help: 仅限以上两种权益直购类型，不支持积分充值。数据看板高级版已改为纯积分兑换权益（见「积分商城」分组）；发布券已下架——普通用户当前不能发表瞬间（仅博主可发），该券没有消费点，卖出去用户也用不上，故不再作为付费道具售卖；类型非法或缺失的商品不会下发。
+              help: 仅限以上权益直购类型，不支持积分充值。数据看板高级版已改为纯积分兑换权益（见「积分商城」分组）；发布券已下架——普通用户当前不能发表瞬间（仅博主可发），该券没有消费点，卖出去用户也用不上，故不再作为付费道具售卖；类型非法或缺失的商品不会下发。<br /><b>membership</b>：需先在「会员卡」分组开启会员，道具数量填天数（会员期内付费文章免券）。<br /><b>bundle</b>：在下方「套餐子项」里配置包含的权益，子项会逐个发放；套餐里的装扮子项与单卖装扮走同一套校验（未登记或已拥有都会拒绝下单，避免付了套餐钱却产生退款纠纷）。
             - $formkit: number
               name: value
               label: 道具数量
               value: 1
               min: 1
-              help: 类型为「阅读券」时表示发放的券张数（如买 5 张阅读券填 5）；装扮类型保持 1 即可。
+              help: 阅读券 = 发放的券张数（如买 5 张填 5）；会员卡 = 会员天数；装扮保持 1 即可。某条商品配了「套餐子项」时会忽略本字段（以子项配置为准）。
+            - $formkit: repeater
+              name: items
+              label: 套餐子项（仅类型为「套餐」时填写）
+              value: []
+              help: 仅当道具类型选「套餐」时生效。每个子项是一项权益，发货时按顺序逐个发放，各自独立幂等（中途失败重试不会重复发放已成功的子项）。<b>子项里的装扮必须填装扮 key</b>，且用户已拥有该装扮时会拒绝整单下单——避免用户付了套餐钱、装扮那部分变成退款纠纷。同一装扮在一份套餐里不要重复配置。注意：套餐子项不支持嵌套套餐，也不支持积分充值。
+              children:
+                - $formkit: select
+                  name: type
+                  label: 权益类型
+                  value: content_ticket
+                  options:
+                    - value: content_ticket
+                      label: 阅读券
+                    - value: outfit
+                      label: 装扮
+                    - value: membership
+                      label: 会员天数
+                  validation: required
+                - $formkit: number
+                  name: value
+                  label: 数量（券张数 / 会员天数）
+                  value: 1
+                  min: 1
+                  help: 装扮子项固定为 1，填其他值会被忽略。
+                - $formkit: text
+                  name: style
+                  label: 装扮 key（子项为装扮时必填）
+                  value: ""
+                  help: 填装扮商店里的 key（如 avatar_gold），不是样式值。
+            - $formkit: number
+              name: originalPrice
+              label: 划线原价（单位：分，可留空）
+              value: 0
+              min: 0
+              help: 仅用于促销展示（例如现价 600 分、原价 3000 分，界面显示「￥30.0 <s>￥6.0</s>」）。<b>不参与任何计算</b>：实际售价始终是上面的「单价」，必须与 MP 后台一致。原价必须高于现价，否则会被忽略（避免出现「现价 6 元、原价 5 元」这种明显错误）。请填真实的历史价格，虚构原价违反价格标示要求。
+            - $formkit: datetime-local
+              name: promoEndsAt
+              label: 限时截止时间（可留空）
+              value: ""
+              help: 直接点选日期与时间即可（按你所在时区理解，无需换算时间戳）。填写后小程序会显示「限时特价」标记与倒计时，到期自动隐藏划线价与倒计时。<br /><b>留空 = 没有活动。</b>只填日期不填时间时按当天 23:59 截止。注意：这里只影响「划线原价 + 倒计时」的展示，<b>实际售价始终是上面的「单价」</b>——真的要调价，必须去 MP 后台改道具价格（微信侧优惠价最低只能到原价的 40%）。
             - $formkit: text
               name: style
               label: 装扮 key（类型为装扮时必填）
@@ -1358,7 +1426,95 @@ spec:
           label: 解锁永久有效
           value: true
           help: 解锁记录永久保存，同一篇文章不会重复扣券。关闭暂不支持限时解锁，仅作语义占位，请勿关闭。
+        - $formkit: switch
+          name: freeForDigest
+          label: AI 日报文章免券（建议保持开启）
+          value: true
+          help: 开启后，「AI 日报」自动生成的文章不需要阅读券即可阅读，无论它们带了什么标签。<br />为什么建议开启：日报是拉新与留存的入口——用户从分享、搜索进来，点开的第一篇往往就是日报文章；如果这里被付费墙拦住，新用户第一眼就被要求用券解锁，转化直接归零，而且这种拦截很难归因到配置上。确实希望日报也收费时再关掉此项。
 
+    - group: ticketConfig
+      label: 阅读券获取
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "阅读券（解锁付费文章）此前只有 <b>现金直购</b> 与 <b>积分兑换</b> 两条获取途径，用户从没体验过券能解锁什么就先撞上了付费墙，付费转化因此很低。本分组提供「<b>免费的第一次</b>」：让用户零成本拿到券、用掉一张、看到墙后面的内容，才会为下一篇付钱。<br /><b>力度建议</b>：赠券力度直接决定付费转化。签到天天送券会让日活用户永远不必付费；相反对照组是「新人送 1 张、首购再送 1 张、连签 7 天送 2 张」——用户先体验，再为下一篇买单。<br /><b>任务送券</b>在「每日任务」分组里按任务单独配置（字段 tickets），按完成次数结算，力度比签到更可控，建议优先用它。"
+        - $formkit: number
+          name: newUserTickets
+          label: 新人见面礼赠送张数
+          value: 1
+          min: 0
+          help: 微信用户首次登录领取新人礼时附带赠送的阅读券张数。填 0 表示不送。升级前已领过新人礼的老用户会在下次登录时补到这一次券。
+        - $formkit: number
+          name: firstPurchaseTickets
+          label: 首单礼赠送张数
+          value: 1
+          min: 0
+          help: 用户在本站的<b>第一笔</b>成功订单额外赠送的阅读券张数（任意道具类型都算）。「第一次付钱」的心理门槛远高于第二次，首单加送一张券等于让用户用同一笔钱拿到两篇内容。填 0 表示不送。
+        - $formkit: number
+          name: signInTickets
+          label: 每日签到赠送张数
+          value: 0
+          min: 0
+          help: 每次签到赠送的阅读券张数。<b>默认 0（关闭）</b>：解锁一篇付费文章只需 1 张券，天天签到送券等于让活跃用户完全不必付费，请确认经营策略后再开启。
+        - $formkit: number
+          name: streakDays
+          label: 连签奖励门槛天数
+          value: 7
+          min: 0
+          help: 连续签到达到该天数时额外赠券，之后按周期重复（连签 7/14/21 天各发一次，而不是只在第 7 天发一次——后者会让坚持到第 8 天的用户觉得奖励已经拿完了）。填 0 表示不启用连签奖励。
+        - $formkit: number
+          name: streakTickets
+          label: 连签奖励张数
+          value: 2
+          min: 0
+          help: 达到连签门槛时额外赠送的阅读券张数，与「每日签到赠送张数」叠加发放。
+        - $formkit: number
+          name: exchangeTickets
+          label: 积分兑换每次发放张数
+          value: 1
+          min: 1
+          help: 在「积分商城」用积分兑换阅读券时，每次兑换发放的张数，同时决定兑换项名称（如「阅读券 x2」）。至少为 1——填 0 会导致「扣了积分却不发券」。
+        - $formkit: number
+          name: exchangePoints
+          label: 积分兑换默认定价
+          value: 30
+          min: 1
+          help: 当「积分商城 → 兑换权益」里没有 content_ticket 这一项时，插件会自动补一条内置的阅读券兑换项并使用该定价。若你已在积分商城里手工配了 content_ticket，则以你的配置为准，本字段不生效。
+    - group: memberConfig
+      label: 会员卡
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "会员卡是「<b>单次购买的有效期权益</b>」：用户一次付款，获得一段固定期限的权益。<br /><b>合规说明</b>：微信虚拟支付的适用场景明确包含「会员订阅：VIP 会员、专属权益包」，道具直购（short_series_goods）的定义就是「会员、课程等单品，支持单次购买」，因此本形态与已在售的「限时装扮」结构一致，属于合规范围。<br /><b>⚠️ 本插件不提供自动续费订阅</b>（连续包月/包年）：那需要单独申请签约能力、《会员自动续费服务协议》报平台审核、缴纳交易保证金、提前 5 日提醒与预扣费通知，并走 submit_subscribe_pay_order 等专用接口，还有一整套用户感知规范（醒目展示下次扣款时间、协议须勾选且不得默认勾选）。如需自动续费请单独评估。<br /><b>销售方式</b>：会员卡作为「虚拟支付 → 权益道具」中的一条商品，类型选 membership，道具数量填天数。"
+        - $formkit: switch
+          name: enabled
+          id: memberEnabled
+          label: 开启会员卡
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时接口不下发会员状态、也不允许发货 membership 类型的商品。请先配好会员商品与到期权益再开启。
+        - $formkit: number
+          name: defaultDays
+          label: 默认会员周期（天）
+          value: 30
+          min: 1
+          help: 商品未填「道具数量」时的兜底天数。填 0 会被强制回落为 30——否则用户付了钱却一刻钟会员都不是。
+        - $formkit: switch
+          name: freeContent
+          label: 会员期内付费文章免券
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，有效期内会员阅读全站付费文章不消耗阅读券（也不写入任何扣券流水）。这是会员卡的核心权益，关闭后会员只剩「开通赠券」这一个价值。
+        - $formkit: number
+          name: bonusTickets
+          label: 开通/续费额外赠送阅读券
+          value: 0
+          min: 0
+          help: 每次开通或续费成功额外赠送的阅读券张数，填 0 表示不送。用于促单，也可让用户即使不常看付费文章也能感受到会员的价值。
     - group: rankConfig
       label: 榜单
       formSchema:
@@ -1444,7 +1600,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "当前插件版本：<b>1.0.121</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
+          innerHTML: "当前插件版本：<b>1.0.124</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
         - $formkit: switch
           name: enabled
           id: aiDigestEnabled
@@ -1557,16 +1713,26 @@ spec:
           onValue: true
           offValue: false
           help: 头图取自 RSS 正文内嵌图片或文章页的 og:image，通过 Halo 官方附件接口上传到附件库后在正文中引用。实测约六成文章能配上图，抓不到的直接跳过。
-        - $formkit: text
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: requireImage
+          label: 只发布带封面图的文章
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，没配到头图（或头图上传失败）的文章会被过滤掉，由后续名次有图的文章补位；如果整轮都没配到图，本次运行会直接失败并说明原因，不会发出无图文章。关闭则允许发布无封面图的文章。
+        - $formkit: attachmentPolicySelect
           if: "$get(aiDigestEnabled).value === true"
           name: attachmentPolicyName
-          label: 附件存储策略名（可选）
+          key: attachmentPolicyName
+          label: 附件存储策略（可选）
           value: ""
-          help: 留空则复用「应用配置」里的附件策略，与小程序二维码/头像上传保持一致。
-        - $formkit: text
+          help: 留空则复用「应用配置」里的附件策略；那里也没有时使用默认策略 default-policy。用选择器而不是手填：策略名填错会让头图全部传不上去，而且从界面上看不出原因。
+        - $formkit: attachmentGroupSelect
           if: "$get(aiDigestEnabled).value === true"
           name: attachmentGroupName
-          label: 附件分组名（可选）
+          key: attachmentGroupName
+          label: 附件分组（可选）
           value: ""
           help: 留空则复用「应用配置」里的附件分组。
         - $formkit: select
@@ -1610,16 +1776,43 @@ spec:
           value: "AI 日报 · {date}"
           validation: required
           help: "{date} 会替换为日报日期（yyyy-MM-dd）；同时作为文章 slug 的来源。仅用于「合并为一篇 AI 日报」和「两者都发」模式——逐篇发布时每篇文章用各自的中文标题。" 
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "以下两项<b>通常不需要填</b>：文章的分类与标签由插件按 AI 判定结果自动落到站点分类/标签上，不存在会自动创建（创建出来的带 <code>uni.uhalo.pro/auto-generated</code> 标签，便于在 Halo 后台区分）。只有想给所有日报文章再钉一个固定分类/标签时才需要填。"
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: autoCategoryEnabled
+          label: 自动按文章主题归类
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，每篇文章按 AI 判定的主题（AI / ML、安全、工程、工具 / 开源、观点 / 杂谈、其他）自动归入对应的站点分类，分类不存在时自动创建。这样小程序端「按关注的分类看内容」才能生效——否则那些分类里永远没有文章。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: autoTagEnabled
+          label: 自动按关键词打标签
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，把一轮日报里反复出现的关键词建成站点标签（门槛见下一项）。关闭则只保留下面手填的固定标签。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: autoTagMinCount
+          label: 标签关键词出现次数门槛
+          value: 2
+          min: 1
+          help: 一轮里至少有几篇文章提到这个词，才为它建标签。<b>默认 2</b>：一轮产出 5 篇、每篇 2-4 个关键词，若全都建成标签，一次运行就能造出十几个只出现一次的标签，标签墙很快就没法看了。
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: postCategories
-          label: 文章分类
+          label: 额外附加分类（可选）
           value: ""
-          help: 填 Halo 已有的分类名（显示名或别名），多个用逗号分隔。匹配不到的会被忽略，不会导致发布失败。
+          help: 填 Halo 已有的分类名（显示名或别名），多个用逗号分隔。匹配不到的会被忽略——手填项不自动创建，避免笔误造出一堆分类。
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: postTags
-          label: 文章标签
+          label: 额外附加标签（可选）
           value: ""
           help: 填 Halo 已有的标签名（显示名或别名），多个用逗号分隔。匹配不到的会被忽略。
         - $formkit: switch

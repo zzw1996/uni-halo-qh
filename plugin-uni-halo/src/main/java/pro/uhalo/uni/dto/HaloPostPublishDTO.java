@@ -25,6 +25,18 @@ public class HaloPostPublishDTO {
 
     private List<String> tagNames;
 
+    /**
+     * AI 判定的分类 key：会「不存在则自动创建」为站点分类。
+     *
+     * <p>与 {@link #categoryNames} 的区别在于**是否需要预先存在**：
+     * {@code categoryNames} 是站长手填的额外附加项，匹配不到就忽略（避免手误造出分类）；
+     * 而这里是机器判定的固定枚举，建出来才算真正实现「不需要手工配置分类」。</p>
+     */
+    private List<String> aiCategories;
+
+    /** AI 关键词：按整轮频次门槛筛过后，会「不存在则自动创建」为站点标签 */
+    private List<String> keywords;
+
     /** 文章作者，必须是已存在的 Halo 用户名 */
     private String owner;
 

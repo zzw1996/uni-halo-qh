@@ -20,6 +20,9 @@ public class DailyTaskProgressItemDTO {
 
     private int points;
 
+    /** 奖励的阅读券张数（0 = 只给积分）；前端据此显示「+10 积分 +1 张阅读券」 */
+    private int tickets;
+
     /** 今日进度是否达标，可领取奖励 */
     private boolean done;
 

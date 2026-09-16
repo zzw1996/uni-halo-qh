@@ -178,6 +178,19 @@
     }
   }
 
+  // 删除一条运行记录（只删记录，不动已发布的文章）
+  async function removeReport(name) {
+    if (!confirm('确认删除这条运行记录？只删除记录，已发布的文章不受影响。')) return;
+    try {
+      var r = await request('/digest/reports/' + encodeURIComponent(name), 'DELETE');
+      showMsg((r && r.message) || '已删除', true);
+      closeDetail();
+      load();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
   async function runPreflight() {
     var btn = document.getElementById('btnPreflight');
     btn.disabled = true;
@@ -230,6 +243,7 @@
     if (!t) throw new Error('请先输入 Personal Token');
     var res = await fetch(api(path), {
       method: method || 'GET',
+      cache: 'no-store',
       headers: Object.assign({ 'Authorization': 'Bearer ' + t }, method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
       body: method === 'POST' ? '{}' : undefined
     });
@@ -337,6 +351,7 @@
         '<td style="max-width:300px" class="reason">' + (it.error ? '<span class="fail-reason" title="' + esc(it.error) + '">' + esc(it.error) + '</span>' : '<span class="mono">-</span>') + '</td>' +
         '<td><button class="ghost" onclick="openDetail(\'' + esc(it.name) + '\')">详情</button> ' +
         '<button class="ghost" onclick="republish(\'' + esc(it.name) + '\')">发布</button></td>' +
+        '<button class="ghost" onclick="removeReport(\'' + esc(it.name) + '\')">删除</button></td>' +
         '</tr>';
     });
     document.getElementById('list').innerHTML = html + '</tbody></table>';

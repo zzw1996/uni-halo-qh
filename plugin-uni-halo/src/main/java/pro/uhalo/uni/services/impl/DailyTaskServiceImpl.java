@@ -14,6 +14,7 @@ import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
+import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.DailyTaskService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.DailyTaskConfigHelper;
@@ -36,12 +37,17 @@ import java.util.stream.Collectors;
 public class DailyTaskServiceImpl implements DailyTaskService {
 
     private static final String TASK_ACTION = PointsAction.TASK.value();
+
+    /** 任务赠券的动作码：与 task（积分）区分，使积分明细能看出券的来源 */
+    private static final String TICKET_ACTION = "ticket_task";
+
     private static final int CLAIM_RATE_LIMIT_PER_MINUTE = 20;
 
     private final PointsPersistence persistence;
     private final ReactiveSettingFetcher settingFetcher;
     private final WxUserService wxUserService;
     private final RateLimiter rateLimiter;
+    private final TicketRewardService ticketRewardService;
 
     @Override
     public Mono<DailyTasksResponseDTO> getDailyTasks(String openid) {
@@ -92,6 +98,7 @@ public class DailyTaskServiceImpl implements DailyTaskService {
     private Mono<ClaimDailyTaskResponse> processClaim(String openid, UserPoints account,
         DailyTaskItemDTO task, String earnKey) {
         var reward = task.getPoints();
+        var tickets = task.getTickets();
         var newBalance = PointsServiceImpl.safeBalance(account) + reward;
         return resolveWxUserId(openid, account)
             .flatMap(wxUserId -> {
@@ -103,15 +110,49 @@ public class DailyTaskServiceImpl implements DailyTaskService {
                     "每日任务·" + PointsAction.labelOf(task.getType()), task.getType(), earnKey, wxUserId);
                 return persistence.saveAccount(account)
                     .then(persistence.appendRecord(record))
+                    // 赠券放在积分入账之后：券是附加奖励，失败不应让积分也拿不到。
+                    // 幂等锚点用任务类型 + 日期，与积分流水的 earnKey 同源但动作码不同，
+                    // 因此在「积分明细」里能看出这一天到底拿了积分还是券。
+                    .then(grantTaskTickets(openid, task, wxUserId))
                     .thenReturn(ClaimDailyTaskResponse.builder()
                         .earned(reward)
+                        .tickets(tickets)
                         .balance(newBalance)
-                        .message("+" + reward + " 积分")
+                        .message(claimMessage(reward, tickets))
                         .build())
                     .onErrorResume(ex -> isDuplicateRecordError(ex)
                         ? buildClaimedResponse(openid)
                         : Mono.error(ex));
             });
+    }
+
+    /** 任务赠券：按「任务类型 + 日期」幂等，同一任务当天只发一次。 */
+    private Mono<Integer> grantTaskTickets(String openid, DailyTaskItemDTO task, String wxUserId) {
+        var count = task.getTickets();
+        if (count <= 0) {
+            return Mono.just(0);
+        }
+        var earnKey = PointsServiceImpl.buildDailyEarnKey(openid, TICKET_ACTION,
+            task.getType(), LocalDate.parse(PointsServiceImpl.today()));
+        return ticketRewardService.grant(openid, count, TICKET_ACTION,
+            "每日任务·" + PointsAction.labelOf(task.getType()) + " · 阅读券 x" + count,
+            earnKey, task.getType(), wxUserId)
+            .onErrorResume(ex -> {
+                log.warn("每日任务赠券失败（不影响积分发放）：openid={}, type={}, {}",
+                    openid, task.getType(), ex.getMessage());
+                return Mono.just(0);
+            });
+    }
+
+    /** 奖励提示：积分与券分开说，只给券时不能显示「+0 积分」。 */
+    private static String claimMessage(int earned, int tickets) {
+        if (earned > 0 && tickets > 0) {
+            return "+" + earned + " 积分 +" + tickets + " 张阅读券";
+        }
+        if (tickets > 0) {
+            return "+" + tickets + " 张阅读券";
+        }
+        return "+" + earned + " 积分";
     }
 
     private Mono<ClaimDailyTaskResponse> buildClaimedResponse(String openid) {
@@ -147,6 +188,7 @@ public class DailyTaskServiceImpl implements DailyTaskService {
                     .target(task.getTarget())
                     .progress(Math.min(progress, task.getTarget()))
                     .points(task.getPoints())
+                    .tickets(task.getTickets())
                     .done(progress >= task.getTarget())
                     .claimed(claimedTypes.contains(task.getType()))
                     .build();

@@ -15,12 +15,14 @@ import pro.uhalo.uni.dto.DigestPostResultDTO;
 import pro.uhalo.uni.dto.DigestRunDetailDTO;
 import pro.uhalo.uni.dto.DigestRunRequest;
 import pro.uhalo.uni.dto.DigestRunSummaryDTO;
+import pro.uhalo.uni.dto.PostClassifyApplyRequest;
 import pro.uhalo.uni.infra.DigestPersistence;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.services.DigestPostWriter;
 import pro.uhalo.uni.services.DigestProgressTracker;
 import pro.uhalo.uni.services.DigestScheduler;
 import pro.uhalo.uni.services.DigestService;
+import pro.uhalo.uni.services.PostTaxonomyService;
 import pro.uhalo.uni.utils.DigestConfigHelper;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 import reactor.core.publisher.Mono;
@@ -45,12 +47,16 @@ public class DigestController {
 
     private static final int DEFAULT_LIMIT = 30;
     private static final int MAX_LIMIT = 200;
+
+    /** 旧文章归类一次最多分析多少篇（与 PostTaxonomyService 里的上限保持一致） */
+    private static final int MAX_CLASSIFY_LIMIT = 30;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final DigestService digestService;
     private final DigestScheduler digestScheduler;
     private final DigestProgressTracker progressTracker;
     private final DigestPostWriter postWriter;
+    private final PostTaxonomyService postTaxonomyService;
     private final ReactiveSettingFetcher settingFetcher;
 
     /** 开关状态 + 下次执行时间 + 最近一次运行 */
@@ -108,6 +114,48 @@ public class DigestController {
                     : "已清理 " + items.size() + " 篇残留文章（含终态器摘除）");
                 return payload;
             })
+            .flatMap(this::jsonOk)
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /**
+     * 删除一条运行记录。只删记录本身，已发布的文章不受影响。
+     */
+    public Mono<ServerResponse> deleteReport(ServerRequest request) {
+        var name = request.pathVariable("name");
+        log.info("[UniHalo][Digest] 收到删除运行记录请求：name={}", name);
+        return digestService.deleteReport(name)
+            .then(jsonOk(Map.of("deleted", true, "message", "已删除该条运行记录")))
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    // ── 旧文章归类 ──
+
+    /** 站点上还有多少篇文章没进主题体系 */
+    public Mono<ServerResponse> classifyStatus(ServerRequest request) {
+        return postTaxonomyService.status()
+            .flatMap(this::jsonOk)
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /**
+     * 分析下一批未归类文章（只给建议，不改动任何文章）。
+     *
+     * <p>刻意做成「预览」而不是直接归类：判定要花 AI 调用，写回又要改站点数据，
+     * 让站长看过建议再点头，比一键批量改掉几十篇文章可逆得多。</p>
+     */
+    public Mono<ServerResponse> classifyPreview(ServerRequest request) {
+        var limit = classifyLimitParam(request);
+        log.info("[UniHalo][Digest] 收到旧文章归类预览请求：limit={}", limit);
+        return postTaxonomyService.preview(limit)
+            .flatMap(this::jsonOk)
+            .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /** 应用站长勾选采纳的建议：只追加分类与标签，逐条回报结果 */
+    public Mono<ServerResponse> classifyApply(ServerRequest request) {
+        return request.bodyToMono(PostClassifyApplyRequest.class)
+            .flatMap(body -> postTaxonomyService.apply(body))
             .flatMap(this::jsonOk)
             .onErrorResume(ex -> badRequest(ex.getMessage()));
     }
@@ -277,6 +325,21 @@ public class DigestController {
             return Math.min(MAX_LIMIT, Math.max(1, Integer.parseInt(raw)));
         } catch (NumberFormatException ex) {
             return DEFAULT_LIMIT;
+        }
+    }
+
+    /**
+     * 旧文章归类的批次大小。
+     *
+     * <p>与运行记录列表分开取默认值：那边默认 30 是「列表看几行」，这边是
+     * 「一次 AI 调用分析几篇」，默认值和上限都不一样，混用会把一批的篇数悄悄放大。</p>
+     */
+    private int classifyLimitParam(ServerRequest request) {
+        var raw = request.queryParam("limit").orElse("");
+        try {
+            return Math.min(MAX_CLASSIFY_LIMIT, Math.max(1, Integer.parseInt(raw)));
+        } catch (NumberFormatException ex) {
+            return PostTaxonomyService.BATCH_SIZE;
         }
     }
 

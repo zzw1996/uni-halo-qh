@@ -16,9 +16,14 @@ import pro.uhalo.uni.dto.AdminPayOrderListResponse;
 import pro.uhalo.uni.dto.CreatePayOrderRequest;
 import pro.uhalo.uni.dto.CreatePayOrderResponse;
 import pro.uhalo.uni.dto.LevelConfigDTO;
+import pro.uhalo.uni.dto.MemberConfigDTO;
+import pro.uhalo.uni.dto.MembershipStatusDTO;
+import pro.uhalo.uni.dto.MyPayOrderItemDTO;
+import pro.uhalo.uni.dto.MyPayOrderListResponse;
 import pro.uhalo.uni.dto.OutfitItemDTO;
 import pro.uhalo.uni.dto.PayDataDTO;
 import pro.uhalo.uni.dto.PayGoodsDTO;
+import pro.uhalo.uni.dto.PayGoodsItemDTO;
 import pro.uhalo.uni.dto.PayPublicConfigDTO;
 import pro.uhalo.uni.dto.QueryPayOrderRequest;
 import pro.uhalo.uni.dto.QueryPayOrderResponse;
@@ -28,9 +33,12 @@ import pro.uhalo.uni.infra.PayOrderPersistence;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.MembershipService;
+import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.VirtualPayService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.LevelConfigHelper;
+import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.utils.OwnedOutfitParser;
 import pro.uhalo.uni.utils.TokenManager;
 import pro.uhalo.uni.utils.WxRequestParser;
@@ -38,10 +46,18 @@ import pro.uhalo.uni.utils.WxUserIds;
 import pro.uhalo.uni.utils.WxUserLookup;
 import pro.uhalo.uni.utils.XPaySigner;
 import pro.uhalo.uni.utils.XmlMessageParser;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -103,10 +119,21 @@ public class VirtualPayServiceImpl implements VirtualPayService {
      * 不再拾取该订单，避免每 5 分钟无限重试；同时该状态可被后台退款清单直接筛选出来。</p>
      */
     private static final String STATUS_NEEDS_REFUND = "needs_refund";
+
+    /** 会员卡发货的流水动作码：与 purchase_content_ticket 区分，便于对账时识别会员收入 */
+    static final String PURCHASE_MEMBERSHIP_ACTION = "purchase_membership";
     private static final String NEEDS_REFUND_REMARK_PREFIX = "重复购买：权益已拥有，未重复发放，需人工退款";
 
     /** 后台订单列表每页最大条数（防止一次拉爆内存） */
     private static final int ADMIN_MAX_SIZE = 200;
+
+    /** 用户侧「我的订单」每页最大条数（手机屏幕不需要更多） */
+    private static final int MY_ORDER_MAX_SIZE = 50;
+
+    /** 插件内统一使用东八区：订单时间展示、活动截止时间解释都走它 */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter ORDER_TIME_FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String EVENT_DELIVER_NOTIFY = "xpay_goods_deliver_notify";
 
     /**
@@ -126,6 +153,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private final PointsPersistence pointsPersistence;
     private final WxUserService wxUserService;
     private final TokenManager tokenManager;
+    private final TicketRewardService ticketRewardService;
+    private final MembershipService membershipService;
 
     /**
      * 同一订单的在途发货任务。
@@ -201,45 +230,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 // 装扮商品下单前校验（单一装扮定义源：key 必须存在于装扮商店配置）：
                 // 1) key 不存在 → 拒绝下单（配置错误，防止用户付钱拿不到权益）
                 // 2) 用户已拥有（未过期）→ 拒绝下单（防止重复购买白花钱）
-                var preCheck = Mono.just(goods);
-                if ("outfit".equals(goods.getType())) {
-                    preCheck = settingFetcher.get(LevelConfigHelper.groupName())
-                        .map(LevelConfigHelper::parse)
-                        .defaultIfEmpty(LevelConfigHelper.defaults())
-                        .flatMap(levelConfig -> {
-                            var key = goods.getStyle();
-                            var outfit = levelConfig.getOutfits().stream()
-                                .filter(item -> key != null && key.equals(item.getKey()))
-                                .findFirst()
-                                .orElse(null);
-                            if (outfit == null) {
-                                return Mono.error(new WxAuthException(
-                                    "装扮配置错误：该装扮商品未在装扮商店登记，请联系站长"));
-                            }
-                            var keyLabel = outfit.getName();
-                            return pointsPersistence.getOrCreateAccount(normalizedOpenid)
-                                .flatMap(account -> {
-                                    var actives = OwnedOutfitParser.parse(account.getOutfitOwned());
-                                    var effective = actives.stream()
-                                        .filter(entry -> entry.isStillValid())
-                                        .anyMatch(entry -> key.equals(entry.key()));
-                                    if (effective) {
-                                        return Mono.error(new WxAuthException(
-                                            "你已拥有该装扮（" + keyLabel + "），请勿重复购买"));
-                                    }
-                                    // 装扮商品名称以装扮商店配置为准（单一装扮定义源）。
-                                    var resolved = PayGoodsDTO.builder()
-                                        .goodsId(goods.getGoodsId())
-                                        .name(outfit.getName())
-                                        .price(goods.getPrice())
-                                        .type(goods.getType())
-                                        .value(goods.getValue())
-                                        .style(goods.getStyle())
-                                        .build();
-                                    return Mono.just(resolved);
-                                });
-                        });
-                }
+                // 套餐里的装扮子项同样要过这一关，否则会「付了套餐钱、装扮那部分变成退款纠纷」
+                var preCheck = validateOutfitsBeforeOrder(goods, normalizedOpenid);
                 return preCheck
                     .flatMap(checked -> wxUserService.fetchByOpenid(normalizedOpenid)
                         .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
@@ -250,6 +242,102 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                             return createOrderRecord(config, checked, normalizedOpenid, wxUser);
                         }));
             });
+    }
+
+    /**
+     * 下单前的装扮校验：key 必须已登记、且用户尚未拥有。
+     *
+     * <p>单装扮商品与套餐中的装扮子项走同一套判定。单装扮商品还会把名称换成
+     * 装扮商店里的名称（装扮商店是装扮的唯一定义源，避免两处名称不一致）。</p>
+     */
+    private Mono<PayGoodsDTO> validateOutfitsBeforeOrder(PayGoodsDTO goods, String openid) {
+        var outfitKeys = outfitKeysOf(goods);
+        if (outfitKeys.isEmpty()) {
+            return Mono.just(goods);
+        }
+        return settingFetcher.get(LevelConfigHelper.groupName())
+            .map(LevelConfigHelper::parse)
+            .defaultIfEmpty(LevelConfigHelper.defaults())
+            .flatMap(levelConfig -> {
+                // 先做纯内存的配置校验：key 未登记属于站长配置错误，直接失败即可，
+                // 不必再去读一次账户（也让这类错误不再依赖数据库可用性）
+                for (var key : outfitKeys) {
+                    if (findOutfit(levelConfig, key) == null) {
+                        return Mono.error(new WxAuthException(
+                            "装扮配置错误：该装扮商品未在装扮商店登记，请联系站长"));
+                    }
+                }
+                return pointsPersistence.getOrCreateAccount(openid)
+                    .flatMap(account -> {
+                        var owned = OwnedOutfitParser.parse(account.getOutfitOwned());
+                        for (var key : outfitKeys) {
+                            if (OwnedOutfitParser.isOwnedAndValid(owned, key)) {
+                                return Mono.error(new WxAuthException("你已拥有该装扮（"
+                                    + findOutfit(levelConfig, key).getName() + "），请勿重复购买"));
+                            }
+                        }
+                        // 单装扮商品：名称以装扮商店配置为准（单一装扮定义源）。
+                        // 套餐保留自己的名称——套餐名是站长对整包的定价描述，不该被子项名称覆盖。
+                        if ("outfit".equals(goods.getType())) {
+                            var matched = findOutfit(levelConfig, goods.getStyle());
+                            if (matched != null) {
+                                return Mono.just(PayGoodsDTO.builder()
+                                    .goodsId(goods.getGoodsId())
+                                    .name(matched.getName())
+                                    .price(goods.getPrice())
+                                    .type(goods.getType())
+                                    .value(goods.getValue())
+                                    .style(goods.getStyle())
+                                    .originalPrice(goods.getOriginalPrice())
+                                    .promoEndsAt(goods.getPromoEndsAt())
+                                    .build());
+                            }
+                        }
+                        return Mono.just(goods);
+                    });
+            });
+    }
+
+    private static OutfitItemDTO findOutfit(LevelConfigDTO levelConfig, String key) {
+        if (levelConfig == null || levelConfig.getOutfits() == null || !StringUtils.hasText(key)) {
+            return null;
+        }
+        return levelConfig.getOutfits().stream()
+            .filter(item -> key.equals(item.getKey()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /** 商品涉及的装扮 key：单装扮取 style，套餐取其中的 outfit 子项。 */
+    private static List<String> outfitKeysOf(PayGoodsDTO goods) {
+        if ("outfit".equals(goods.getType())) {
+            return StringUtils.hasText(goods.getStyle()) ? List.of(goods.getStyle().trim()) : List.of();
+        }
+        if (!"bundle".equals(goods.getType()) || goods.getItems() == null) {
+            return List.of();
+        }
+        return goods.getItems().stream()
+            .filter(item -> "outfit".equals(item.getType()))
+            .map(PayGoodsItemDTO::getStyle)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .distinct()
+            .toList();
+    }
+
+    /** 套餐子项序列化为 JSON 落库；非套餐返回 null。 */
+    private static String serializeGoodsItems(PayGoodsDTO goods) {
+        if (!"bundle".equals(goods.getType()) || goods.getItems() == null
+            || goods.getItems().isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(goods.getItems());
+        } catch (Exception ex) {
+            // 序列化失败必须抛：静默返回 null 会让订单在发货时找不到子项，
+            // 结果是用户付了钱拿不到任何权益，还难以定位
+            throw new WxAuthException("套餐配置序列化失败，无法下单");
+        }
     }
 
     private Mono<CreatePayOrderResponse> createOrderRecord(PayConfigContext config, PayGoodsDTO goods,
@@ -271,6 +359,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
         order.setGoodsType(goods.getType());
         order.setGoodsValue(goods.getValue());
         order.setGoodsStyle(goods.getStyle());
+        // 套餐子项必须随订单落库：发货发生在另一次请求里，届时读不到下单时的商品配置
+        order.setGoodsItems(serializeGoodsItems(goods));
         return payOrderPersistence.create(order)
             .flatMap(saved -> buildPayData(config, saved, wxUser.getSessionKey()))
             .onErrorResume(ex -> {
@@ -523,6 +613,9 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 return pointsPersistence.findRecordByEarnKey(earnKey)
                     .flatMap(existing -> markDelivered(updated))
                     .switchIfEmpty(grantGoods(order, earnKey, wxUserId)
+                        // 用 defer 包一层：否则赠券配置会在发货之前就被读取一次，
+                        // 而且发货失败（如重复购买的终态分支）时这次读取是白费的
+                        .then(Mono.defer(() -> grantFirstPurchaseBonus(order.getOpenid(), wxUserId)))
                         .then(markDelivered(updated)))
                     // 权益不可发放（重复购买已拥有）：转终态交人工退款。
                     // 绝不向上抛——否则订单永久停留 pending，被兜底查单无限重试。
@@ -588,13 +681,218 @@ public class VirtualPayServiceImpl implements VirtualPayService {
             case "publish_ticket" -> grantPublishTickets(order, earnKey, wxUserId);
             case "content_ticket" -> grantContentTickets(order, earnKey, wxUserId);
             case "outfit" -> grantOutfit(order, earnKey, wxUserId, order.getGoodsStyle());
+            case "membership" -> grantMembership(order, earnKey, wxUserId);
+            case "bundle" -> grantBundle(order, earnKey, wxUserId);
             default -> {
                 log.error("虚拟支付发货跳过：订单 {} 道具类型非法或缺失：{}（可配置类型为 "
-                        + "content_ticket/outfit；dashboard 与 publish_ticket 已下架，仅用于历史订单履约）",
+                        + "content_ticket/outfit/membership/bundle；dashboard 与 publish_ticket 已下架，"
+                        + "仅用于历史订单履约）",
                     order.getOutTradeNo(), type.isEmpty() ? "(未填写)" : type);
-                yield Mono.error(new WxAuthException("未知的道具类型，发货失败"));
+                // 未知类型同样属于「重试不会成功」，转终态而不是无限重试
+                yield Mono.error(new NonDeliverableOrderException(
+                    "未知的道具类型（" + (type.isEmpty() ? "未填写" : type) + "），发货失败"));
             }
         };
+    }
+
+    /**
+     * 会员卡：一次性付款，延长会员到期时间。
+     *
+     * <p><b>合规边界</b>：这是「单次购买的有效期权益」，不是自动续费订阅。
+     * 微信虚拟支付的适用场景包含「会员订阅：VIP 会员、专属权益包」，
+     * 道具直购（short_series_goods）本身就支持「会员、课程等单品，支持单次购买」，
+     * 因此与插件里已在跑的限时装扮结构一致。自动续费订阅需单独签约、
+     * 协议报审与交易保证金，本插件不提供。</p>
+     *
+     * <p>到期时间<b>叠加</b>而不是重置：在有效期内续费时从当前到期时间往后加天数，
+     * 否则用户会白白损失剩余天数。</p>
+     */
+    private Mono<Void> grantMembership(PayOrder order, String earnKey, String wxUserId) {
+        return membershipService.loadConfig()
+            .flatMap(memberConfig -> {
+                if (!memberConfig.isEnabled()) {
+                    log.error("虚拟支付会员卡发货失败：订单 {} 使用了 membership 类型，"
+                            + "但「会员卡」配置未开启（请先在插件设置中开启，否则用户付钱后拿不到权益）",
+                        order.getOutTradeNo());
+                    // 用 NonDeliverableOrderException 而不是普通业务异常：
+                    // 这个原因重试多少次都不会成功，留在 pending 只会被兜底查单无限重试，
+                    // 用户既拿不到会员也没有退款入口
+                    return Mono.error(new NonDeliverableOrderException(
+                        "会员卡功能未开启：请在插件设置中开启「会员卡」后重试发货"));
+                }
+                var days = order.getGoodsValue() == null || order.getGoodsValue() <= 0
+                    ? memberConfig.getDefaultDays() : order.getGoodsValue();
+                return pointsPersistence.getOrCreateAccount(order.getOpenid())
+                    .flatMap(account -> {
+                        var record = pointsPersistence.newRecord(order.getOpenid(),
+                            PURCHASE_MEMBERSHIP_ACTION, 0, safeBalance(account),
+                            "道具直购 · 会员 " + days + " 天", order.getGoodsId(), earnKey, wxUserId);
+                        // 幂等闸门：先写流水，成功后改账户（与其它发货分支同一顺序）
+                        return pointsPersistence.appendRecord(record)
+                            .then(pointsPersistence.getOrCreateAccount(order.getOpenid()))
+                            .flatMap(latest -> {
+                                if (StringUtils.hasText(wxUserId)
+                                    && !wxUserId.equals(latest.getWxUserId())) {
+                                    latest.setWxUserId(wxUserId);
+                                }
+                                var base = MemberConfigHelper.isActive(latest.getMemberExpireAt())
+                                    ? latest.getMemberExpireAt() : Instant.now();
+                                latest.setMemberExpireAt(base.plus(days, ChronoUnit.DAYS));
+                                return pointsPersistence.saveAccount(latest).then();
+                            })
+                            .onErrorResume(ex -> {
+                                if (isDuplicateNameError(ex)) {
+                                    log.info("虚拟支付会员流水已存在，跳过重复发放：earnKey={}", earnKey);
+                                    return Mono.empty();
+                                }
+                                return Mono.error(ex);
+                            });
+                    })
+                    // 会员附赠券：会员权益本身已发放成功，赠券失败不回滚主权益
+                    .then(grantMembershipBonusTickets(order, memberConfig));
+            });
+    }
+
+    /** 会员附赠券：与订单绑定的一次性赠券，不影响主权益的发放结果。 */
+    private Mono<Void> grantMembershipBonusTickets(PayOrder order, MemberConfigDTO memberConfig) {
+        var count = memberConfig.getBonusTickets();
+        if (count <= 0) {
+            return Mono.empty();
+        }
+        var earnKey = order.getOpenid() + ":purchase:" + order.getOutTradeNo() + ":member_bonus";
+        return ticketRewardService.grant(order.getOpenid(), count,
+                TicketRewardService.ACTION_MEMBER_BONUS,
+                "会员开通礼 · 阅读券 x" + count, earnKey, order.getGoodsId(), order.getWxUserId())
+            .doOnNext(granted -> {
+                if (granted > 0) {
+                    log.info("会员开通礼已发放：openid={}, 阅读券 x{}", order.getOpenid(), granted);
+                }
+            })
+            .onErrorResume(ex -> {
+                log.warn("会员开通礼发放失败（不影响会员权益）：outTradeNo={}, {}",
+                    order.getOutTradeNo(), ex.getMessage());
+                return Mono.just(0);
+            })
+            .then();
+    }
+
+    /**
+     * 套餐（礼包）：一条商品包含多种权益，逐项发放。
+     *
+     * <p>做法是给每个子项复制一份订单再调用已有的发货分支，而不是在发货逻辑里加一层分支判断——
+     * 这样「先写幂等流水、成功后再改账户」的顺序、以及各权益自身的校验（装扮是否已拥有、
+     * 限时到期时间等）全部原样复用，不必在套餐路径上重新实现一遍最容易出错的部分。</p>
+     *
+     * <p>子项的 earnKey 在主订单 earnKey 后加下标，因此每个子项各自幂等：
+     * 中途失败重试时已发放的子项会命中「流水已存在」而跳过，不会重复发放。</p>
+     */
+    private Mono<Void> grantBundle(PayOrder order, String earnKey, String wxUserId) {
+        var items = parseBundleItems(order.getGoodsItems());
+        if (items.isEmpty()) {
+            log.error("虚拟支付套餐发货失败：订单 {} 没有可用的子项配置（goodsItems 为空或解析失败）",
+                order.getOutTradeNo());
+            // 同上：配置缺失属于「重试也不会成功」，必须转终态交人工处理
+            return Mono.error(new NonDeliverableOrderException(
+                "套餐子项配置缺失：请检查该商品的套餐配置后重试发货"));
+        }
+        return Flux.fromIterable(items)
+            .concatMap(item -> {
+                var itemOrder = copyForBundleItem(order, item);
+                return grantGoods(itemOrder, earnKey + ":" + item.index(), wxUserId);
+            })
+            .then();
+    }
+
+    /** 套餐子项：订单副本（只替换权益相关字段），让既有发货分支可直接复用。 */
+    private static PayOrder copyForBundleItem(PayOrder order, BundleItem item) {
+        var copy = new PayOrder();
+        copy.setOpenid(order.getOpenid());
+        copy.setWxUserId(order.getWxUserId());
+        copy.setOutTradeNo(order.getOutTradeNo());
+        copy.setGoodsId(order.getGoodsId());
+        copy.setGoodsName(order.getGoodsName());
+        copy.setPrice(order.getPrice());
+        copy.setQuantity(order.getQuantity());
+        copy.setGoodsType(item.type());
+        copy.setGoodsValue(item.value());
+        copy.setGoodsStyle(item.style());
+        return copy;
+    }
+
+    /** 解析订单里的套餐子项 JSON。解析失败视为配置缺失，交由调用方转失败处理。 */
+    private static List<BundleItem> parseBundleItems(String rawJson) {
+        if (!StringUtils.hasText(rawJson)) {
+            return List.of();
+        }
+        try {
+            var node = OBJECT_MAPPER.readTree(rawJson);
+            if (node == null || !node.isArray()) {
+                return List.of();
+            }
+            var items = new ArrayList<BundleItem>();
+            var index = 0;
+            for (var itemNode : node) {
+                var type = textValue(itemNode, "type");
+                if (!StringUtils.hasText(type)) {
+                    index++;
+                    continue;
+                }
+                items.add(new BundleItem(index++,
+                    type.trim().toLowerCase(),
+                    itemNode.path("value").asInt(1),
+                    textValue(itemNode, "style")));
+            }
+            return List.copyOf(items);
+        } catch (Exception ex) {
+            log.warn("解析套餐子项失败：{}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 套餐子项。
+     *
+     * @param index 在主订单里的下标，用于派生各子项独立的幂等键——中途失败重试时
+     *              已发放的子项会命中「流水已存在」而跳过
+     */
+    private record BundleItem(int index, String type, int value, String style) {
+    }
+
+
+    /**
+     * 首单礼：用户在本站的<b>第一笔</b>成功订单额外赠送阅读券。
+     *
+     * <p>转化漏斗上最有效的一环——「第一次付钱」的心理门槛远高于第二次。
+     * 首购加送一张券，等于让用户用同一笔钱拿到两篇内容，付过一次之后复购才可能发生。</p>
+     *
+     * <p>幂等靠固定的 earnKey（{@code openid + ":ticket_first_purchase:first"}）：
+     * 只有第一笔走到这里的订单能写成功流水，后续订单一律命中「已存在」而跳过，
+     * 因此无需回查该用户的历史订单即可判定「是否首单」。</p>
+     *
+     * <p>赠券失败不影响发货结果：券是额外奖励，不能因为送券出错让已付款用户拿不到主权益。</p>
+     */
+    private Mono<Void> grantFirstPurchaseBonus(String openid, String wxUserId) {
+        return ticketRewardService.loadConfig()
+            .flatMap(config -> {
+                var count = config.getFirstPurchaseTickets();
+                if (count <= 0) {
+                    return Mono.just(0);
+                }
+                var earnKey = openid + ":" + TicketRewardService.ACTION_FIRST_PURCHASE + ":first";
+                return ticketRewardService.grant(openid, count,
+                    TicketRewardService.ACTION_FIRST_PURCHASE,
+                    "首单礼 · 阅读券 x" + count, earnKey, "首单礼", wxUserId);
+            })
+            .doOnNext(granted -> {
+                if (granted > 0) {
+                    log.info("虚拟支付首单礼已发放：openid={}, 阅读券 x{}", openid, granted);
+                }
+            })
+            .onErrorResume(ex -> {
+                log.warn("虚拟支付首单礼发放失败（不影响发货）：openid={}, {}", openid, ex.getMessage());
+                return Mono.just(0);
+            })
+            .then();
     }
 
     /**
@@ -671,27 +969,32 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private Mono<Void> grantContentTickets(PayOrder order, String earnKey, String wxUserId) {
         var count = Math.max(1, order.getGoodsValue() == null ? 1 : order.getGoodsValue());
         return pointsPersistence.getOrCreateAccount(order.getOpenid())
-            .flatMap(account -> pointsPersistence.appendRecord(pointsPersistence.newRecord(
-                order.getOpenid(), ContentTicketServiceImpl.PURCHASE_ACTION_CONTENT_TICKET,
-                0, safeBalance(account),
-                "道具直购 · 阅读券 x" + count, order.getGoodsId(), earnKey, wxUserId))
-                // 流水已写入（或冲突即已发放），此时才允许修改账户
-                .then(pointsPersistence.getOrCreateAccount(order.getOpenid()))
-                .flatMap(latest -> {
-                    if (StringUtils.hasText(wxUserId) && !wxUserId.equals(latest.getWxUserId())) {
-                        latest.setWxUserId(wxUserId);
-                    }
-                    var current = safeTickets(latest.getContentTickets());
-                    latest.setContentTickets(current + count);
-                    return pointsPersistence.saveAccount(latest).then();
-                })
-                .onErrorResume(ex -> {
-                    if (isDuplicateNameError(ex)) {
-                        log.info("虚拟支付阅读券流水已存在，跳过重复发放：earnKey={}", earnKey);
-                        return Mono.empty();
-                    }
-                    return Mono.error(ex);
-                }));
+            .flatMap(account -> {
+                var record = pointsPersistence.newRecord(
+                    order.getOpenid(), ContentTicketServiceImpl.PURCHASE_ACTION_CONTENT_TICKET,
+                    0, safeBalance(account),
+                    "道具直购 · 阅读券 x" + count, order.getGoodsId(), earnKey, wxUserId);
+                // 券变动量单独记账：后台看板据此区分「现金买券」与「免费赠券」的发放量
+                record.setTickets(count);
+                return pointsPersistence.appendRecord(record)
+                    // 流水已写入（或冲突即已发放），此时才允许修改账户
+                    .then(pointsPersistence.getOrCreateAccount(order.getOpenid()))
+                    .flatMap(latest -> {
+                        if (StringUtils.hasText(wxUserId) && !wxUserId.equals(latest.getWxUserId())) {
+                            latest.setWxUserId(wxUserId);
+                        }
+                        var current = safeTickets(latest.getContentTickets());
+                        latest.setContentTickets(current + count);
+                        return pointsPersistence.saveAccount(latest).then();
+                    })
+                    .onErrorResume(ex -> {
+                        if (isDuplicateNameError(ex)) {
+                            log.info("虚拟支付阅读券流水已存在，跳过重复发放：earnKey={}", earnKey);
+                            return Mono.empty();
+                        }
+                        return Mono.error(ex);
+                    });
+            });
     }
 
     /**
@@ -902,6 +1205,96 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                         return Mono.just(toAdminOrderPage(sorted, null, normalizedPage, normalizedSize));
                     });
             });
+    }
+
+    /**
+     * 用户侧「我的订单」：按 openid 列出自己的订单，创建时间倒序分页。
+     *
+     * <p>此前用户付完钱只能靠 {@code outTradeNo} 单查，页面一旦丢掉单号就无从查证；
+     * 订单落到「需人工退款」终态时前端只能弹一句「联系站长」，这是最伤信任的路径。
+     * 有了这个列表，待支付、已到账、需退款都能自助查。</p>
+     *
+     * <p>安全边界：只按 openid 过滤，绝不接受调用方传入的 openid；
+     * 微信平台单号不下发（见 {@link MyPayOrderItemDTO}）。</p>
+     */
+    @Override
+    public Mono<MyPayOrderListResponse> listMyOrders(String openid, int page, int size) {
+        var normalizedOpenid = requireOpenid(openid);
+        var normalizedPage = Math.max(page, 0);
+        var normalizedSize = Math.min(Math.max(size, 1), MY_ORDER_MAX_SIZE);
+        return payOrderPersistence.listByOpenid(normalizedOpenid)
+            .collectList()
+            .map(orders -> {
+                var sorted = orders.stream()
+                    .sorted(Comparator.comparing(PayOrder::getCreateTime,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                    .toList();
+                var total = sorted.size();
+                var from = Math.min(normalizedPage * normalizedSize, total);
+                var to = Math.min(from + normalizedSize, total);
+                return MyPayOrderListResponse.builder()
+                    .items(sorted.subList(from, to).stream()
+                        .map(VirtualPayServiceImpl::toMyOrderItem)
+                        .toList())
+                    .total(total)
+                    .page(normalizedPage)
+                    .size(normalizedSize)
+                    .hasMore(to < total)
+                    .build();
+            });
+    }
+
+    private static MyPayOrderItemDTO toMyOrderItem(PayOrder order) {
+        var quantity = order.getQuantity() == null ? 1 : Math.max(1, order.getQuantity());
+        var price = order.getPrice() == null ? 0L : Math.max(0L, order.getPrice());
+        return MyPayOrderItemDTO.builder()
+            .outTradeNo(order.getOutTradeNo())
+            .goodsName(StringUtils.hasText(order.getGoodsName()) ? order.getGoodsName() : "权益道具")
+            .goodsType(order.getGoodsType())
+            .goodsTypeLabel(goodsTypeLabelOf(order.getGoodsType()))
+            .price(price)
+            .quantity(quantity)
+            .amount(price * quantity)
+            .status(order.getStatus())
+            .statusLabel(statusLabelOf(order))
+            .paidTime(formatOrderTime(order.getPaidTime()))
+            .createTime(formatOrderTime(order.getCreateTime()))
+            .deliverTime(formatOrderTime(order.getDeliverTime()))
+            // 备注里含「需人工退款」等站长侧口径，仅在需人工处理时给出
+            .remark(STATUS_NEEDS_REFUND.equals(order.getStatus()) ? order.getRemark() : null)
+            .build();
+    }
+
+    /**
+     * 用户可读的状态说明。
+     *
+     * <p>文案取向：告诉用户「现在该怎么办」，而不是只报一个状态名。
+     * 尤其 pending 必须说清「已扣款会补发」——小程序支付回调丢失时用户最慌的就是这个。</p>
+     */
+    private static String statusLabelOf(PayOrder order) {
+        var status = order.getStatus() == null ? "" : order.getStatus();
+        return switch (status) {
+            case STATUS_PENDING -> "待支付（若已扣款请稍候，系统会自动补发到账）";
+            case STATUS_DELIVERED -> "已到账";
+            case STATUS_CLOSED -> "已关闭";
+            case STATUS_NEEDS_REFUND -> "需人工处理（该笔权益未发放，请联系站长退款）";
+            default -> StringUtils.hasText(status) ? status : "未知状态";
+        };
+    }
+
+    private static String goodsTypeLabelOf(String goodsType) {
+        var type = goodsType == null ? "" : goodsType.trim().toLowerCase();
+        return switch (type) {
+            case "content_ticket" -> "阅读券";
+            case "outfit" -> "装扮";
+            case "dashboard" -> "数据看板高级版";
+            case "publish_ticket" -> "发布券";
+            default -> "权益道具";
+        };
+    }
+
+    private static String formatOrderTime(Instant instant) {
+        return instant == null ? null : instant.atZone(ZONE).format(ORDER_TIME_FMT);
     }
 
     private static AdminPayOrderListResponse toAdminOrderPage(List<PayOrder> sorted, WxUserLookup lookup,
@@ -1118,17 +1511,30 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 var value = item.path("value").asInt(0);
                 var style = textValue(item, "style");
                 var valid = StringUtils.hasText(goodsId) && StringUtils.hasText(name) && price > 0;
-                // 个人主体小程序仅允许道具直购：type 必填且只接受以下两种权益，
+                // 个人主体小程序仅允许道具直购：type 必填且只接受以下权益，
                 // 留空或 points（现金充值积分）一律不下发，避免形成代币式充值通道。
+                //
+                //   content_ticket 阅读券（解锁付费文章）
+                //   outfit         装扮（一次性拥有或限时）
+                //   membership     会员卡（单次购买的有效期权益，官方适用场景明确包含）
+                //   bundle         套餐（一条商品含多种权益，子项逐个发放）
                 //
                 // 已下架但 grantGoods 仍保留发货分支的类型（仅用于历史订单履约，
                 // 避免升级前「已支付未发货」的订单永久拿不到权益）：
                 //   dashboard      数据看板高级版 —— 改为纯积分兑换权益
                 //   publish_ticket 发布券 —— 普通用户不能发表瞬间（仅博主可发），
                 //                            该券没有任何消费点，卖出去用户也用不上，故下架
-                var isGoods = "content_ticket".equals(type) || "outfit".equals(type);
+                var isGoods = "content_ticket".equals(type) || "outfit".equals(type)
+                    || "membership".equals(type) || "bundle".equals(type);
                 if (valid && isGoods) {
-                    var typeValid = !"outfit".equals(type) || StringUtils.hasText(style);
+                    var items = "bundle".equals(type) ? parseGoodsItems(item) : List.<PayGoodsItemDTO>of();
+                    var typeValid = switch (type) {
+                        // 装扮必须给 key，否则用户付钱后列表里不会出现这一行
+                        case "outfit" -> StringUtils.hasText(style);
+                        // 空套餐（一个子项都没有）会被忽略告警：卖出去只会产生退款纠纷
+                        case "bundle" -> !items.isEmpty();
+                        default -> true;
+                    };
                     if (typeValid) {
                         goods.add(PayGoodsDTO.builder()
                             .goodsId(goodsId)
@@ -1137,10 +1543,17 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                             .type(type)
                             .value(value)
                             .style(style)
+                            .items(items)
+                            .originalPrice(resolveOriginalPrice(item, price))
+                            .promoEndsAt(resolvePromoEndsAt(item))
                             .build());
+                    } else {
+                        log.warn("虚拟支付商品被忽略（配置不完整）：goodsId={}, type={}"
+                                + "（装扮需填 style；套餐需至少一个有效子项）", goodsId, type);
                     }
                 } else if (valid) {
-                    log.warn("虚拟支付商品被忽略：goodsId={}, type={}（可配置类型为 content_ticket/outfit；"
+                    log.warn("虚拟支付商品被忽略：goodsId={}, type={}（可配置类型为 "
+                            + "content_ticket/outfit/membership/bundle；"
                             + "数据看板高级版已改为纯积分兑换权益，发布券已下架，且不支持积分充值）",
                         goodsId, type.isEmpty() ? "(未填写)" : type);
                 }
@@ -1154,6 +1567,146 @@ public class VirtualPayServiceImpl implements VirtualPayService {
         if (config == null || !config.enabled()) {
             throw new WxAuthException("虚拟支付功能未开启");
         }
+    }
+
+    /**
+     * 解析套餐（bundle）的子项。
+     *
+     * <p>只接受三种可发权益：content_ticket / outfit / membership。
+     * 装扮子项必须给 style，且 value 恒为 1（装扮是唯一的，数量没有意义）；
+     * 其余子项 value 至少为 1，否则「0 张券 / 0 天会员」这种子项会静默不发放，
+     * 用户按套餐价付了钱却少拿权益。</p>
+     *
+     * <p>非法子项一律丢弃并告警，而不是让整条套餐不下发——站长配错一个子项
+     * 就让已上架的套餐从商城消失，比少发一个子项更难排查。</p>
+     */
+    private static List<PayGoodsItemDTO> parseGoodsItems(JsonNode goodsNode) {
+        var itemsNode = goodsNode.get("items");
+        if (itemsNode == null || !itemsNode.isArray()) {
+            return List.of();
+        }
+        var items = new ArrayList<PayGoodsItemDTO>();
+        for (var itemNode : itemsNode) {
+            var type = textValue(itemNode, "type");
+            var normalized = type == null ? "" : type.trim().toLowerCase();
+            if (!"content_ticket".equals(normalized) && !"outfit".equals(normalized)
+                && !"membership".equals(normalized)) {
+                log.warn("虚拟支付套餐子项被忽略：goodsId={}, 子项类型={}（可配置 "
+                        + "content_ticket/outfit/membership）",
+                    textValue(goodsNode, "goodsId"), normalized.isEmpty() ? "(未填写)" : normalized);
+                continue;
+            }
+            var style = textValue(itemNode, "style");
+            if ("outfit".equals(normalized) && !StringUtils.hasText(style)) {
+                log.warn("虚拟支付套餐子项被忽略：goodsId={}, 装扮子项未填 style（用户付钱后拿不到该装扮）",
+                    textValue(goodsNode, "goodsId"));
+                continue;
+            }
+            var value = Math.max(1, itemNode.path("value").asInt(1));
+            items.add(PayGoodsItemDTO.builder()
+                .type(normalized)
+                .value("outfit".equals(normalized) ? 1 : value)
+                .style(style)
+                .build());
+        }
+        return List.copyOf(items);
+    }
+
+    /**
+     * 解析划线原价：必须高于现价才生效，否则丢弃。     *
+     * <p>原价倒挂或等于现价都不构成「优惠」，展示出来只会让用户觉得被套路；
+     * 站长把原价填得比现价低（例如现价改了活动价却忘了改原价）时，
+     * 这里静默丢弃并留下告警，避免前端出现「￥6 ~~￥5~~」这种明显错误。</p>
+     */
+    private static Long resolveOriginalPrice(JsonNode item, long price) {
+        var original = item.path("originalPrice").asLong(0);
+        if (original <= price) {
+            if (original > 0) {
+                log.warn("虚拟支付商品划线原价无效已忽略：goodsId={}, 原价={}分, 现价={}分"
+                        + "（原价必须高于现价）",
+                    textValue(item, "goodsId"), original, price);
+            }
+            return null;
+        }
+        return original;
+    }
+
+    /**
+     * 解析限时截止时间，返回 Unix 秒；无活动或已过期返回 null。
+     *
+     * <p>兼容两类取值：</p>
+     * <ul>
+     *   <li><b>日期时间字符串</b>（设置页 datetime-local 选择器产出，如 {@code 2026-12-31T23:59}）。
+     *       这种值<b>不带时区</b>，必须按 Asia/Shanghai 解释——站长在选择器里看到的就是本地时间，
+     *       若按 UTC 解释会整体偏 8 小时，活动会提前一天结束。</li>
+     *   <li><b>纯数字</b>：兼容早期直接填 Unix 秒的配置，不能让已配好的活动失效。</li>
+     * </ul>
+     *
+     * <p>只填日期不填时间时取当天 23:59:59——「截止到某天」的自然含义是那天结束为止。</p>
+     *
+     * <p>无法识别的值会记 WARNING 后按「无活动」处理。必须留日志：
+     * 静默失效会让站长以为活动已经配好，实际前端什么都不显示。</p>
+     *
+     * <p>包级可见以便单测直接覆盖各种取值形态——这段解析一旦出错，
+     * 表现是「活动神秘消失」，从界面上完全看不出原因。</p>
+     */
+    static Long resolvePromoEndsAt(JsonNode item) {
+        var epoch = toEpochSecond(item.path("promoEndsAt"), textValue(item, "goodsId"));
+        if (epoch == null || epoch <= Instant.now().getEpochSecond()) {
+            return null;
+        }
+        return epoch;
+    }
+
+    /** 把选择器的取值或历史时间戳统一换算成 Unix 秒；无法识别返回 null。 */
+    private static Long toEpochSecond(JsonNode node, String goodsId) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            var raw = node.asLong(0);
+            return raw > 0 ? raw : null;
+        }
+        var raw = node.asText("").trim();
+        if (raw.isEmpty()) {
+            return null;
+        }
+        if (raw.chars().allMatch(Character::isDigit)) {
+            try {
+                var value = Long.parseLong(raw);
+                return value > 0 ? value : null;
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        // 归一化空格分隔（2026-12-31 23:59）为 ISO 的 T 分隔
+        var normalized = raw.indexOf(' ') > 0 ? raw.replace(' ', 'T') : raw;
+        try {
+            // 带 Z 或带时区偏移的完整时间戳，此时以取值自带的时区为准
+            return Instant.parse(normalized).getEpochSecond();
+        } catch (DateTimeParseException ignored) {
+            // 继续尝试其它形态
+        }
+        try {
+            return OffsetDateTime.parse(normalized).toInstant().getEpochSecond();
+        } catch (DateTimeParseException ignored) {
+            // 继续尝试其它形态
+        }
+        try {
+            return LocalDateTime.parse(normalized, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                .atZone(ZONE).toInstant().getEpochSecond();
+        } catch (DateTimeParseException ignored) {
+            // 继续尝试其它形态
+        }
+        try {
+            return LocalDate.parse(normalized, DateTimeFormatter.ISO_LOCAL_DATE)
+                .atTime(23, 59, 59).atZone(ZONE).toInstant().getEpochSecond();
+        } catch (DateTimeParseException ignored) {
+            // 全部形态都不匹配
+        }
+        log.warn("虚拟支付商品的限时截止时间无法识别，已按「无活动」处理：goodsId={}, promoEndsAt={}"
+            + "（应填 2026-12-31T23:59 这类日期时间）", goodsId, raw);
+        return null;
     }
 
     private static String resolveGoodsId(CreatePayOrderRequest request) {

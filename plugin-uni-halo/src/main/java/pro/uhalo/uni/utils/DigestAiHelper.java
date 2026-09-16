@@ -303,6 +303,11 @@ public final class DigestAiHelper {
         return value.length() <= limit ? value : value.substring(0, limit);
     }
 
+    /** 供其它提示词复用的截断（null 安全）。 */
+    public static String truncateForPrompt(String value, int limit) {
+        return truncate(value, limit);
+    }
+
     private static String snippet(String text) {
         var normalized = text.replaceAll("\\s+", " ").trim();
         return normalized.length() <= 200 ? normalized : normalized.substring(0, 200);

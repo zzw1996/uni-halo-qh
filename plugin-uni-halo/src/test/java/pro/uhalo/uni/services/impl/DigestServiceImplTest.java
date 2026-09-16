@@ -26,6 +26,7 @@ import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.util.List;
 
+import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -249,5 +250,93 @@ class DigestServiceImplTest {
         verify(persistence, never()).update(any(DigestReport.class));
         assertThat(report.getPublishState()).isNotEqualTo("PUBLISHING");
         assertThat(report.getError()).isEqualTo("上一次失败");
+    }
+    // ==================== 重试复用同一条记录 ====================
+    //
+    // 资源名按「日期 + 时段」固定，一个时段只有一条记录。重试若还去 create 就会撞「已存在」，
+    // 于是重试从未真正执行、报告条数永远是 1，而调度器正是靠这条记录上的尝试次数
+    // 来决定「还要不要再试」——三者叠在一起，就成了线上那个「一直不停开始抓取 RSS 源」。
+
+    /** run() 内部的日期按时区算，这里必须用同一口径，否则 fetch 的桩对不上 */
+    private static String todayInConfiguredZone() {
+        return java.time.ZonedDateTime.now(
+                pro.uhalo.uni.utils.DigestConfigHelper.zoneOf(null))
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+    }
+
+    private static DigestReport existingReport(String status, int attempts) {
+        var report = new DigestReport();
+        report.setDate(todayInConfiguredZone());
+        report.setSlot("07:00");
+        report.setStatus(status);
+        report.setAttempts(attempts);
+        report.setStartedAt(Instant.now().minusSeconds(1800));
+        var metadata = new Metadata();
+        metadata.setName(DigestPersistence.resourceName(todayInConfiguredZone(), "07:00"));
+        report.setMetadata(metadata);
+        return report;
+    }
+
+    /** 已有同日同时段的记录时必须复用它（update），不再 create。 */
+    @Test
+    void runShouldReuseExistingReportForTheSameSlot() throws Exception {
+        var existing = existingReport("FAILED", 1);
+        when(persistence.fetch(
+                DigestPersistence.resourceName(todayInConfiguredZone(), "07:00")))
+            .thenReturn(Mono.just(existing));
+        when(persistence.update(any(DigestReport.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        // 让流水线在抓取阶段就失败：本用例只关心「记录是怎么来的」
+        when(feedService.fetchRecent(anyInt()))
+            .thenReturn(Mono.error(new IllegalStateException("抓取失败")));
+
+        StepVerifier.create(service.run("07:00", false))
+            .assertNext(report -> {
+                assertThat(report.getStatus()).as("失败要落在记录上").isEqualTo("FAILED");
+                assertThat(report.getAttempts()).as("尝试次数要累加，调度器靠它判上限").isEqualTo(2);
+            })
+            .verifyComplete();
+
+        // 关键：不能再新建（否则会撞「已存在」，重试永远不会真正执行）
+        verify(persistence, never()).create(any(DigestReport.class));
+        // update 会被调两次：一次重置为重试、一次落失败状态
+        verify(persistence, org.mockito.Mockito.atLeastOnce()).update(any(DigestReport.class));
+    }
+
+    /** 没有旧记录时按第 1 次尝试新建。 */
+    @Test
+    void runShouldCreateReportOnFirstAttempt() throws Exception {
+        when(persistence.fetch(any())).thenReturn(Mono.empty());
+        when(persistence.create(any(DigestReport.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(persistence.update(any(DigestReport.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(feedService.fetchRecent(anyInt()))
+            .thenReturn(Mono.error(new IllegalStateException("抓取失败")));
+
+        StepVerifier.create(service.run("07:00", false))
+            .assertNext(report -> assertThat(report.getAttempts()).isEqualTo(1))
+            .verifyComplete();
+
+        verify(persistence).create(any(DigestReport.class));
+    }
+
+    /** 失败后进度必须收尾，不能一直停在「进行中」——页面就靠它。 */
+    @Test
+    void runShouldClearProgressOnFailure() throws Exception {
+        when(persistence.fetch(any())).thenReturn(Mono.empty());
+        when(persistence.create(any(DigestReport.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(persistence.update(any(DigestReport.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(feedService.fetchRecent(anyInt()))
+            .thenReturn(Mono.error(new IllegalStateException("抓取失败")));
+
+        StepVerifier.create(service.run("07:00", false)).expectNextCount(1).verifyComplete();
+
+        var snapshot = progressTracker.snapshot();
+        assertThat(snapshot.isRunning()).as("失败后不能还显示「进行中」").isFalse();
+        assertThat(snapshot.getStage()).isEqualTo("FAILED");
+        assertThat(snapshot.getMessage()).contains("抓取失败");
     }
 }

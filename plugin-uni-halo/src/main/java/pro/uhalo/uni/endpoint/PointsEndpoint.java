@@ -202,6 +202,24 @@ public class PointsEndpoint implements CustomEndpoint {
                     .operationId("GetContentTicketBalance")
                     .description("Get current user's reading ticket balance.")
                     .tag(apiTag))
+            .GET(basePath + "/points/membership", pointsController::membershipStatus,
+                builder -> builder
+                    .operationId("GetMembershipStatus")
+                    .description("Get current user's membership status (single-purchase "
+                        + "time-limited entitlement). Returns 'not a member' when anonymous.")
+                    .tag(apiTag))
+            .GET(basePath + "/points/content/unlocked", pointsController::unlockedArticles,
+                builder -> builder
+                    .operationId("ListUnlockedArticles")
+                    .description("List paid articles the current user has unlocked, "
+                        + "newest first, with the remaining ticket balance.")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("limit")
+                        .in(ParameterIn.QUERY)
+                        .description("Max items to return, default 100, max 200")
+                        .required(false)
+                        .implementation(Integer.class)))
             .build();
     }
 }

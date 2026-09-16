@@ -44,6 +44,31 @@ public class DigestProgressTracker {
         current.set(DigestProgressDTO.idle());
     }
 
+    /**
+     * 成功收尾：清掉「进行中」标记。
+     *
+     * <p>收尾必须做。原先发布完成时只是把进度填满，{@code running} 仍是 true，
+     * 于是页面永远显示「进行中」；失败路径更糟——进度停在「开始抓取 RSS 源」，
+     * 看起来像任务卡死，而真正的原因一个字都看不到。</p>
+     */
+    public void completed(String message) {
+        terminal("COMPLETED", message);
+    }
+
+    /** 失败收尾：清掉「进行中」并留下失败原因，让页面能显示真正发生了什么 */
+    public void failed(String message) {
+        terminal("FAILED", message);
+    }
+
+    private void terminal(String stage, String message) {
+        current.set(DigestProgressDTO.builder()
+            .running(false)
+            .stage(stage)
+            .message(message)
+            .updatedAt(Instant.now())
+            .build());
+    }
+
     public DigestProgressDTO snapshot() {
         return current.get();
     }

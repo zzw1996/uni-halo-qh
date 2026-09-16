@@ -73,6 +73,20 @@ class DigestSchedulerTest {
         return report;
     }
 
+    /**
+     * 带尝试次数的记录。
+     *
+     * <p>重试会<b>复用同一条记录</b>（资源名按日期+时段固定），所以「试过几次」必须由
+     * 记录上的 attempts 表达。早前的用例用两条 FAILED 记录来模拟「失败两次」，
+     * 那是一个实现根本产生不出来的模型——正因如此，这个上限在线上从未生效，
+     * 失败后每分钟无限重试，而测试一直是绿的。</p>
+     */
+    private static DigestReport reportWithAttempts(String status, String slot, int attempts) {
+        var report = report(status, slot, FIXED_NOW.toInstant().minusSeconds(1800));
+        report.setAttempts(attempts);
+        return report;
+    }
+
     @Test
     void shouldSkipWhenDisabled() throws Exception {
         stubConfig("{\"enabled\":false,\"scheduleTimes\":\"07:00\"}");
@@ -139,18 +153,38 @@ class DigestSchedulerTest {
         verify(digestService, never()).run(any(), anyBoolean());
     }
 
+    /**
+     * 同一时段的尝试次数用尽后不再重试。
+     *
+     * <p>这条用例守的是「无限重试」这个线上故障：记录只有一条、attempts=2。
+     * 若上限改回按「记录条数」算，条数恒为 1 → 这里会重新变成无限重试，用例即失败。</p>
+     */
     @Test
     void shouldNotRetryForeverAfterRepeatedFailures() throws Exception {
-        // 同一时段已经失败两次：不再重试，避免每分钟重跑烧掉 AI 额度
         stubConfig("{\"enabled\":true,\"scheduleTimes\":\"07:00\"}");
         when(digestService.isRunning()).thenReturn(false);
         when(persistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(
-            report("FAILED", "07:00", FIXED_NOW.toInstant().minusSeconds(3600)),
-            report("FAILED", "07:00", FIXED_NOW.toInstant().minusSeconds(1800)))));
+            reportWithAttempts("FAILED", "07:00", 2))));
 
         StepVerifier.create(scheduler.checkAndRunOnce()).verifyComplete();
 
         verify(digestService, never()).run(any(), anyBoolean());
+    }
+
+    /** 存量记录没有 attempts 字段时按 1 次算，仍允许再试一次，然后到顶。 */
+    @Test
+    void legacyReportWithoutAttemptsShouldStillBeRetriedOnceThenCapped() throws Exception {
+        stubConfig("{\"enabled\":true,\"scheduleTimes\":\"07:00\"}");
+        when(digestService.isRunning()).thenReturn(false);
+        when(persistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(
+            report("FAILED", "07:00", FIXED_NOW.toInstant().minusSeconds(1800)))));
+        when(digestService.run("07:00", true)).thenReturn(Mono.just(report("SUCCESS", "07:00", null)));
+
+        StepVerifier.create(scheduler.checkAndRunOnce())
+            .expectNextMatches(message -> message.contains("07:00"))
+            .verifyComplete();
+
+        verify(digestService).run("07:00", true);
     }
 
     @Test
@@ -158,7 +192,7 @@ class DigestSchedulerTest {
         stubConfig("{\"enabled\":true,\"scheduleTimes\":\"07:00\"}");
         when(digestService.isRunning()).thenReturn(false);
         when(persistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(
-            report("FAILED", "07:00", FIXED_NOW.toInstant().minusSeconds(1800)))));
+            reportWithAttempts("FAILED", "07:00", 1))));
         when(digestService.run("07:00", true)).thenReturn(Mono.just(report("SUCCESS", "07:00", null)));
 
         StepVerifier.create(scheduler.checkAndRunOnce())

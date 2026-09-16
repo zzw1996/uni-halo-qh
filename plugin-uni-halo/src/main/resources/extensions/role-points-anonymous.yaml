@@ -9,6 +9,13 @@ metadata:
     rbac.authorization.halo.run/module: "UniHalo 积分"
     rbac.authorization.halo.run/display-name: "积分接口（UniHalo）"
 rules:
+  # 「已解锁文章」（plugins/points/content/unlocked）比 plugins/points 多两层路径，
+  # 不同 Halo 版本对 resource 的推导粒度不同，把常见形态都放行，
+  # 避免因推导差异让用户看不到自己的解锁记录。
   - apiGroups: [ "api.uni.uhalo.pro" ]
-    resources: [ "plugins/points" ]
+    resources:
+      - "plugins/points"
+      - "plugins/points/content"
+      - "plugins/points/content/unlocked"
+      - "plugins/points/*"
     verbs: [ "get", "list", "create" ]

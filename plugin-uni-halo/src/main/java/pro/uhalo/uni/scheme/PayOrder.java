@@ -56,6 +56,15 @@ public class PayOrder extends AbstractExtension {
     /** 装扮 key（type=outfit 时使用） */
     private String goodsStyle;
 
+    /**
+     * 套餐子项（JSON 数组字符串，仅 goodsType=bundle 有值）。
+     *
+     * <p>必须随订单落库：发货是由微信推送或兜底查单在<b>另一次请求</b>里触发的，
+     * 那时早已读不到下单时的商品配置（站长可能已经改过 goods 列表）。
+     * 若只存类型不存子项，站长一改配置，已付款的套餐订单就会发不出东西。</p>
+     */
+    private String goodsItems;
+
     private Integer quantity;
 
     private Integer env;

@@ -73,6 +73,16 @@ public class DigestEndpoint implements CustomEndpoint {
                     .description("true = preview only, false = delete")
                     .required(false)
                     .implementation(Boolean.class)))
+            .DELETE("/digest/reports/{name}", digestController::deleteReport, builder -> builder
+                .operationId("DeleteDigestReport")
+                .description("Delete one digest run record. Published posts are not affected.")
+                .tag(apiTag)
+                .parameter(parameterBuilder()
+                    .name("name")
+                    .in(ParameterIn.PATH)
+                    .description("DigestReport metadata.name")
+                    .required(true)
+                    .implementation(String.class)))
             .POST("/digest/run", digestController::run, builder -> builder
                 .operationId("RunDigest")
                 .description("Trigger a digest run in background. Body: {\"publish\": true|false}. "
@@ -89,6 +99,27 @@ public class DigestEndpoint implements CustomEndpoint {
                         .description("DigestReport metadata.name")
                         .required(true)
                         .implementation(String.class)))
+            .GET("/digest/classify/status", digestController::classifyStatus, builder -> builder
+                .operationId("GetDigestClassifyStatus")
+                .description("How many published posts already carry one of the six digest "
+                    + "categories, and how many are still unclassified.")
+                .tag(apiTag))
+            .POST("/digest/classify/preview", digestController::classifyPreview, builder -> builder
+                .operationId("PreviewDigestClassify")
+                .description("Ask the AI to classify the next batch of unclassified posts. "
+                    + "Read-only: nothing is written until the suggestions are applied.")
+                .tag(apiTag)
+                .parameter(parameterBuilder()
+                    .name("limit")
+                    .in(ParameterIn.QUERY)
+                    .description("Batch size, 1-30, default 15")
+                    .required(false)
+                    .implementation(Integer.class)))
+            .POST("/digest/classify/apply", digestController::classifyApply, builder -> builder
+                .operationId("ApplyDigestClassify")
+                .description("Apply the accepted suggestions. Categories and tags are only "
+                    + "appended to spec.categories/spec.tags; existing data is never overwritten.")
+                .tag(apiTag))
             .build();
     }
 }

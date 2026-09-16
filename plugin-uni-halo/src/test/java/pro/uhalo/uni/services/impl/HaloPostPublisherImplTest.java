@@ -50,12 +50,19 @@ class HaloPostPublisherImplTest {
     @Mock
     private pro.uhalo.uni.services.DigestPostWriter postWriter;
 
+    @Mock
+    private run.halo.app.extension.ReactiveExtensionClient client;
+
     private HaloPostPublisherImpl publisher;
 
     @BeforeEach
     void setUp() {
+        // 分类/标签的解析已改走扩展客户端（可在不存在时自动创建），这里按「站点上还没有
+        // 任何分类标签」处理；用例里没有配 AI 分类与关键词，因此不会触发创建
+        lenient().when(client.listAll(any(), any(), any()))
+            .thenReturn(reactor.core.publisher.Flux.empty());
         publisher = new HaloPostPublisherImpl(haloClient, new DigestMarkdownRenderer(),
-            postWriter);
+            postWriter, new pro.uhalo.uni.services.DigestTaxonomyService(client));
         // 自检里的「令牌 / 后台权限」会查一次后台文章列表；发布流程不查它，所以用 lenient
         lenient().when(haloClient.get(startsWith(CONSOLE_POSTS + "?"), any()))
             .thenReturn(json("{\"items\":[]}"));
@@ -83,12 +90,13 @@ class HaloPostPublisherImplTest {
         }
     }
 
-    /** 建稿 → 触发发布 → 轮询确认 这一整套的桩；分类/标签用 lenient，避免空配置时被判为多余桩 */
+    /**
+     * 建稿 → 触发发布 → 轮询确认 这一整套的桩。
+     *
+     * <p>注意这里不再桩「按 HTTP 读分类/标签」：解析已统一交给 {@code DigestTaxonomyService}
+     * （走扩展客户端，且能在不存在时自动创建），留在测试里只会让人以为它还在走 HTTP。</p>
+     */
     private void stubPublishPath() {
-        lenient().when(haloClient.get(eq("/apis/api.content.halo.run/v1alpha1/categories"), any()))
-            .thenReturn(json("{\"items\":[]}"));
-        lenient().when(haloClient.get(eq("/apis/api.content.halo.run/v1alpha1/tags"), any()))
-            .thenReturn(json("{\"items\":[]}"));
         lenient().when(haloClient.post(eq(CONSOLE_POSTS), any(), any())).thenReturn(json("""
             {"metadata":{"name":"post-1"},"spec":{"headSnapshot":"head-1"}}
             """));

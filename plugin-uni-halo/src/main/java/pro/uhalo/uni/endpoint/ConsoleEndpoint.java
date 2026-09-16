@@ -17,6 +17,11 @@ import pro.uhalo.uni.services.LuckyDrawService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.services.UserActivityService;
 import pro.uhalo.uni.services.VirtualPayService;
+import pro.uhalo.uni.dto.CommercialConfigSaveRequest;
+import pro.uhalo.uni.exception.WxAuthException;
+import pro.uhalo.uni.services.impl.CommercialConfigService;
+import pro.uhalo.uni.services.impl.PayStatsService;
+import pro.uhalo.uni.utils.WxRequestParser;
 import pro.uhalo.uni.services.WxUserService;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.endpoint.CustomEndpoint;
@@ -34,19 +39,25 @@ public class ConsoleEndpoint implements CustomEndpoint {
     private final LuckyDrawService luckyDrawService;
     private final InviteService inviteService;
     private final VirtualPayService virtualPayService;
+    private final PayStatsService payStatsService;
+    private final CommercialConfigService commercialConfigService;
 
     public ConsoleEndpoint(WxUserService wxUserService,
                            UserActivityService userActivityService,
                            PointsService pointsService,
                            LuckyDrawService luckyDrawService,
                            InviteService inviteService,
-                           VirtualPayService virtualPayService) {
+                           VirtualPayService virtualPayService,
+                           PayStatsService payStatsService,
+                           CommercialConfigService commercialConfigService) {
         this.wxUserService = wxUserService;
         this.userActivityService = userActivityService;
         this.pointsService = pointsService;
         this.luckyDrawService = luckyDrawService;
         this.inviteService = inviteService;
         this.virtualPayService = virtualPayService;
+        this.payStatsService = payStatsService;
+        this.commercialConfigService = commercialConfigService;
     }
 
     @Override
@@ -212,6 +223,27 @@ public class ConsoleEndpoint implements CustomEndpoint {
                     .description("Delete a lucky winning.")
                     .tag(apiTag);
             })
+            .GET("/commercialConfig", this::getCommercialConfig, builder -> {
+                builder.operationId("ConsoleGetCommercialConfig")
+                    .description("Commercial configuration page: related setting groups "
+                        + "(payment/member/content/ticket/points/tasks/mall/level) with their "
+                        + "form schema (from the Setting extension), current values and "
+                        + "cross-group consistency checks.")
+                    .tag(apiTag);
+            })
+            .PUT("/commercialConfig", this::saveCommercialConfig, builder -> {
+                builder.operationId("ConsoleSaveCommercialConfig")
+                    .description("Save commercial configuration groups into the plugin's ConfigMap "
+                        + "(read-modify-write merge: other groups and unknown fields are preserved).")
+                    .tag(apiTag);
+            })
+            .GET("/payStats", this::payStats, builder -> {
+                builder.operationId("ConsoleGetPayStats")
+                    .description("Payment dashboard: order counts by status, GMV of delivered "
+                        + "orders, paying users, ticket issue/consume ratio, 14-day trend and "
+                        + "per-goods ranking.")
+                    .tag(apiTag);
+            })
             .GET("/payOrders", this::listPayOrders, builder -> {
                 builder.operationId("ConsoleListPayOrders")
                     .description("List virtual payment orders (default: orders needing manual refund).")
@@ -236,6 +268,42 @@ public class ConsoleEndpoint implements CustomEndpoint {
                         .implementation(Integer.class));
             })
             .build();
+    }
+
+    Mono<ServerResponse> getCommercialConfig(ServerRequest request) {
+        return commercialConfigService.load()
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console getCommercialConfig failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "读取商业化配置失败"));
+            });
+    }
+
+    Mono<ServerResponse> saveCommercialConfig(ServerRequest request) {
+        return WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, CommercialConfigSaveRequest.class))
+            .flatMap(body -> commercialConfigService.save(body))
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console saveCommercialConfig failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "保存商业化配置失败"));
+            });
+    }
+
+    Mono<ServerResponse> payStats(ServerRequest request) {
+        return payStatsService.summary()
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console payStats failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "支付统计查询失败"));
+            });
     }
 
     Mono<ServerResponse> listPayOrders(ServerRequest request) {

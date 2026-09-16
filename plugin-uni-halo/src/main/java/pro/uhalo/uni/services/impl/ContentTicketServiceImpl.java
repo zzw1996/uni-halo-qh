@@ -6,13 +6,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.ContentLockedDTO;
 import pro.uhalo.uni.dto.ContentTicketConfigDTO;
+import pro.uhalo.uni.dto.UnlockedArticleItemDTO;
+import pro.uhalo.uni.dto.UnlockedArticleListResponse;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.ContentUnlockPersistence;
 import pro.uhalo.uni.infra.PointsPersistence;
+import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.services.ContentTicketService;
+import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.ContentTicketConfigHelper;
+import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.utils.RateLimiter;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.content.Post;
 import run.halo.app.core.extension.content.Tag;
@@ -21,7 +27,10 @@ import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Duration;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -58,6 +67,22 @@ public class ContentTicketServiceImpl implements ContentTicketService {
      */
     private static final String UNLOCK_ACTION = "unlock_content";
 
+    /** 日报文章的注解标记（与 DigestPostWriter 保持一致） */
+    private static final String DIGEST_MARKER_ANNO = "uni.uhalo.pro/digest-generated";
+
+    /** 日报文章的 label 标记（新版发布时写入，旧文章只有注解） */
+    private static final String DIGEST_MARKER_LABEL = "uni.uhalo.pro/digest";
+
+    /** 「已解锁文章」最多返回条数：一次拉太多既无意义也会拖慢回查文章标题 */
+    private static final int MAX_UNLOCKED_ITEMS = 200;
+
+    /** 回查文章标题的并发上限：保序的前提下并行几个，避免串行 N 次数据库往返 */
+    private static final int POST_LOOKUP_CONCURRENCY = 6;
+
+    private static final ZoneId UNLOCK_TIME_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter UNLOCK_TIME_FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
     /**
      * 道具直购阅读券的动作码。
      *
@@ -74,6 +99,7 @@ public class ContentTicketServiceImpl implements ContentTicketService {
     private final PointsPersistence pointsPersistence;
     private final WxUserService wxUserService;
     private final RateLimiter rateLimiter;
+    private final MembershipService membershipService;
 
     /** 付费标签的 metadata.name 集合（由 slug 反查得到），带 TTL 缓存 */
     private final AtomicReference<TagCache> paidTagNamesCache = new AtomicReference<>();
@@ -151,7 +177,15 @@ public class ContentTicketServiceImpl implements ContentTicketService {
                             return Mono.<ContentLockedDTO>empty();
                         }
                         var safeOpenid = normalizeOpenidQuietly(openid);
-                        return isOwnerOf(config, post, safeOpenid)
+                        // 会员期内免券：直接放行，不再查解锁记录与券余额（少两次数据库往返）。
+                        // 必须返回 empty——拦截器的契约是「非空即写 403」，
+                        // 会员看到自己的付费墙就说明这里写错了。
+                        return isMemberFree(safeOpenid)
+                            .flatMap(memberFree -> {
+                                if (memberFree) {
+                                    return Mono.<ContentLockedDTO>empty();
+                                }
+                                return isOwnerOf(config, post, safeOpenid)
                             .flatMap(owner -> {
                                 if (owner) {
                                     // 博主本人看自己的付费文章：放行，不拦截、不扣券。
@@ -173,6 +207,7 @@ public class ContentTicketServiceImpl implements ContentTicketService {
                                         }
                                         return lockedDtoMono(config, post, true, false, safeOpenid);
                                     });
+                                });
                             });
                     }))
                 // 文章查不到（可能已删除）时放行，交给 Halo 原生接口返回 404，
@@ -191,6 +226,59 @@ public class ContentTicketServiceImpl implements ContentTicketService {
     @Override
     public Mono<Integer> getTicketBalance(String openid) {
         return ticketBalanceMono(openid);
+    }
+
+    /**
+     * 已解锁文章列表。
+     *
+     * <p>文章标题/封面单独回查（解锁记录只存 articleName，不冗余快照）：
+     * 冗余会让站长改标题后列表里还是旧标题。回查按并发上限 6 顺序保序执行——
+     * 解锁记录条数受 {@code limit} 约束，不会打爆数据库。</p>
+     */
+    @Override
+    public Mono<UnlockedArticleListResponse> listUnlocked(String openid, int limit) {
+        var normalizedOpenid = normalizeOpenidQuietly(openid);
+        if (!StringUtils.hasText(normalizedOpenid)) {
+            return Mono.error(new WxAuthException("缺少 Wechat-Session-Id"));
+        }
+        var normalizedLimit = Math.min(Math.max(limit, 1), MAX_UNLOCKED_ITEMS);
+        return unlockPersistence.listByOpenid(normalizedOpenid)
+            .flatMap(records -> {
+                var recent = records.stream()
+                    // unlockTime 是新增字段，历史记录理论上都有；缺失时按最早处理而不丢弃
+                    .sorted(Comparator.comparing(ContentUnlock::getUnlockTime,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                    .limit(normalizedLimit)
+                    .toList();
+                return Flux.fromIterable(recent)
+                    .flatMapSequential(record -> fetchPost(record.getArticleName())
+                        .map(post -> toUnlockedItem(record, post))
+                        .defaultIfEmpty(toUnlockedItem(record, null)),
+                        POST_LOOKUP_CONCURRENCY)
+                    .collectList()
+                    .flatMap(items -> ticketBalanceMono(normalizedOpenid)
+                        .map(tickets -> UnlockedArticleListResponse.builder()
+                            .items(items)
+                            .total(records.size())
+                            .tickets(tickets)
+                            .build()));
+            });
+    }
+
+    /** post 为 null 表示文章已被删除或读取失败，此时只保留标题占位并标记不可访问。 */
+    private static UnlockedArticleItemDTO toUnlockedItem(ContentUnlock record, Post post) {
+        var spec = post == null ? null : post.getSpec();
+        var title = spec == null ? null : spec.getTitle();
+        return UnlockedArticleItemDTO.builder()
+            .articleName(record.getArticleName())
+            .title(StringUtils.hasText(title) ? title : "文章已下架")
+            .slug(spec == null ? null : spec.getSlug())
+            .cover(spec == null ? null : spec.getCover())
+            .unlockTime(record.getUnlockTime() == null ? null
+                : record.getUnlockTime().atZone(UNLOCK_TIME_ZONE).format(UNLOCK_TIME_FMT))
+            .ticketsCost(record.getTicketsCost())
+            .available(post != null)
+            .build();
     }
 
     // ==================== 解锁核心 ====================
@@ -218,15 +306,54 @@ public class ContentTicketServiceImpl implements ContentTicketService {
                     // 博主豁免：记录一条 0 消耗的解锁，保证后续拦截不再询问
                     return createUnlockRecord(openid, articleName, 0, config, post, true);
                 }
-                var unlockKey = ContentUnlockPersistence.buildUnlockKey(openid, articleName);
-                return unlockPersistence.findByUnlockKey(unlockKey)
-                    .flatMap(existing -> {
-                        // 已解锁过：幂等返回，绝不重复扣券
-                        log.info("付费文章已解锁，跳过扣券: openid={}, article={}", openid, articleName);
-                        return lockedDtoMono(config, post, true, true, openid);
-                    })
-                    .switchIfEmpty(Mono.defer(() -> unlockWithTicket(config, post, openid,
-                        articleName, cost)));
+                // 会员期内免券：写一条 0 消耗的解锁记录，保证后续拦截不再询问，
+                // 且会员点「解锁」时绝不消耗券（否则是实打实的资损）
+                return isMemberFree(openid)
+                    .flatMap(memberFree -> memberFree
+                        ? createUnlockRecord(openid, articleName, 0, config, post, true)
+                        : unlockWithTicketOrExisting(config, post, openid, articleName, cost));
+            });
+    }
+
+    /** 非会员路径：先查是否已解锁，未解锁则扣券。 */
+    private Mono<ContentLockedDTO> unlockWithTicketOrExisting(ContentTicketConfigDTO config,
+        Post post, String openid, String articleName, int cost) {
+        var unlockKey = ContentUnlockPersistence.buildUnlockKey(openid, articleName);
+        return unlockPersistence.findByUnlockKey(unlockKey)
+            .flatMap(existing -> {
+                // 已解锁过：幂等返回，绝不重复扣券
+                log.info("付费文章已解锁，跳过扣券: openid={}, article={}", openid, articleName);
+                return lockedDtoMono(config, post, true, true, openid);
+            })
+            .switchIfEmpty(Mono.defer(() -> unlockWithTicket(config, post, openid,
+                articleName, cost)));
+    }
+
+    /**
+     * 当前用户是否享有会员免券权益。
+     *
+     * <p>只此一处判定：会员配置开启 + 免券权益开启 + 到期时间仍在未来。
+     * 任一不满足即按非会员处理——宁可多问用户一次券，也不误放行。</p>
+     *
+     * <p>判定失败同样按非会员处理：拦截链路里「多收一次券」的用户体验损失
+     * 远小于「全站付费文章被误放行」的收入损失与排查成本。</p>
+     */
+    private Mono<Boolean> isMemberFree(String openid) {
+        if (!StringUtils.hasText(openid)) {
+            return Mono.just(false);
+        }
+        return membershipService.loadConfig()
+            .flatMap(memberConfig -> {
+                if (!memberConfig.isEnabled() || !memberConfig.isFreeContent()) {
+                    return Mono.just(false);
+                }
+                return membershipService.loadMemberExpireAt(openid)
+                    .map(MemberConfigHelper::isActive)
+                    .defaultIfEmpty(false);
+            })
+            .onErrorResume(ex -> {
+                log.warn("会员免券判定失败，按非会员处理: openid={}, {}", openid, ex.getMessage());
+                return Mono.just(false);
             });
     }
 
@@ -291,6 +418,8 @@ public class ContentTicketServiceImpl implements ContentTicketService {
         var record = pointsPersistence.newRecord(openid, UNLOCK_ACTION,
             0, safeBalance(account), "解锁付费文章 · " + truncate(articleName, 60),
             articleName, earnKey, account.getWxUserId());
+        // 券消耗记为负数：后台看板据所有流水的 tickets 求和算出「券发放 / 券消耗」比
+        record.setTickets(-cost);
         return pointsPersistence.saveAccount(account)
             .then(pointsPersistence.appendRecord(record)
                 .onErrorResume(ex -> {
@@ -368,8 +497,18 @@ public class ContentTicketServiceImpl implements ContentTicketService {
 
     // ==================== 付费判定 ====================
 
-    /** 文章是否被标记为付费：其 tags 中是否含付费标记标签。 */
+    /**
+     * 文章是否被标记为付费：其 tags 中是否含付费标记标签。
+     *
+     * <p>先看是不是 AI 日报生成的文章：日报是拉新与留存的入口，
+     * 一旦被付费墙拦下，从分享进来的新用户点开第一篇就被要求用券解锁，
+     * 转化直接归零。因此日报文章默认豁免（可用 freeForDigest 关闭）。
+     * 这里判在前面还有个好处：日报文章连标签都不用查，省一次标签解析。</p>
+     */
     private Mono<Boolean> isPaidPost(ContentTicketConfigDTO config, Post post) {
+        if (Boolean.TRUE.equals(config.getFreeForDigest()) && isDigestGenerated(post)) {
+            return Mono.just(false);
+        }
         var tags = post.getSpec() == null ? null : post.getSpec().getTags();
         if (tags == null || tags.isEmpty()) {
             return Mono.just(false);
@@ -452,6 +591,26 @@ public class ContentTicketServiceImpl implements ContentTicketService {
                 // 查询失败按未解锁：会多问用户一次券，但不会泄露内容
                 return Mono.just(false);
             });
+    }
+
+    /**
+     * 是否为 AI 日报生成的文章。
+     *
+     * <p>认定依据是发布时打上的注解（{@code uni.uhalo.pro/digest-generated}）与
+     * label（{@code uni.uhalo.pro/digest}），两者任一命中即算——
+     * 早期版本只写注解，新版本同时写 label，两个都认才不会漏掉存量文章。</p>
+     */
+    private static boolean isDigestGenerated(Post post) {
+        var metadata = post.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+        var annotations = metadata.getAnnotations();
+        if (annotations != null && "true".equalsIgnoreCase(annotations.get(DIGEST_MARKER_ANNO))) {
+            return true;
+        }
+        var labels = metadata.getLabels();
+        return labels != null && "true".equalsIgnoreCase(labels.get(DIGEST_MARKER_LABEL));
     }
 
     private Mono<Post> fetchPost(String articleName) {

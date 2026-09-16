@@ -64,6 +64,13 @@ public enum PointsAction {
             case "exchange_publish" -> "积分兑换·发布券";
             case "exchange_publish_ticket" -> "积分兑换·发布券";
             case "exchange_content_ticket" -> "积分兑换·阅读券";
+            case "ticket_sign_in" -> "签到赠券";
+            case "ticket_streak" -> "连签赠券";
+            case "ticket_new_user" -> "新人赠券";
+            case "ticket_first_purchase" -> "首单赠券";
+            case "ticket_task" -> "每日任务赠券";
+            case "ticket_member_bonus" -> "会员开通礼赠券";
+            case "purchase_membership" -> "道具直购·会员卡";
             case "unlock_content" -> "解锁付费文章";
             case "exchange_dashboard" -> "积分兑换·数据看板";
             case "admin_adjust" -> "系统调整";

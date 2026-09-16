@@ -13,8 +13,11 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.WxUserService;
+import pro.uhalo.uni.dto.MemberConfigDTO;
 import pro.uhalo.uni.utils.ContentTicketConfigHelper;
+import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -28,9 +31,12 @@ import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -73,6 +79,9 @@ class ContentTicketServiceImplTest {
     @Mock
     private RateLimiter rateLimiter;
 
+    @Mock
+    private MembershipService membershipService;
+
     @InjectMocks
     private ContentTicketServiceImpl service;
 
@@ -87,6 +96,9 @@ class ContentTicketServiceImplTest {
             .thenReturn(Flux.just(paidTag()));
         lenient().when(pointsPersistence.getOrCreateAccount(any()))
             .thenReturn(Mono.just(accountWithTickets(3)));
+        // 会员默认关闭：既有用例考察的是券与豁免逻辑，会员路径由专门用例覆盖
+        lenient().when(membershipService.loadConfig())
+            .thenReturn(Mono.just(MemberConfigHelper.defaults()));
     }
 
     // ==================== 放行场景：必须返回 empty ====================
@@ -387,4 +399,169 @@ class ContentTicketServiceImplTest {
         wxUser.setHaloUserName(haloUserName);
         return wxUser;
     }
+    // ==================== 会员免券（单次购买的有效期权益） ====================
+
+    /**
+     * 会员期内访问付费文章：放行。
+     *
+     * <p>与博主豁免同理必须返回 empty——返回 DTO 会让会员被自己的付费墙挡住，
+     * 那就是「付了会员钱却看不了」的资损级缺陷。</p>
+     */
+    @Test
+    void memberShouldPassThroughPaidPost() {
+        stubActiveMember();
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .verifyComplete();
+    }
+
+    /**
+     * 会员点「解锁」：写 0 消耗的解锁记录，<b>绝不扣券</b>。
+     *
+     * <p>会员用的是会员权益，若这里扣了券，用户会既付了会员费又损失券。</p>
+     */
+    @Test
+    void memberUnlockShouldNotConsumeTicket() {
+        stubActiveMember();
+        lenient().when(rateLimiter.tryAcquire(any(), any(Integer.class), any()))
+            .thenReturn(true);
+        // 解锁链路先做博主判定，因此同样需要这个桩（非博主）
+        when(wxUserService.fetchByOpenid(eq(OPENID))).thenReturn(Mono.empty());
+        when(unlockPersistence.findByUnlockKey(any())).thenReturn(Mono.empty());
+        when(unlockPersistence.create(any(ContentUnlock.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(service.unlock(OPENID, ARTICLE_NAME))
+            // 与博主豁免同一语义：locked=true 表示「本文本来是付费的」，
+            // unlocked=true 表示「本次已放行」——拦截器只看 unlocked
+            .assertNext(dto -> assertThat(dto.getUnlocked()).isTrue())
+            .verifyComplete();
+
+        // 关键断言：解锁记录以 0 消耗写入（会员不扣券）。
+        // 这里刻意不读账户——会员路径与博主豁免同一条分支，根本不碰券余额字段，
+        // 「没读」本身就是「没扣」的最强证明。
+        var captor = org.mockito.ArgumentCaptor.forClass(ContentUnlock.class);
+        verify(unlockPersistence).create(captor.capture());
+        assertThat(captor.getValue().getTicketsCost()).isZero();
+        verify(pointsPersistence, never()).saveAccount(any());
+    }
+
+    /** 会员配置开着但免券权益关闭：仍应正常拦截并计券。 */
+    @Test
+    void memberWithoutFreeContentBenefitShouldStillBeLocked() {
+        when(membershipService.loadConfig()).thenReturn(Mono.just(MemberConfigDTO.builder()
+            .enabled(true).freeContent(false).defaultDays(30).build()));
+        stubNonOwnerNotYetUnlocked();
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .assertNext(dto -> assertThat(dto.getLocked()).isTrue())
+            .verifyComplete();
+    }
+
+    /** 会员已过期：按非会员处理，正常拦截。 */
+    @Test
+    void expiredMemberShouldBeLockedAgain() {
+        when(membershipService.loadConfig()).thenReturn(Mono.just(MemberConfigDTO.builder()
+            .enabled(true).freeContent(true).defaultDays(30).build()));
+        when(membershipService.loadMemberExpireAt(eq(OPENID)))
+            .thenReturn(Mono.just(java.time.Instant.now().minusSeconds(60)));
+        stubNonOwnerNotYetUnlocked();
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .assertNext(dto -> assertThat(dto.getLocked()).isTrue())
+            .verifyComplete();
+    }
+
+    /** 非博主、且尚未解锁的登录用户：走完整判定链到「锁定」。 */
+    private void stubNonOwnerNotYetUnlocked() {
+        when(wxUserService.fetchByOpenid(eq(OPENID))).thenReturn(Mono.empty());
+        when(unlockPersistence.findByUnlockKey(any())).thenReturn(Mono.empty());
+    }
+
+    /** 会员配置开启 + 免券权益开启 + 到期时间在未来。 */
+    private void stubActiveMember() {
+        when(membershipService.loadConfig()).thenReturn(Mono.just(MemberConfigDTO.builder()
+            .enabled(true).freeContent(true).defaultDays(30).build()));
+        when(membershipService.loadMemberExpireAt(eq(OPENID)))
+            .thenReturn(Mono.just(java.time.Instant.now().plusSeconds(7 * 86400)));
+    }
+    // ==================== AI 日报文章免券 ====================
+    //
+    // 日报是拉新与留存的入口：用户从分享进来点开的第一篇往往就是日报文章。
+    // 若它被付费墙拦下，新用户第一眼就被要求用券解锁，转化直接归零——
+    // 而且这种拦截很难归因到配置上，所以用测试钉住。
+
+    /** 日报生成的文章即使带了付费标签也放行。 */
+    @Test
+    void digestGeneratedPostShouldBypassPaywall() {
+        when(client.fetch(eq(Post.class), eq(ARTICLE_NAME)))
+            .thenReturn(Mono.just(digestPost()));
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .verifyComplete();
+    }
+
+    /** 豁免开关关闭时，日报文章照样被拦——这是站长显式选择要收费的情况。 */
+    @Test
+    void digestPostShouldBeLockedWhenExemptionDisabled() {
+        when(settingFetcher.get(eq(ContentTicketConfigHelper.GROUP_NAME)))
+            .thenReturn(Mono.just(enabledConfigNodeWithDigestFree(false)));
+        when(client.fetch(eq(Post.class), eq(ARTICLE_NAME)))
+            .thenReturn(Mono.just(digestPost()));
+        stubNonOwnerNotYetUnlocked();
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .assertNext(dto -> assertThat(dto.getLocked()).isTrue())
+            .verifyComplete();
+    }
+
+    /** 只带 label（新版发布）、只带注解（旧版发布）都要认，否则存量文章会被误拦。 */
+    @Test
+    void digestMarkerShouldBeRecognisedFromLabelOrAnnotation() {
+        // 只有 label、没有注解
+        when(client.fetch(eq(Post.class), eq(ARTICLE_NAME)))
+            .thenReturn(Mono.just(digestPostWithLabelOnly()));
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .verifyComplete();
+    }
+
+    /** 普通付费文章不受影响：豁免只针对日报文章。 */
+    @Test
+    void normalPaidPostShouldStillBeLocked() {
+        stubNonOwnerNotYetUnlocked();
+
+        StepVerifier.create(service.resolveLockIfRequired(OPENID, ARTICLE_NAME))
+            .assertNext(dto -> assertThat(dto.getLocked()).isTrue())
+            .verifyComplete();
+    }
+
+    /** 带日报标记的付费文章（用于豁免测试）。 */
+    private static Post digestPost() {
+        var post = paidPost();
+        post.getMetadata().setAnnotations(java.util.Map.of(DIGEST_ANNO, "true"));
+        return post;
+    }
+
+    /** 只有 label、没有注解的日报文章（旧版插件发布过、或标签被单独补上）。 */
+    private static Post digestPostWithLabelOnly() {
+        var post = paidPost();
+        post.getMetadata().setLabels(java.util.Map.of(DIGEST_LABEL, "true"));
+        return post;
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode enabledConfigNodeWithDigestFree(
+        boolean freeForDigest) {
+        try {
+            return MAPPER.readTree("""
+                {"enabled":true,"paidTagSlug":"paid","costTickets":1,
+                 "freeForOwner":true,"permanent":true,"freeForDigest":%s}
+                """.formatted(freeForDigest));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static final String DIGEST_ANNO = "uni.uhalo.pro/digest-generated";
+    private static final String DIGEST_LABEL = "uni.uhalo.pro/digest";
 }

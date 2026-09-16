@@ -37,4 +37,13 @@ public class OutfitStatusDTO {
     private String nickFrame;
 
     private String theme;
+
+    /**
+     * 该用户在本站的累计消费金额（单位「分」）。
+     *
+     * <p>只统计已发货（{@code delivered}）的订单：待支付与需退款的都不计，
+     * 否则用户会看到「门槛满了却还锁着」。前端据此展示里程碑进度
+     * （「已消费 12.5 / 30 元」）并与 {@link OutfitItemDTO#getMinSpend()} 配合判断锁定态。</p>
+     */
+    private long totalSpentCents;
 }

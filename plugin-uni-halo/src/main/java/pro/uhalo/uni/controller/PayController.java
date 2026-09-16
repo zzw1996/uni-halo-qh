@@ -54,6 +54,18 @@ public class PayController {
     }
 
     /**
+     * 我的订单列表（仅当前 openid 自己的订单）。
+     *
+     * <p>openid 一律取自请求头，不接受 query 参数传入，避免越权查看他人订单。</p>
+     */
+    public Mono<ServerResponse> myOrders(ServerRequest request) {
+        var page = parseInt(request.queryParam("page").orElse(null), 0);
+        var size = parseInt(request.queryParam("size").orElse(null), 20);
+        return withOpenid(request, openid -> virtualPayService.listMyOrders(openid, page, size)
+            .flatMap(this::jsonOk));
+    }
+
+    /**
      * 微信虚拟支付发货推送入口：输入输出均为 XML，返回 ErrCode=0 表示成功（否则微信最多重试 15 次）。
      */
     public Mono<ServerResponse> deliverNotify(ServerRequest request) {
@@ -146,5 +158,17 @@ public class PayController {
     private static String resolveOpenid(ServerRequest request) {
         var openid = request.headers().firstHeader(Constants.WECHAT_SESSION_HEADER);
         return StringUtils.hasText(openid) ? openid.trim() : null;
+    }
+
+    /** 解析整数 query 参数：缺失或非法时回落默认值，不报错。 */
+    private static int parseInt(String value, int fallback) {
+        if (!StringUtils.hasText(value)) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
     }
 }

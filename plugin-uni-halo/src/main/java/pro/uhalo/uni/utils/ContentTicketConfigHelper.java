@@ -33,6 +33,7 @@ public final class ContentTicketConfigHelper {
             .costTickets(DEFAULT_COST_TICKETS)
             .freeForOwner(true)
             .permanent(true)
+            .freeForDigest(true)
             .build();
     }
 
@@ -61,6 +62,8 @@ public final class ContentTicketConfigHelper {
             // 博主豁免默认开启：站长本人看自己的付费文章不应被要求消耗券
             .freeForOwner(node.path("freeForOwner").asBoolean(true))
             .permanent(node.path("permanent").asBoolean(true))
+            // 日报免券默认开启：日报是拉新入口，被付费墙拦住会直接把转化掐死
+            .freeForDigest(node.path("freeForDigest").asBoolean(true))
             .build();
     }
 

@@ -22,6 +22,13 @@ public class ExchangeItemDTO {
     /** 说明文案 */
     private String description;
 
+    /**
+     * 每次兑换发放的券张数（仅券类兑换项有值，如 content_ticket）。
+     *
+     * <p>前端据此显示「100 积分 / 2 张券」这类单价信息，让用户能判断值不值。</p>
+     */
+    private int ticketCount;
+
     /** 今日已兑换次数 */
     private int todayCount;
 }

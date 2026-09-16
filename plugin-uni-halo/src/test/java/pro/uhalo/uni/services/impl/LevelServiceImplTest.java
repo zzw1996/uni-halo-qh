@@ -9,11 +9,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import pro.uhalo.uni.exception.WxAuthException;
+import pro.uhalo.uni.infra.PayOrderPersistence;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.RateLimiter;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.plugin.ReactiveSettingFetcher;
@@ -47,6 +49,9 @@ class LevelServiceImplTest {
     @Mock
     private RateLimiter rateLimiter;
 
+    @Mock
+    private PayOrderPersistence payOrderPersistence;
+
     @InjectMocks
     private LevelServiceImpl levelService;
 
@@ -59,6 +64,8 @@ class LevelServiceImplTest {
         account.setWxOpenid(OPENID);
         account.setBalance(1000L);
         lenient().when(rateLimiter.tryAcquire(any(), anyInt(), any())).thenReturn(true);
+        // 消费里程碑要统计累计消费；多数用例只关心装扮状态，按「无订单」处理
+        lenient().when(payOrderPersistence.listByOpenid(OPENID)).thenReturn(Flux.empty());
     }
 
     private void stubConfig(String json) throws Exception {

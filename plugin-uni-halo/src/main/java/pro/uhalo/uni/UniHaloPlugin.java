@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.scheme.DigestReport;
+import pro.uhalo.uni.scheme.DigestSubscription;
 import pro.uhalo.uni.scheme.LuckyWinning;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.PayOrder;
@@ -25,6 +26,23 @@ import static run.halo.app.extension.index.IndexAttributeFactory.simpleAttribute
 @Component
 public class UniHaloPlugin extends BasePlugin {
 
+    /**
+     * 本插件注册的全部扩展类型。
+     *
+     * <p><b>注册与摘除必须共用这一份清单</b>：早前 start() 里逐个注册、stop() 里逐行摘除，
+     * 两份清单各写各的，结果 DigestSubscription 只注册没摘除——埋了一个很难查的坑：
+     * Halo 的 {@code Scheme.equals} <b>只比 GroupVersionKind、不比类</b>，
+     * 而插件每次升级都会换类加载器，于是残留的旧 scheme 会让下次 register 判定为
+     * 「已存在」直接返回，<b>这个类型的索引从此再也不会重建</b>。
+     * 表现是：读走索引 → 拿不到任何记录（看着像「没订阅」），
+     * 写走索引 → 找不到索引 → 抛异常回滚 → 接口 500，且一条记录都写不进去。</p>
+     */
+    private static final java.util.List<Class<? extends run.halo.app.extension.Extension>>
+        EXTENSION_TYPES = java.util.List.of(
+            QRCodeInfo.class, WxUser.class, UserActivity.class, UserPoints.class,
+            PointsRecord.class, PayOrder.class, LuckyWinning.class, ContentUnlock.class,
+            DigestSubscription.class, DigestReport.class);
+
     private final SchemeManager schemeManager;
 
     public UniHaloPlugin(PluginContext pluginContext, SchemeManager schemeManager) {
@@ -34,6 +52,13 @@ public class UniHaloPlugin extends BasePlugin {
 
     @Override
     public void start() {
+        // 注册之前先把可能残留的旧 scheme 清掉。
+        //
+        // 必须做这一步：只要历史上漏摘过一次（旧版本的 bug），那份残留就会让下面
+        // 每一个 register 都变成空操作，索引也就永远建不起来——而插件自己完全看不出来，
+        // 只有等某个功能写数据时才会以 500 的形式暴露出来。这里主动清一遍，
+        // 装上新版插件就自愈，不需要重启 Halo。
+        clearStaleSchemes();
 
         schemeManager.register(QRCodeInfo.class, indexSpecs -> {
             indexSpecs.add(new IndexSpec()
@@ -139,6 +164,15 @@ public class UniHaloPlugin extends BasePlugin {
             log.info("【UniHalo】ContentUnlock scheme 注册成功");
         });
 
+        schemeManager.register(DigestSubscription.class, indexSpecs -> {
+            // 订阅按用户查询（一个用户一条记录，资源名由 openid 派生）
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(DigestSubscription.class,
+                    DigestSubscription::getWxOpenid)));
+            log.info("【UniHalo】DigestSubscription scheme 注册成功");
+        });
+
         schemeManager.register(DigestReport.class, indexSpecs -> {
             // date 是定时任务的幂等键（按天查已有记录），status 供后台筛选
             indexSpecs.add(new IndexSpec()
@@ -155,17 +189,37 @@ public class UniHaloPlugin extends BasePlugin {
 
     @Override
     public void stop() {
-
-        schemeManager.unregister(schemeManager.get(QRCodeInfo.class));
-        schemeManager.unregister(schemeManager.get(WxUser.class));
-        schemeManager.unregister(schemeManager.get(UserActivity.class));
-        schemeManager.unregister(schemeManager.get(UserPoints.class));
-        schemeManager.unregister(schemeManager.get(PointsRecord.class));
-        schemeManager.unregister(schemeManager.get(PayOrder.class));
-        schemeManager.unregister(schemeManager.get(LuckyWinning.class));
-        schemeManager.unregister(schemeManager.get(ContentUnlock.class));
-        schemeManager.unregister(schemeManager.get(DigestReport.class));
-
+        // 与 start() 用同一份清单，别再出现「注册了却忘了摘」——那正是订阅保存 500 的根因
+        EXTENSION_TYPES.forEach(this::unregisterQuietly);
         log.info("【UniHalo】插件停止！");
+    }
+
+    /**
+     * 摘除某个扩展类型的 scheme。
+     *
+     * <p>两处讲究：</p>
+     * <ul>
+     *   <li><b>按 GVK 查找，不用 {@code get(Class)}</b>：残留的 scheme 其 type 属于上一次
+     *       插件加载的类加载器，用 Class 去找会抛「找不到 scheme」，把 stop() 打断，
+     *       后面的类型就都摘不掉了；GVK 是一串字符串，换类加载器也照样能定位。</li>
+     *   <li><b>找不到就跳过（{@code fetch} 返回 Optional）</b>：首次安装时本来就没有旧注册，
+     *       这不是错误。</li>
+     * </ul>
+     */
+    private void unregisterQuietly(Class<? extends run.halo.app.extension.Extension> type) {
+        var gvk = run.halo.app.extension.GroupVersionKind.fromExtension(type);
+        schemeManager.fetch(gvk).ifPresent(schemeManager::unregister);
+    }
+
+    /** 清掉本插件这些类型上残留的旧注册（旧版本漏摘、以及插件重载留下的） */
+    private void clearStaleSchemes() {
+        for (var type : EXTENSION_TYPES) {
+            var gvk = run.halo.app.extension.GroupVersionKind.fromExtension(type);
+            schemeManager.fetch(gvk).ifPresent(scheme -> {
+                log.info("【UniHalo】发现残留的 scheme（{}），先摘掉再重新注册：{}",
+                    type.getSimpleName(), gvk);
+                schemeManager.unregister(scheme);
+            });
+        }
     }
 }

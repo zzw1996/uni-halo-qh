@@ -76,17 +76,9 @@ public class Constants {
     public static final String HALO_CONSOLE_POST_API_PREFIX =
         "/apis/api.console.halo.run/v1alpha1/posts";
 
-    /**
-     * Halo 官方附件上传接口：从远程地址转存。
-     */
-    public static final String HALO_CONSOLE_ATTACHMENT_UPLOAD_FROM_URL =
-        "/apis/api.console.halo.run/v1alpha1/attachments/-/upload-from-url";
-
-    /**
-     * Halo 官方附件上传接口：本地文件（multipart，字段 file + policyName + groupName）。
-     */
-    public static final String HALO_CONSOLE_ATTACHMENT_UPLOAD =
-        "/apis/api.console.halo.run/v1alpha1/attachments/upload";
+    // 附件上传不再走 HTTP：改用 Halo 暴露给插件的 AttachmentService bean
+    // （见 DigestAssetUploaderImpl）。自建 HTTP 请求需要个人令牌、受中间层插件影响，
+    // 而且拿不到 ExternalLinkProcessor，会把相对 permalink 当成「没有封面」。
 
     /**
      * Halo 官方分类 / 标签读接口。

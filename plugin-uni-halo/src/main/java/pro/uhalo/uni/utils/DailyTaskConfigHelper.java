@@ -82,13 +82,20 @@ public final class DailyTaskConfigHelper {
         var type = node.path("type").asText("").trim().toLowerCase();
         var target = node.path("target").asInt(0);
         var points = node.path("points").asInt(0);
-        if (!VALID_TYPES.contains(type) || target <= 0 || points <= 0) {
+        var tickets = node.path("tickets").asInt(0);
+        if (!VALID_TYPES.contains(type) || target <= 0) {
+            return null;
+        }
+        // 只给券不给积分也是合法配置（券是付费文章的入口，积分只是通用激励），
+        // 因此判定条件是「奖励非空」而不是「积分 > 0」
+        if (points <= 0 && tickets <= 0) {
             return null;
         }
         return DailyTaskItemDTO.builder()
             .type(type)
             .target(target)
-            .points(points)
+            .points(Math.max(0, points))
+            .tickets(Math.max(0, tickets))
             .enabled(node.path("enabled").asBoolean(true))
             .build();
     }

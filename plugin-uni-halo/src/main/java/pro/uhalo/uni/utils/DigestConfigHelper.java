@@ -64,6 +64,7 @@ public final class DigestConfigHelper {
             .words(clamp(node.path("words").asInt(600), MIN_WORDS, MAX_WORDS))
             .language("en".equalsIgnoreCase(text(node, "language", "zh")) ? "en" : "zh")
             .imageEnabled(node.path("imageEnabled").asBoolean(true))
+            .requireImage(node.path("requireImage").asBoolean(true))
             .attachmentPolicyName(text(node, "attachmentPolicyName", ""))
             .attachmentGroupName(text(node, "attachmentGroupName", ""))
             .publishEnabled(node.path("publishEnabled").asBoolean(true))
@@ -72,6 +73,10 @@ public final class DigestConfigHelper {
             .postOwner(text(node, "postOwner", "admin"))
             .postTitleTemplate(text(node, "postTitleTemplate", "AI 日报 · {date}"))
             .postCategories(text(node, "postCategories", ""))
+            // 自动打标默认开启：这是「不需要站长手工配置分类标签」的关键
+            .autoCategoryEnabled(node.path("autoCategoryEnabled").asBoolean(true))
+            .autoTagEnabled(node.path("autoTagEnabled").asBoolean(true))
+            .autoTagMinCount(Math.max(1, node.path("autoTagMinCount").asInt(2)))
             .postTags(text(node, "postTags", ""))
             .mermaidEnabled(node.path("mermaidEnabled").asBoolean(true))
             .footerNote(text(node, "footerNote", ""))

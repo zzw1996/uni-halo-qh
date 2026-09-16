@@ -45,25 +45,31 @@ public class DigestPostWriter {
     private static final String RAW_TYPE_MARKDOWN = "markdown";
 
     /** 打在文章上的来源标记：清理残留时只认带这个标记、且未发布成功的文章 */
-    private static final String DIGEST_MARKER_ANNO = "uni.uhalo.pro/digest-generated";
+    public static final String DIGEST_MARKER_ANNO = "uni.uhalo.pro/digest-generated";
+
+    /** 日报文章的 label（对外可查询） */
+    public static final String DIGEST_LABEL = "uni.uhalo.pro/digest";
     private static final String VISIBLE_PUBLIC = "PUBLIC";
 
     private final ReactiveExtensionClient client;
     private final DigestMarkdownRenderer markdownRenderer;
+    private final DigestTaxonomyService taxonomy;
     private final Duration releaseTimeout;
     private final Duration pollInterval;
 
     /** Spring 用这个构造器装配；时间窗口用默认值 */
     @org.springframework.beans.factory.annotation.Autowired
-    public DigestPostWriter(ReactiveExtensionClient client, DigestMarkdownRenderer markdownRenderer) {
-        this(client, markdownRenderer, RELEASE_TIMEOUT, POLL_INTERVAL);
+    public DigestPostWriter(ReactiveExtensionClient client, DigestMarkdownRenderer markdownRenderer,
+        DigestTaxonomyService taxonomy) {
+        this(client, markdownRenderer, taxonomy, RELEASE_TIMEOUT, POLL_INTERVAL);
     }
 
     /** 允许测试注入更短的确认窗口，避免单测等满两分钟 */
     DigestPostWriter(ReactiveExtensionClient client, DigestMarkdownRenderer markdownRenderer,
-        Duration releaseTimeout, Duration pollInterval) {
+        DigestTaxonomyService taxonomy, Duration releaseTimeout, Duration pollInterval) {
         this.client = client;
         this.markdownRenderer = markdownRenderer;
+        this.taxonomy = taxonomy;
         this.releaseTimeout = releaseTimeout;
         this.pollInterval = pollInterval;
     }
@@ -85,9 +91,14 @@ public class DigestPostWriter {
 
         // 分三步，顺序与 Halo 自己建稿一致：先建草稿 → 再建快照 → 最后回填快照引用并置为发布。
         // 一把梭（创建时就带快照引用）会让协调器处理到「引用了还不存在的快照」的中间态。
-        return resolveNames(Category.class, post.getCategoryNames())
-            .zipWith(resolveNames(Tag.class, post.getTagNames()))
-            .flatMap(refs -> client.create(buildPost(post, postName, owner, refs.getT1(), refs.getT2()))
+        //
+        // 分类/标签要同时解析「手填的」和「AI 判定的」两类。早前这里只解析了手填的
+        // categoryNames / tagNames，AI 分类与关键词被静默丢掉，发出来的文章
+        // spec.categories / spec.tags 全是空——站点主题与小程序都从内容接口的
+        // categories / tags 取数据，于是文章页上分类标签一条都不显示。
+        return resolveRefs(post)
+            .flatMap(refs -> client.create(
+                    buildPost(post, postName, owner, refs.categories(), refs.tags()))
                 .flatMap(created -> client.create(buildSnapshot(postName, snapshotName, owner, raw, html)))
                 .flatMap(snapshotCreated -> attachSnapshotAndPublish(postName, snapshotName)))
             .flatMap(published -> awaitPublished(postName, MAX_CREATE_ATTEMPTS))
@@ -110,6 +121,36 @@ public class DigestPostWriter {
                         .message("未能完成发布，已自动回滚（避免留下打不开的残留）：" + state.message())
                         .build());
             });
+    }
+
+    /**
+     * 把「手填的」与「AI 判定的」两类分类/标签解析成分类与标签的 metadata.name。
+     *
+     * <p>两者处理方式刻意不同：手填的只匹配已有（站长手误写错一个名字，不该在站点上
+     * 偷偷多出一个分类）；AI 判定出来的不存在则自动创建——这才是「不需要站长手工配置」。
+     * 与 HTTP 路径（{@code HaloPostPublisherImpl#resolveRefs}）保持同一套逻辑。</p>
+     */
+    private Mono<Refs> resolveRefs(HaloPostPublishDTO post) {
+        return Mono.zip(
+                merge(taxonomy.resolveExistingCategories(post.getCategoryNames()),
+                    taxonomy.resolveOrCreateCategories(post.getAiCategories())),
+                merge(taxonomy.resolveExistingTags(post.getTagNames()),
+                    taxonomy.resolveOrCreateTags(post.getKeywords())))
+            .map(tuple -> new Refs(tuple.getT1(), tuple.getT2()));
+    }
+
+    /** 合并两类来源的分类/标签名：去重并保持先后顺序 */
+    private static Mono<List<String>> merge(Mono<List<String>> manual, Mono<List<String>> auto) {
+        return manual.zipWith(auto).map(tuple -> {
+            var merged = new java.util.LinkedHashSet<String>();
+            merged.addAll(tuple.getT1());
+            merged.addAll(tuple.getT2());
+            return List.copyOf(merged);
+        });
+    }
+
+    /** 解析后的分类与标签名 */
+    private record Refs(List<String> categories, List<String> tags) {
     }
 
     /**
@@ -203,6 +244,10 @@ public class DigestPostWriter {
         labels.put(Post.OWNER_LABEL, owner);
         labels.put(Post.VISIBLE_LABEL, VISIBLE_PUBLIC);
         labels.put(Post.DELETED_LABEL, "false");
+        // 可查询的日报标记（label 才能被 Halo 的文章列表接口按 labelSelector 过滤，
+        // annotation 不行）：站长能在 Halo 后台筛出日报文章，后续的付费墙豁免、
+        // 「只看日报」等能力也有稳定的选择器
+        labels.put(DIGEST_LABEL, "true");
 
         var metadata = new Metadata();
         metadata.setName(postName);

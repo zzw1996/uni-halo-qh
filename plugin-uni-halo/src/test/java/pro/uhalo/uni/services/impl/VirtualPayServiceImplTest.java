@@ -14,6 +14,9 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
+import pro.uhalo.uni.dto.MemberConfigDTO;
+import pro.uhalo.uni.services.MembershipService;
+import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.OwnedOutfitParser;
 import pro.uhalo.uni.utils.TokenManager;
@@ -22,10 +25,13 @@ import reactor.test.StepVerifier;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,8 +63,19 @@ class VirtualPayServiceImplTest {
     @Mock
     private TokenManager tokenManager;
 
+    @Mock
+    private TicketRewardService ticketRewardService;
+
+    @Mock
+    private MembershipService membershipService;
+
     @InjectMocks
     private VirtualPayServiceImpl virtualPayService;
+
+    /** 赠券配置：默认按未配置处理（不赠券）；首单礼分支由专门用例覆盖。 */
+    private void stubNoTicketReward() {
+        org.mockito.Mockito.lenient().when(ticketRewardService.loadConfig()).thenReturn(Mono.empty());
+    }
 
     private void stubPayConfig(String json) throws Exception {
         when(settingFetcher.get("payConfig")).thenReturn(Mono.just(MAPPER.readTree(json)));
@@ -313,6 +330,24 @@ class VirtualPayServiceImplTest {
         return order;
     }
 
+    /** 阅读券订单（首单礼挂在任意成功订单上，这里用券单验证）。 */
+    private static PayOrder ticketOrder() {
+        var order = PayOrderPersistence.newOrder("o1", "wx-user-1", "OT1234567890abcdefg",
+            "g_ticket", "阅读券 x5", 600L, 1, 0, "OT1234567890abcdefg");
+        order.setGoodsType("content_ticket");
+        order.setGoodsValue(5);
+        return order;
+    }
+
+    /** 赠券配置：开启首单礼赠送 2 张券。 */
+    private void stubFirstPurchaseReward(int tickets) {
+        when(ticketRewardService.loadConfig()).thenReturn(Mono.just(
+            pro.uhalo.uni.dto.TicketRewardConfigDTO.builder()
+                .firstPurchaseTickets(tickets).build()));
+        when(ticketRewardService.grant(anyString(), anyInt(), anyString(), anyString(),
+            anyString(), any(), any())).thenReturn(Mono.just(tickets));
+    }
+
     private static UserPoints accountWithOwned(String outfitOwnedJson) {
         var account = new UserPoints();
         account.setOutfitOwned(outfitOwnedJson);
@@ -467,5 +502,305 @@ class VirtualPayServiceImplTest {
         assertThat(owned.get(0).expireAt()).isNotNull();
         var expected = Instant.now().getEpochSecond() + 7 * 86400L;
         assertThat(owned.get(0).expireAt()).isBetween(expected - 60, expected + 60);
+    }
+    // ==================== 首单礼（转化漏斗最有效的一环） ====================
+
+    /** 首单礼：第一笔成功订单在发货后额外赠券。 */
+    @Test
+    void deliverShouldGrantFirstPurchaseBonusAfterGoods() throws Exception {
+        stubFirstPurchaseReward(2);
+        when(pointsPersistence.findRecordByEarnKey(anyString())).thenReturn(Mono.empty());
+        when(pointsPersistence.getOrCreateAccount("o1"))
+            .thenReturn(Mono.just(new UserPoints()));
+        when(pointsPersistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(pointsPersistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(payOrderPersistence.update(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var remote = new VirtualPayServiceImpl.RemoteOrderStatus(true, 2, Instant.now(),
+            "wx-order-1", "tx-1", "mch-1");
+
+        StepVerifier.create(virtualPayService.doDeliver(ticketOrder(), remote))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        // 首单礼的幂等键固定为 openid + 动作 + "first"，不依赖回查历史订单
+        verify(ticketRewardService).grant(eq("o1"), eq(2), eq("ticket_first_purchase"),
+            anyString(), eq("o1:ticket_first_purchase:first"), any(), any());
+    }
+
+    /** 首单礼配置为 0 时不应发起任何赠券调用。 */
+    @Test
+    void deliverShouldSkipFirstPurchaseBonusWhenNotConfigured() throws Exception {
+        stubNoTicketReward();
+        when(pointsPersistence.findRecordByEarnKey(anyString())).thenReturn(Mono.empty());
+        when(pointsPersistence.getOrCreateAccount("o1"))
+            .thenReturn(Mono.just(new UserPoints()));
+        when(pointsPersistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(pointsPersistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(payOrderPersistence.update(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var remote = new VirtualPayServiceImpl.RemoteOrderStatus(true, 2, Instant.now(),
+            "wx-order-1", "tx-1", "mch-1");
+
+        StepVerifier.create(virtualPayService.doDeliver(ticketOrder(), remote))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        verify(ticketRewardService, never()).grant(anyString(), anyInt(), anyString(),
+            anyString(), anyString(), any(), any());
+    }
+    // ==================== 会员卡（单次购买的有效期权益） ====================
+
+    private static PayOrder membershipOrder(int days) {
+        var order = PayOrderPersistence.newOrder("o1", "wx-user-1", "OT1234567890abcdefg",
+            "g_member", "会员卡", 1900L, 1, 0, "OT1234567890abcdefg");
+        order.setGoodsType("membership");
+        order.setGoodsValue(days);
+        return order;
+    }
+
+    /** 套餐：一条商品含阅读券 + 会员天数两个子项。 */
+    private static PayOrder bundleOrder() {
+        var order = PayOrderPersistence.newOrder("o1", "wx-user-1", "OT1234567890abcdefg",
+            "g_bundle", "超值礼包", 1990L, 1, 0, "OT1234567890abcdefg");
+        order.setGoodsType("bundle");
+        order.setGoodsItems("[{\"type\":\"content_ticket\",\"value\":3},"
+            + "{\"type\":\"membership\",\"value\":15}]");
+        return order;
+    }
+
+    private void stubMemberConfig(int defaultDays) {
+        when(membershipService.loadConfig()).thenReturn(Mono.just(MemberConfigDTO.builder()
+            .enabled(true).defaultDays(defaultDays).freeContent(true).bonusTickets(0).build()));
+    }
+
+    /** 发货链路最小桩：订单可重试（幂等流水不存在）且终态可落库。 */
+    private void stubDeliverBase() {
+        when(pointsPersistence.findRecordByEarnKey(anyString())).thenReturn(Mono.empty());
+        when(payOrderPersistence.update(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+    }
+
+    /** 发货基础设施的公共桩：在最小桩之上再开放账户读写（成功发货路径用）。 */
+    private UserPoints stubDelivery(UserPoints account) {
+        stubDeliverBase();
+        when(pointsPersistence.getOrCreateAccount("o1")).thenReturn(Mono.just(account));
+        when(pointsPersistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(pointsPersistence.saveAccount(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        return account;
+    }
+
+    private static VirtualPayServiceImpl.RemoteOrderStatus remotePaid() {
+        return new VirtualPayServiceImpl.RemoteOrderStatus(true, 2, Instant.now(),
+            "wx-order-1", "tx-1", "mch-1");
+    }
+
+    /** 会员卡发货：按配置天数延长到期时间。 */
+    @Test
+    void deliverShouldExtendMembershipExpiry() throws Exception {
+        stubNoTicketReward();
+        stubMemberConfig(30);
+        var account = stubDelivery(new UserPoints());
+
+        StepVerifier.create(virtualPayService.doDeliver(membershipOrder(30), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        var expected = Instant.now().plus(30, ChronoUnit.DAYS);
+        assertThat(account.getMemberExpireAt()).isNotNull();
+        assertThat(account.getMemberExpireAt()).isBetween(
+            expected.minusSeconds(60), expected.plusSeconds(60));
+    }
+
+    /**
+     * 有效期内续费：必须在<b>当前到期时间</b>上叠加，而不是从当下重新计时。
+     * 否则用户会白白损失剩余天数，是实打实的客诉来源。
+     */
+    @Test
+    void deliverShouldStackMembershipOnExistingExpiry() throws Exception {
+        stubNoTicketReward();
+        stubMemberConfig(30);
+        var account = new UserPoints();
+        account.setMemberExpireAt(Instant.now().plus(10, ChronoUnit.DAYS));
+        stubDelivery(account);
+
+        StepVerifier.create(virtualPayService.doDeliver(membershipOrder(30), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        // 10 天剩余 + 30 天新购 = 约 40 天
+        var expected = Instant.now().plus(40, ChronoUnit.DAYS);
+        assertThat(account.getMemberExpireAt()).isBetween(
+            expected.minusSeconds(60), expected.plusSeconds(60));
+    }
+
+    /** 会员卡配置未开启：宁可转人工退款，也不能让用户付了钱什么都没有。 */
+    @Test
+    void deliverShouldMarkNeedsRefundWhenMembershipDisabled() {
+        stubNoTicketReward();
+        when(membershipService.loadConfig()).thenReturn(Mono.just(
+            MemberConfigDTO.builder().enabled(false).defaultDays(30).build()));
+        // 只给最小桩：转终态的分支根本不读账户、不写发货流水，
+        // 多桩会掩盖「它其实没碰账户」这一关键事实
+        stubDeliverBase();
+
+        StepVerifier.create(virtualPayService.doDeliver(membershipOrder(30), remotePaid()))
+            .assertNext(updated -> {
+                assertThat(updated.getStatus()).isEqualTo("needs_refund");
+                assertThat(updated.getRemark()).contains("人工退款");
+            })
+            .verifyComplete();
+
+        // 未发放任何权益，也不该写发货流水
+        verify(pointsPersistence, never()).appendRecord(any());
+    }
+
+    // ==================== 套餐（一条商品含多种权益） ====================
+
+    /** 套餐发货：每个子项各自发放，券与会员天数都要到账。 */
+    @Test
+    void deliverShouldGrantEveryBundleItem() throws Exception {
+        stubNoTicketReward();
+        stubMemberConfig(30);
+        var account = stubDelivery(new UserPoints());
+
+        StepVerifier.create(virtualPayService.doDeliver(bundleOrder(), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        assertThat(account.getContentTickets()).isEqualTo(3);
+        var expected = Instant.now().plus(15, ChronoUnit.DAYS);
+        assertThat(account.getMemberExpireAt()).isBetween(
+            expected.minusSeconds(60), expected.plusSeconds(60));
+
+        // 子项 earnKey 带下标，因此各自幂等：重试不会重复发放已成功的子项
+        var captor = org.mockito.ArgumentCaptor.forClass(PointsRecord.class);
+        verify(pointsPersistence, org.mockito.Mockito.atLeast(2)).appendRecord(captor.capture());
+        var earnKeys = captor.getAllValues().stream()
+            .map(PointsRecord::getEarnKey)
+            .filter(java.util.Objects::nonNull)
+            .toList();
+        // 主订单 earnKey 为「openid:purchase:订单号」，子项在其后加下标
+        assertThat(earnKeys).contains("o1:purchase:OT1234567890abcdefg:0",
+            "o1:purchase:OT1234567890abcdefg:1");
+    }
+
+    /** 套餐子项配置缺失：必须判为发货失败并转人工，绝不静默发放部分权益。 */
+    @Test
+    void deliverShouldMarkNeedsRefundWhenBundleItemsMissing() {
+        stubNoTicketReward();
+        var order = bundleOrder();
+        order.setGoodsItems(null);
+        stubDeliverBase();
+
+        StepVerifier.create(virtualPayService.doDeliver(order, remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("needs_refund"))
+            .verifyComplete();
+    }
+    // ==================== 限时截止时间解析（设置页日期时间选择器 → Unix 秒） ====================
+    //
+    // 这段解析一旦出错，表现是「活动神秘消失」：界面上配好了、前端什么都不显示，
+    // 从 UI 完全看不出原因。因此把各取值形态都钉住。
+
+    /** 选择器产出的是不带时区的本地时间，必须按东八区解释（按 UTC 会整体偏 8 小时）。 */
+    @Test
+    void promoEndsAtShouldInterpretLocalDateTimeAsShanghaiTime() throws Exception {
+        var item = MAPPER.readTree("""
+            {"goodsId":"g1","promoEndsAt":"2030-06-01T12:00"}
+            """);
+        var expected = java.time.LocalDateTime.parse("2030-06-01T12:00")
+            .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().getEpochSecond();
+
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(item)).isEqualTo(expected);
+    }
+
+    /** 带秒的本地时间同样支持（选择器可能带秒）。 */
+    @Test
+    void promoEndsAtShouldAcceptLocalDateTimeWithSeconds() throws Exception {
+        var item = MAPPER.readTree("""
+            {"goodsId":"g1","promoEndsAt":"2030-06-01T12:00:30"}
+            """);
+        var expected = java.time.LocalDateTime.parse("2030-06-01T12:00:30")
+            .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().getEpochSecond();
+
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(item)).isEqualTo(expected);
+    }
+
+    /** 带 Z 的完整时间戳：以取值自带的时区为准，不再按东八区偏移。 */
+    @Test
+    void promoEndsAtShouldRespectExplicitTimezone() throws Exception {
+        var item = MAPPER.readTree("""
+            {"goodsId":"g1","promoEndsAt":"2030-06-01T12:00:00.000Z"}
+            """);
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(item))
+            .isEqualTo(java.time.Instant.parse("2030-06-01T12:00:00Z").getEpochSecond());
+    }
+
+    /** 只填日期：按当天结束为止（23:59:59）。 */
+    @Test
+    void promoEndsAtShouldTreatDateOnlyAsEndOfDay() throws Exception {
+        var item = MAPPER.readTree("""
+            {"goodsId":"g1","promoEndsAt":"2030-06-01"}
+            """);
+        var expected = java.time.LocalDate.parse("2030-06-01").atTime(23, 59, 59)
+            .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().getEpochSecond();
+
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(item)).isEqualTo(expected);
+    }
+
+    /** 兼容早期直接填 Unix 秒的配置：不能让已配好的活动失效。 */
+    @Test
+    void promoEndsAtShouldStillAcceptLegacyEpochSeconds() throws Exception {
+        var future = java.time.Instant.now().plusSeconds(86400).getEpochSecond();
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":" + future + "}")))
+            .isEqualTo(future);
+        // 字符串形式的数字同样接受（配置序列化后可能变成字符串）
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":\"" + future + "\"}")))
+            .isEqualTo(future);
+    }
+
+    /** 已过期、留空、无法识别的值都按「没有活动」处理，且不能抛异常。 */
+    @Test
+    void promoEndsAtShouldIgnoreExpiredOrUnparseableValues() throws Exception {
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":\"2020-01-01T00:00\"}")))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":\"\"}")))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":0}")))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\"}")))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
+            MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":\"下个月底\"}")))
+            .isNull();
+    }
+
+    /** 端到端：配置里的日期时间字符串要一路走到下发的商品上。 */
+    @Test
+    void goodsShouldCarryParsedPromoEndFromHumanReadableConfig() throws Exception {
+        stubPayConfig("""
+            {"enabled":true,"offerId":"offer-1","appKey":"key-1","env":0,"goods":[
+              {"goodsId":"g_ticket","name":"阅读券 x5","price":600,"type":"content_ticket",
+               "value":5,"promoEndsAt":"2030-06-01T12:00","originalPrice":3000}
+            ]}
+            """);
+
+        StepVerifier.create(virtualPayService.getPublicConfig())
+            .assertNext(config -> {
+                assertThat(config.isEnabled()).isTrue();
+                assertThat(config.getGoods()).hasSize(1);
+                var goods = config.getGoods().get(0);
+                assertThat(goods.getPromoEndsAt()).isNotNull();
+                assertThat(goods.getOriginalPrice()).isEqualTo(3000L);
+                var expectedEnd = java.time.LocalDateTime.parse("2030-06-01T12:00")
+                    .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().getEpochSecond();
+                assertThat(goods.getPromoEndsAt()).isEqualTo(expectedEnd);
+            })
+            .verifyComplete();
     }
 }

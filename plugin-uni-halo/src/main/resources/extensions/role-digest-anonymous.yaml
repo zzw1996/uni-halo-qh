@@ -1,0 +1,24 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-digest
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo AI 日报"
+    rbac.authorization.halo.run/display-name: "AI 日报接口（UniHalo）"
+rules:
+  # 小程序端的日报列表是匿名可读的公开内容（只返回已发布的日报，不含草稿与正文）。
+  # 路径比 plugins/digest 多一层，不同 Halo 版本对 resource 的推导粒度不同，
+  # 因此把常见形态都放行（与 role-points-anonymous 同一思路）。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/digest"
+      - "plugins/digest/list"
+      - "plugins/digest/my"
+      - "plugins/digest/shared"
+      - "plugins/digest/shared/subscribe"
+      - "plugins/digest/subscription"
+      - "plugins/digest/*"
+    verbs: [ "get", "list", "create", "update" ]

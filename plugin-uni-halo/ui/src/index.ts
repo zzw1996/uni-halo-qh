@@ -5,6 +5,8 @@ import PointsRecords from "./views/PointsRecords.vue";
 import LuckyWinnings from "./views/LuckyWinnings.vue";
 import InviteFriends from "./views/InviteFriends.vue";
 import AiDigest from "./views/AiDigest.vue";
+import PayStats from "./views/PayStats.vue";
+import CommercialConfig from "./views/CommercialConfig.vue";
 
 export default definePlugin({
   components: {},
@@ -76,6 +78,38 @@ export default definePlugin({
           searchable: true,
           permissions: ["plugin:plugin-uni-halo:users:view"],
           menu: { name: "邀请好友", group: "UniHalo", priority: 4 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
+        path: "/uni-halo/commercial-config",
+        name: "UniHaloCommercialConfig",
+        component: CommercialConfig,
+        meta: {
+          title: "商业化配置",
+          searchable: true,
+          // 复用与其它页面相同的 UI 权限：新增权限串需要重新登录才会聚合到当前用户，
+          // 复用已有权限可以保证菜单立刻可见
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "商业化配置", group: "UniHalo", priority: 6 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
+        path: "/uni-halo/pay-stats",
+        name: "UniHaloPayStats",
+        component: PayStats,
+        meta: {
+          title: "支付看板",
+          searchable: true,
+          // 复用与其它页面相同的 UI 权限：新增权限串需要重新登录才会聚合到当前用户，
+          // 复用已有权限可以保证菜单立刻可见
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "支付看板", group: "UniHalo", priority: 7 },
         },
       },
     },

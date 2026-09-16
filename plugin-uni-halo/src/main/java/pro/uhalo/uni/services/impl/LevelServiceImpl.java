@@ -15,7 +15,9 @@ import pro.uhalo.uni.dto.OwnedOutfitDetailDTO;
 import pro.uhalo.uni.dto.TitleItemDTO;
 import pro.uhalo.uni.dto.UnlockedTitleDTO;
 import pro.uhalo.uni.exception.WxAuthException;
+import pro.uhalo.uni.infra.PayOrderPersistence;
 import pro.uhalo.uni.infra.PointsPersistence;
+import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.services.LevelService;
@@ -48,6 +50,7 @@ public class LevelServiceImpl implements LevelService {
     private final WxUserService wxUserService;
     private final ReactiveSettingFetcher settingFetcher;
     private final RateLimiter rateLimiter;
+    private final PayOrderPersistence payOrderPersistence;
 
     @Override
     public Mono<LevelStatusDTO> getLevelStatus(String openid) {
@@ -96,40 +99,64 @@ public class LevelServiceImpl implements LevelService {
         return requireOpenid(openid)
             .flatMap(id -> loadConfig()
                 .flatMap(config -> persistence.getOrCreateAccount(id)
-                    .map(account -> {
-                        // 限时结构：有效期内才视为已拥有；过期项保留在原始数据中（防误清），
-                        // 但不下发到前端 owned，用户可重新购买。
-                        var validOwned = OwnedOutfitParser.parse(account.getOutfitOwned()).stream()
-                            .filter(OwnedOutfitParser.OwnedOutfit::isStillValid)
-                            .toList();
-                        var configuredKeys = config.getOutfits() == null ? Set.<String>of()
-                            : config.getOutfits().stream()
-                                .map(OutfitItemDTO::getKey)
-                                .collect(Collectors.toSet());
-                        return OutfitStatusDTO.builder()
-                            .enabled(config.isEnabled())
-                            .items(config.getOutfits())
-                            .owned(validOwned.stream()
-                                .map(OwnedOutfitParser.OwnedOutfit::key)
-                                .toList())
-                            // 明细含到期时间：前端据此展示「剩余 N 天 / 永久」
-                            .ownedDetails(validOwned.stream()
-                                .map(item -> OwnedOutfitDetailDTO.builder()
-                                    .key(item.key())
-                                    .expireAt(item.expireAt())
-                                    .permanent(item.expireAt() == null)
-                                    .build())
-                                .toList())
-                            // 已拥有但配置中已删除的装扮：单独列出，避免「买过的东西凭空消失」
-                            .orphanOwned(validOwned.stream()
-                                .map(OwnedOutfitParser.OwnedOutfit::key)
-                                .filter(key -> !configuredKeys.contains(key))
-                                .toList())
-                            .avatarFrame(account.getActiveAvatarFrame())
-                            .nickFrame(account.getActiveNickFrame())
-                            .theme(account.getActiveTheme())
-                            .build();
-                    })));
+                    .flatMap(account -> totalSpentCents(id)
+                        .map(totalSpentCents -> {
+                            // 限时结构：有效期内才视为已拥有；过期项保留在原始数据中（防误清），
+                            // 但不下发到前端 owned，用户可重新购买。
+                            var validOwned = OwnedOutfitParser.parse(account.getOutfitOwned()).stream()
+                                .filter(OwnedOutfitParser.OwnedOutfit::isStillValid)
+                                .toList();
+                            var configuredKeys = config.getOutfits() == null ? Set.<String>of()
+                                : config.getOutfits().stream()
+                                    .map(OutfitItemDTO::getKey)
+                                    .collect(Collectors.toSet());
+                            return OutfitStatusDTO.builder()
+                                .enabled(config.isEnabled())
+                                .items(config.getOutfits())
+                                .owned(validOwned.stream()
+                                    .map(OwnedOutfitParser.OwnedOutfit::key)
+                                    .toList())
+                                // 明细含到期时间：前端据此展示「剩余 N 天 / 永久」
+                                .ownedDetails(validOwned.stream()
+                                    .map(item -> OwnedOutfitDetailDTO.builder()
+                                        .key(item.key())
+                                        .expireAt(item.expireAt())
+                                        .permanent(item.expireAt() == null)
+                                        .build())
+                                    .toList())
+                                // 已拥有但配置中已删除的装扮：单独列出，避免「买过的东西凭空消失」
+                                .orphanOwned(validOwned.stream()
+                                    .map(OwnedOutfitParser.OwnedOutfit::key)
+                                    .filter(key -> !configuredKeys.contains(key))
+                                    .toList())
+                                .avatarFrame(account.getActiveAvatarFrame())
+                                .nickFrame(account.getActiveNickFrame())
+                                .theme(account.getActiveTheme())
+                                .totalSpentCents(totalSpentCents)
+                                .build();
+                        }))));
+    }
+
+    /**
+     * 累计消费金额（分）：只统计已发货订单。
+     *
+     * <p>待支付与需退款的一律不计——用「已付款但权益没发放」的订单去解锁里程碑装扮，
+     * 用户会觉得门槛判定有问题。读取失败按 0 处理：里程碑只是展示层，
+     * 不能因为订单表读不到让整个装扮商店打不开。</p>
+     */
+    private Mono<Long> totalSpentCents(String openid) {
+        return payOrderPersistence.listByOpenid(openid)
+            .filter(order -> "delivered".equals(order.getStatus()))
+            .map(order -> {
+                var price = order.getPrice() == null ? 0L : Math.max(0L, order.getPrice());
+                var quantity = order.getQuantity() == null ? 1 : Math.max(1, order.getQuantity());
+                return price * quantity;
+            })
+            .reduce(0L, Long::sum)
+            .onErrorResume(ex -> {
+                log.warn("统计累计消费失败，按 0 处理: openid={}, {}", openid, ex.getMessage());
+                return Mono.just(0L);
+            });
     }
 
     @Override
@@ -158,57 +185,61 @@ public class LevelServiceImpl implements LevelService {
                                         .message("已拥有该装扮")
                                         .build());
                                 }
-                                var balance = safeBalance(account);
-                                if (balance < item.getPoints()) {
-                                    return Mono.error(new WxAuthException(
-                                        "积分不足，需要 " + item.getPoints() + " 积分"));
-                                }
-                                var newBalance = balance - item.getPoints();
-                                return resolveWxUserId(id, account)
-                                    .flatMap(wxUserId -> {
-                                        var earnKey = PointsServiceImpl.buildEarnKey(id, "outfit_" + normalized,
-                                            "own");
-                                        var record = PointsPersistence.newRecord(id, "outfit_" + normalized,
-                                            -item.getPoints(), newBalance, "购买装扮·" + item.getName(),
-                                            normalized, earnKey, wxUserId);
-                                        // 关键：先写幂等流水（create 冲突即幂等闸门），成功后再改账户。
-                                        // 原实现先 saveAccount 后 appendRecord，并发下两个请求读到相同
-                                        // owned/balance 各自扣分却只落一条流水，属"扣了分没记账"缺陷。
-                                        // 流水 create 冲突（重复提交）直接返回"已拥有"，不改账户。
-                                        return persistence.appendRecord(record)
-                                            .onErrorResume(ex -> isDuplicateRecordError(ex)
-                                                ? Mono.error(new WxAuthException("请勿重复提交"))
-                                                : Mono.error(ex))
-                                            .then(persistence.getOrCreateAccount(id))
-                                            .flatMap(latest -> {
-                                                var latestOwned = new ArrayList<>(
-                                                    OwnedOutfitParser.parse(latest.getOutfitOwned()));
-                                                if (OwnedOutfitParser.isOwnedAndValid(latestOwned, normalized)) {
-                                                    return Mono.just(OutfitBuyResponse.builder()
-                                                        .owned(latestOwned.stream()
-                                                            .map(OwnedOutfitParser.OwnedOutfit::key).toList())
-                                                        .balance(safeBalance(latest))
-                                                        .message("已拥有该装扮")
-                                                        .build());
-                                                }
-                                                latest.setBalance(newBalance);
-                                                if (StringUtils.hasText(wxUserId)
-                                                    && !wxUserId.equals(latest.getWxUserId())) {
-                                                    latest.setWxUserId(wxUserId);
-                                                }
-                                                var expireAt = resolveOutfitExpireAt(item);
-                                                latestOwned.add(new OwnedOutfitParser.OwnedOutfit(
-                                                    normalized, Instant.now().getEpochSecond(), expireAt));
-                                                latest.setOutfitOwned(OwnedOutfitParser.write(latestOwned));
-                                                return persistence.saveAccount(latest)
-                                                    .thenReturn(OutfitBuyResponse.builder()
-                                                        .owned(latestOwned.stream()
-                                                            .map(OwnedOutfitParser.OwnedOutfit::key).toList())
-                                                        .balance(newBalance)
-                                                        .message("已获得 · " + item.getName())
-                                                        .build());
-                                            });
-                                    });
+                                // 消费里程碑：门槛未达成时不允许兑换。
+                                // 只对配了门槛的装扮查订单，避免给普通装扮白加一次查询。
+                                return ensureMilestoneReached(id, item).then(Mono.defer(() -> {
+                                    var balance = safeBalance(account);
+                                    if (balance < item.getPoints()) {
+                                        return Mono.error(new WxAuthException(
+                                            "积分不足，需要 " + item.getPoints() + " 积分"));
+                                    }
+                                    var newBalance = balance - item.getPoints();
+                                    return resolveWxUserId(id, account)
+                                        .flatMap(wxUserId -> {
+                                            var earnKey = PointsServiceImpl.buildEarnKey(id, "outfit_" + normalized,
+                                                "own");
+                                            var record = PointsPersistence.newRecord(id, "outfit_" + normalized,
+                                                -item.getPoints(), newBalance, "购买装扮·" + item.getName(),
+                                                normalized, earnKey, wxUserId);
+                                            // 关键：先写幂等流水（create 冲突即幂等闸门），成功后再改账户。
+                                            // 原实现先 saveAccount 后 appendRecord，并发下两个请求读到相同
+                                            // owned/balance 各自扣分却只落一条流水，属"扣了分没记账"缺陷。
+                                            // 流水 create 冲突（重复提交）直接返回"已拥有"，不改账户。
+                                            return persistence.appendRecord(record)
+                                                .onErrorResume(ex -> isDuplicateRecordError(ex)
+                                                    ? Mono.error(new WxAuthException("请勿重复提交"))
+                                                    : Mono.error(ex))
+                                                .then(persistence.getOrCreateAccount(id))
+                                                .flatMap(latest -> {
+                                                    var latestOwned = new ArrayList<>(
+                                                        OwnedOutfitParser.parse(latest.getOutfitOwned()));
+                                                    if (OwnedOutfitParser.isOwnedAndValid(latestOwned, normalized)) {
+                                                        return Mono.just(OutfitBuyResponse.builder()
+                                                            .owned(latestOwned.stream()
+                                                                .map(OwnedOutfitParser.OwnedOutfit::key).toList())
+                                                            .balance(safeBalance(latest))
+                                                            .message("已拥有该装扮")
+                                                            .build());
+                                                    }
+                                                    latest.setBalance(newBalance);
+                                                    if (StringUtils.hasText(wxUserId)
+                                                        && !wxUserId.equals(latest.getWxUserId())) {
+                                                        latest.setWxUserId(wxUserId);
+                                                    }
+                                                    var expireAt = resolveOutfitExpireAt(item);
+                                                    latestOwned.add(new OwnedOutfitParser.OwnedOutfit(
+                                                        normalized, Instant.now().getEpochSecond(), expireAt));
+                                                    latest.setOutfitOwned(OwnedOutfitParser.write(latestOwned));
+                                                    return persistence.saveAccount(latest)
+                                                        .thenReturn(OutfitBuyResponse.builder()
+                                                            .owned(latestOwned.stream()
+                                                                .map(OwnedOutfitParser.OwnedOutfit::key).toList())
+                                                            .balance(newBalance)
+                                                            .message("已获得 · " + item.getName())
+                                                            .build());
+                                                });
+                                        });
+                                }));
                             });
                     });
             });
@@ -220,6 +251,28 @@ public class LevelServiceImpl implements LevelService {
             return null;
         }
         return Instant.now().getEpochSecond() + item.getDurationDays() * 86400L;
+    }
+
+    /**
+     * 校验消费里程碑门槛：累计消费不足时不允许兑换。
+     *
+     * <p>只对配了 {@code minSpend} 的装扮查订单——普通装扮走这里就是一次空操作，
+     * 不给最常用的兑换路径白加一次数据库查询。前端同样会按门槛显示锁定态，
+     * 这里的校验是防绕过（前端算的是展示，服务端才是判定）。</p>
+     */
+    private Mono<Void> ensureMilestoneReached(String openid, OutfitItemDTO item) {
+        if (item.getMinSpend() <= 0) {
+            return Mono.empty();
+        }
+        return totalSpentCents(openid).flatMap(spentCents -> {
+            var thresholdCents = item.getMinSpend() * 100L;
+            if (spentCents < thresholdCents) {
+                return Mono.error(new WxAuthException(String.format(
+                    "该装扮为消费回馈，累计消费满 %d 元可解锁（当前 %.2f 元）",
+                    item.getMinSpend(), spentCents / 100.0)));
+            }
+            return Mono.empty();
+        });
     }
 
     @Override

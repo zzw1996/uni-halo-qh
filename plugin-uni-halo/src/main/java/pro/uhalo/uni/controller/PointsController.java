@@ -11,6 +11,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import pro.uhalo.uni.constants.Constants;
 import pro.uhalo.uni.dto.ClaimDailyTaskRequest;
 import pro.uhalo.uni.dto.ContentUnlockRequest;
+import pro.uhalo.uni.dto.MembershipStatusDTO;
 import pro.uhalo.uni.dto.ExchangeRequest;
 import pro.uhalo.uni.dto.LuckyClaimRequest;
 import pro.uhalo.uni.dto.OutfitBuyRequest;
@@ -20,6 +21,7 @@ import pro.uhalo.uni.dto.PointsEarnStatusResponse;
 import pro.uhalo.uni.dto.WearTitleRequest;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.services.ContentTicketService;
+import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.DailyTaskService;
 import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.LevelService;
@@ -46,6 +48,7 @@ public class PointsController {
     private final InviteService inviteService;
     private final LuckyDrawService luckyDrawService;
     private final ContentTicketService contentTicketService;
+    private final MembershipService membershipService;
     private final UniHaloService uniHaloService;
 
     public Mono<ServerResponse> overview(ServerRequest request) {
@@ -262,6 +265,38 @@ public class PointsController {
             .onErrorResume(Exception.class, e -> {
                 log.warn("content tickets failed: {}", e.getMessage());
                 return jsonOk(Map.of("tickets", 0));
+            });
+    }
+
+    /**
+     * 已解锁文章列表（需登录）。
+     *
+     * <p>与 contentTickets 不同：这里返回的是用户自己的消费记录，
+     * openid 必须存在，不能像券余额那样对匿名请求返回空数据。</p>
+     */
+    public Mono<ServerResponse> unlockedArticles(ServerRequest request) {
+        var limit = parseIntParam(request, "limit", 100);
+        return withOpenid(request, openid -> contentTicketService.listUnlocked(openid, limit)
+            .flatMap(this::jsonOk));
+    }
+
+    /**
+     * 会员状态（未登录返回「未开通」而不是报错）。
+     *
+     * <p>与 contentTickets 同理不走 withOpenid：未登录用户看到「未开通会员」
+     * 比看到一个错误页合理，且前端要据此决定是否展示会员入口。</p>
+     */
+    public Mono<ServerResponse> membershipStatus(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        return membershipService.getStatus(openid)
+            .flatMap(this::jsonOk)
+            .onErrorResume(Exception.class, e -> {
+                log.warn("membership status failed: {}", e.getMessage());
+                return jsonOk(MembershipStatusDTO.builder()
+                    .enabled(false)
+                    .active(false)
+                    .benefits(java.util.List.of())
+                    .build());
             });
     }
 

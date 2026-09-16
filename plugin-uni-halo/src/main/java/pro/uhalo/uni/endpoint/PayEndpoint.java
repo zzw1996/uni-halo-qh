@@ -42,6 +42,12 @@ public class PayEndpoint implements CustomEndpoint {
                     .operationId("QueryVirtualPayOrder")
                     .description("Query order status; triggers fallback query_order sync when pending.")
                     .tag(apiTag))
+            .GET(basePath + "/pay/orders", payController::myOrders,
+                builder -> builder
+                    .operationId("ListMyVirtualPayOrders")
+                    .description("List the current user's own orders (paged, newest first). "
+                        + "openid is taken from the Wechat-Session-Id header only.")
+                    .tag(apiTag))
             .POST(basePath + "/pay/notify", payController::deliverNotify,
                 builder -> builder
                     .operationId("VirtualPayDeliverNotify")

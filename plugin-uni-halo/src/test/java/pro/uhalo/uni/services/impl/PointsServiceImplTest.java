@@ -17,6 +17,8 @@ import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
 import pro.uhalo.uni.services.PointsEvidenceService;
+import pro.uhalo.uni.dto.TicketRewardConfigDTO;
+import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Flux;
@@ -36,6 +38,8 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -64,6 +68,9 @@ class PointsServiceImplTest {
     @Mock
     private RateLimiter rateLimiter;
 
+    @Mock
+    private TicketRewardService ticketRewardService;
+
     @InjectMocks
     private PointsServiceImpl pointsService;
 
@@ -84,6 +91,11 @@ class PointsServiceImplTest {
         lenient().when(pointsEvidenceService.evidenceReady(any(), any(), any())).thenReturn(Mono.just(true));
         // 积分商城 mallConfig 未配置时回落旧分组（多数用例只 stub 旧分组即可）
         lenient().when(settingFetcher.get("mallConfig")).thenReturn(Mono.empty());
+        // 赠券默认全部关闭：既有用例考察的是积分逻辑，赠券分支由专门的用例覆盖
+        lenient().when(ticketRewardService.loadConfig())
+            .thenReturn(Mono.just(TicketRewardConfigDTO.builder().build()));
+        // 付费内容未开启：兑换中心不会补内置阅读券兑换项
+        lenient().when(settingFetcher.get("contentConfig")).thenReturn(Mono.empty());
     }
     @Test
     void earnShouldRejectWhenPointsDisabled() throws Exception {
@@ -297,7 +309,8 @@ class PointsServiceImplTest {
         var wxUserService = org.mockito.Mockito.mock(WxUserService.class);
         var persistence = new PointsPersistence(client, wxUserService);
         var service = new PointsServiceImpl(persistence, settingFetcher, wxUserService,
-            new PointsEvidenceServiceImpl(client), new RateLimiter());
+            new PointsEvidenceServiceImpl(client), new RateLimiter(),
+            new TicketRewardService(persistence, settingFetcher));
 
         var earnKey = PointsServiceImpl.buildDailyEarnKey("openid-123", "browse", "post-1");
         var existing = new PointsRecord();
@@ -745,5 +758,83 @@ class PointsServiceImplTest {
         request.setArticleName(articleName);
         request.setTitle("测试文章");
         return request;
+    }
+    // ==================== 阅读券免费获取（「免费的第一次」） ====================
+
+    /**
+     * 连签奖励按周期结算：第 7/14 天各发一次，而不是只在第 7 天发一次。
+     *
+     * <p>后者会让坚持到第 8 天的用户觉得「奖励已经拿完了」，正好在养成习惯的节点上失去动力。</p>
+     */
+    @Test
+    void signInTicketCountShouldStackStreakBonusOnPeriodBoundary() {
+        var config = TicketRewardConfigDTO.builder()
+            .signInTickets(1).streakDays(7).streakTickets(2).build();
+        assertThat(PointsServiceImpl.signInTicketCount(config, 1)).isEqualTo(1);
+        assertThat(PointsServiceImpl.signInTicketCount(config, 6)).isEqualTo(1);
+        assertThat(PointsServiceImpl.signInTicketCount(config, 7)).isEqualTo(3);
+        assertThat(PointsServiceImpl.signInTicketCount(config, 8)).isEqualTo(1);
+        assertThat(PointsServiceImpl.signInTicketCount(config, 14)).isEqualTo(3);
+        // 未配置 / 未启用连签奖励时只发每日额度
+        assertThat(PointsServiceImpl.signInTicketCount(null, 7)).isZero();
+        assertThat(PointsServiceImpl.signInTicketCount(
+            TicketRewardConfigDTO.builder().signInTickets(1).streakDays(0).streakTickets(2).build(), 7))
+            .isEqualTo(1);
+    }
+
+    /** 签到送券：赠券张数要回传到响应里，前端才能提示「+15 积分 +3 张阅读券」。 */
+    @Test
+    void signInShouldGrantConfiguredTickets() throws Exception {
+        stubEnabledConfig();
+        when(ticketRewardService.loadConfig()).thenReturn(Mono.just(TicketRewardConfigDTO.builder()
+            .signInTickets(1).streakDays(3).streakTickets(2).build()));
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(persistence.appendRecord(any(PointsRecord.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(ticketRewardService.grant(anyString(), anyInt(), anyString(), anyString(),
+            anyString(), any(), any())).thenReturn(Mono.just(3));
+
+        StepVerifier.create(pointsService.signIn("openid-123"))
+            .consumeNextWith(response -> {
+                assertThat(response.getEarned()).isEqualTo(15);
+                assertThat(response.getTickets()).isEqualTo(3);
+                assertThat(response.getMessage()).contains("3 张阅读券");
+            })
+            .verifyComplete();
+
+        // 连签第 3 天命中门槛：每日 1 张 + 连签奖励 2 张
+        verify(ticketRewardService).grant(eq("openid-123"), eq(3), eq("ticket_streak"),
+            anyString(), anyString(), any(), any());
+    }
+
+    /** 新人赠券：与积分新人礼相互独立，券的幂等键不同，因此老用户也能补到一次券。 */
+    @Test
+    void newUserGiftShouldAlsoGrantTickets() throws Exception {
+        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree("""
+            {"enabled":true,"rules":{"newUserGift":{"points":100}}}
+            """)));
+        when(ticketRewardService.loadConfig()).thenReturn(Mono.just(
+            TicketRewardConfigDTO.builder().newUserTickets(1).build()));
+        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(persistence.appendRecord(any(PointsRecord.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(ticketRewardService.grant(anyString(), anyInt(), anyString(), anyString(),
+            anyString(), any(), any())).thenReturn(Mono.just(1));
+
+        StepVerifier.create(pointsService.claimNewUserGift("openid-123"))
+            .consumeNextWith(response -> {
+                assertThat(response.getEarned()).isEqualTo(100);
+                assertThat(response.getTickets()).isEqualTo(1);
+            })
+            .verifyComplete();
+
+        verify(ticketRewardService).grant(eq("openid-123"), eq(1), eq("ticket_new_user"),
+            anyString(), anyString(), any(), any());
     }
 }
