@@ -62,7 +62,8 @@
 						</view>
 					</view>
 					<view class="task-action">
-						<text class="reward-text">+{{ item.points }} 积分</text>
+						<!-- 只给券不给积分的任务必须显示券，否则会写成「+0 积分」 -->
+						<text class="reward-text">{{ rewardText(item) }}</text>
 						<tm-button
 							size="s"
 							:theme="actionTheme(item)"
@@ -160,6 +161,17 @@
 				if (item.claimed) return '已领取';
 				if (item.done) return '领取奖励';
 				return '去完成';
+			},
+			/** 奖励文案：积分与阅读券分开列，两者都为 0 时不留空文案。 */
+			rewardText(item) {
+				const rewards = [];
+				if (Number(item.points || 0) > 0) {
+					rewards.push('+' + item.points + ' 积分');
+				}
+				if (Number(item.tickets || 0) > 0) {
+					rewards.push('+' + item.tickets + ' 张阅读券');
+				}
+				return rewards.join(' ');
 			},
 			actionTheme(item) {
 				if (item.claimed) return 'grey';

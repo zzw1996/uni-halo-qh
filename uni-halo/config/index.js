@@ -66,6 +66,33 @@ export const DefaultAppConfigs = {
 		enabled: true,
 		rewardPoints: 30
 	},
+	/**
+	 * 阅读券免费获取规则（由插件后台 ticketConfig 下发）。
+	 *
+	 * 这里只用于「首单礼」等前端文案的本地兜底：真实值以服务端下发为准。
+	 * 全为 0 表示不展示任何赠券提示。
+	 */
+	ticketConfig: {
+		newUserTickets: 0,
+		firstPurchaseTickets: 0,
+		signInTickets: 0,
+		streakDays: 0,
+		streakTickets: 0,
+		exchangeTickets: 1,
+		exchangePoints: 30
+	},
+	/**
+	 * 会员配置（由插件后台 memberConfig 下发）。
+	 *
+	 * 这里只是本地兜底：真实值以服务端 /points/membership 返回为准，
+	 * enabled 默认 false 表示不展示会员入口。
+	 */
+	memberConfig: {
+		enabled: false,
+		defaultDays: 30,
+		freeContent: true,
+		bonusTickets: 0
+	},
 	/** 榜单配置（由插件后台 rankConfig 下发） */
 	rankConfig: {
 		enabled: true,

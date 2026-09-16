@@ -277,6 +277,12 @@ const directRequest = ({ url, method = 'GET', data, header }) => {
 /**
  * 构建评论相关请求的微信身份 Header
  */
+/** 只有登录时才带 Wechat-Session-Id：订阅读取、分类订阅等接口允许匿名访问，未登录就不带头 */
+const buildOpenidHeader = () => {
+	const openid = getOpenid();
+	return openid ? { 'Wechat-Session-Id': openid } : {};
+};
+
 const buildCommentAuthHeader = () => {
 	const header = {};
 	const openid = getOpenid();
@@ -1782,5 +1788,95 @@ export default {
 	/** 查询当前用户的阅读券余额；未登录返回 0 而不报错。 */
 	getContentTickets: async () => {
 		return requestContentApi({ apiKey: 'contentTickets', method: 'GET' }, true);
+	},
+
+	/**
+	 * 我已解锁的付费文章（解锁时间倒序，附当前券余额）。需登录。
+	 *
+	 * <p>券花掉之后此前无处可查自己买过什么，券就只是一次性消耗品；
+	 * 列出解锁历史后券变成可回溯的资产。</p>
+	 */
+	getMyUnlockedArticles: async (params = {}) => {
+		return requestContentApi({
+			apiKey: 'contentUnlocked',
+			method: 'GET',
+			params: params || {}
+		});
+	},
+
+	/**
+	 * 当前用户的会员状态（单次购买的有效期权益）。
+	 *
+	 * <p>未登录也允许调用：服务端返回「未开通」而不是报错，
+	 * 前端据此决定展示会员入口还是已开通状态。</p>
+	 */
+	getMembershipStatus: async () => {
+		return requestContentApi({ apiKey: 'membership', method: 'GET' }, true);
+	},
+
+	// ==================== 分类订阅 ====================
+	//
+	// 订阅只维护一套数据：postCategories（站点分类的 metadata.name）。
+	// 记录仍存在日报的订阅存储里（服务端按 openid 唯一），因此接口路径沿用
+	// /digest/subscription——换存储要迁移老数据，收益却只是路径好看，不值得。
+
+	/**
+	 * 读取当前用户订阅的分类（无需登录也能调，返回空列表）。
+	 */
+	getDigestSubscription: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/digest/subscription'),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 保存订阅分类（全量替换）。
+	 *
+	 * <p>四个字段都显式提交：服务端是整体替换这份偏好，而 categories / keywords /
+	 * sources 是早年「AI 分类订阅」留下的字段，现在界面只维护 postCategories。
+	 * 显式传空数组，让「清掉旧字段」是写明的意图，而不是靠省略参数被当成空值。</p>
+	 *
+	 * <p>服务端会做数量与长度校验，超限时返回可读原因（不会静默截断）。</p>
+	 */
+	saveDigestSubscription: async (payload = {}) => {
+		return directRequest({
+			url: buildUniHaloUrl('/digest/subscription'),
+			method: 'POST',
+			data: {
+				enabled: payload.enabled !== false,
+				categories: payload.categories || [],
+				keywords: payload.keywords || [],
+				sources: payload.sources || [],
+				// 订阅的站点分类：决定首页主列表显示哪些文章
+				postCategories: payload.postCategories || []
+			},
+			header: buildOpenidHeader()
+		});
+	},
+
+	// ==================== 我的订单 ====================
+
+	/**
+	 * 我的订单列表（仅当前 openid 自己的订单，创建时间倒序）。
+	 * GET /pay/orders?page=0&size=20
+	 */
+	getMyPayOrders: async (params = {}) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		const query = qs.stringify({
+			page: params.page != null ? params.page : 0,
+			size: params.size != null ? params.size : 20
+		});
+		return directRequest({
+			url: `${buildUniHaloUrl('/pay/orders')}?${query}`,
+			method: 'GET',
+			header: {
+				'Wechat-Session-Id': openid
+			}
+		});
 	},
 }

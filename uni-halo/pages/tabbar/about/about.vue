@@ -443,6 +443,15 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				// 后端开关为唯一真相：配置（getConfigs）或实时探测 /pay/config 任一返回开启即显示
 				return this.haloConfigs?.payConfig?.enabled === true || this.payApiEnabled;
 			},
+			/**
+			 * 是否展示「我的订单 / 已解锁文章」两个入口。
+			 *
+			 * 订单只在开启权益直购后才会产生；已解锁文章只在开启付费内容后才会产生。
+			 * 两者都关的站点把入口藏起来，否则用户点进去只能看到一个空页面。
+			 */
+			calcShowPayRelated() {
+				return this.calcPayEnabled || this.haloConfigs?.contentConfig?.enabled === true;
+			},
 			calcPointsBalance() {
 				if (!this.isLoggedIn) return '-';
 				return this.pointsBalance;
@@ -546,6 +555,23 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					path: '/pagesA/user-activities/user-activities?type=upvote',
 						requireLogin: true
 					});
+				// 订单与已解锁文章只在付费内容/权益直购任一开启时才有意义，
+				// 全关的站点不展示这两个入口，避免用户点进去看到空页面
+				if (this.calcShowPayRelated) {
+					list.push({
+						text: '我的订单',
+						icon: 'haloicon-rizhi1',
+						color: 'purple',
+						path: '/pagesA/my-orders/my-orders',
+						requireLogin: true
+					}, {
+						text: '已解锁文章',
+						icon: 'haloicon-wenzhang1',
+						color: 'light-blue',
+						path: '/pagesA/unlocked-articles/unlocked-articles',
+						requireLogin: true
+					});
+				}
 				list.push({
 					text: '应用配置',
 					icon: 'haloicon-shezhi',

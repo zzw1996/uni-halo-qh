@@ -368,6 +368,32 @@
 						"navigationBarTitleText": "填写收货信息",
 						"enablePullDownRefresh": false
 					}
+				},
+				{
+					"path": "my-orders/my-orders",
+					"style": {
+						"navigationBarTitleText": "我的订单",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#03a9f4",
+								"style": "circle"
+							}
+						}
+					}
+				},
+				{
+					"path": "unlocked-articles/unlocked-articles",
+					"style": {
+						"navigationBarTitleText": "已解锁文章",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#03a9f4",
+								"style": "circle"
+							}
+						}
+					}
 				}
 			]
 		},

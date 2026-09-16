@@ -36,13 +36,13 @@
 			<!-- 每日一句 + 倒数日（原「热榜」块已随榜单页上线移除） -->
 			<view class="daily-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
 				<view class="daily-quote uh-py-12">
-				<view class="daily-quote-head flex flex-between">
-					<text class="page-item_title text-weight-b">每日一句</text>
-					<view class="daily-quote-head-right">
-						<text class="daily-toolbox-link" @click="fnToToolbox">工具箱</text>
-						<text class="daily-quote-date">{{ todayQuoteDate }}</text>
+					<view class="daily-quote-head flex flex-between">
+						<text class="page-item_title text-weight-b">每日一句</text>
+						<view class="daily-quote-head-right">
+							<text class="daily-toolbox-link" @click="fnToToolbox">工具箱</text>
+							<text class="daily-quote-date">{{ todayQuoteDate }}</text>
+						</view>
 					</view>
-				</view>
 					<text class="daily-quote-text">{{ todayQuote.text }}</text>
 					<view class="daily-quote-foot flex flex-between">
 						<text class="daily-quote-author">—— {{ todayQuote.author }}</text>
@@ -107,6 +107,21 @@
 					<text class="iconfont icon-angle-right text-size-s "></text>
 				</view>
 			</view>
+			<!--
+				订阅状态条：订阅是按分类在分类页里设的，首页只显示订阅分类的文章。
+				不说明白的话，用户会以为站点丢了内容——所以这里既解释「为什么不一样」，
+				也给一个直接去改的口子。
+			-->
+			<view v-if="feedPersonalized" class="feed-hint ml-24 mr-24 mb-16">
+				<text class="feed-hint-text">{{ subscribedHintText }}</text>
+				<text class="feed-hint-action" @click="fnToCategoryTab">去调整</text>
+			</view>
+
+			<!-- 筛选结果为空时说明原因，而不是留一个空首页 -->
+			<view v-if="feedFallback" class="feed-hint ml-24 mr-24 mb-16">
+				<text class="feed-hint-text">{{ feedFallbackText }}</text>
+			</view>
+
 			<view v-if="articleList.length === 0" class="article-empty">
 				<tm-empty icon="icon-shiliangzhinengduixiang-" label="博主还没有发表任何内容~"></tm-empty>
 			</view>
@@ -188,9 +203,37 @@
 					show: false,
 					data: {}
 				},
-				wxUserInfo: null			};
+				wxUserInfo: null,
+				/** 订阅的分类（站点分类的 metadata.name），由分类页设置 */
+				subscription: { postCategories: [] },
+				/** 主列表是否正在按订阅分类筛选 / 是否已回落站内默认列表 */
+				feedPersonalized: false,
+				feedFallback: false,
+				/** 订阅分类的显示名（含中文），用于状态条 */
+				feedCategories: [],
+				/** 多路合并分页：每个分类当前取到第几页 */
+				feedPages: {},
+				/** 已同步过的订阅版本号：分类页改过订阅后会写这个值，切回首页时据此判断要不要重取 */
+				subscriptionRev: ''
+			};
 		},
 		computed: {
+			/** 状态条里的订阅清单：用中文名，主题分类的 key 是英文看不懂 */
+			subscribedLabel() {
+				const labels = (this.feedCategories || []).map((item) => item.label);
+				return labels.length ? labels.join('、') : '';
+			},
+			/** 取不到分类显示名（接口异常）时退化成只说个数，不显示「已订阅：。」这种空话 */
+			subscribedHintText() {
+				if (this.subscribedLabel) {
+					return `已订阅：${this.subscribedLabel}。首页只显示这些分类的文章`;
+				}
+				const count = (this.subscription.postCategories || []).length;
+				return `已订阅 ${count} 个分类，首页只显示这些分类的文章`;
+			},
+			feedFallbackText() {
+				return '你订阅的分类暂时没有内容，已为你展示全站最新';
+			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;
 			},
@@ -252,17 +295,26 @@
 		created() {
 			this.fnSyncWxUser();
 			uni.$on('wx_login_status_changed', this.fnSyncWxUser);
+			// 订阅是在分类页改的：改完切回首页要立刻生效，不能等下拉刷新
+			uni.$on('category_subscription_changed', this.fnOnSubscriptionChanged);
 			this.fnQuery();
 		},
 		onShow() {
 			this.fnSyncWxUser();
+			// 订阅是在分类页改的，本页可能还停在旧结果上。
+			// 事件通知可能因为页面生命周期错过（例如首页还没创建就改了订阅），
+			// 所以切回本 tab 时再按版本号对一次，双保险。
+			this.fnCheckSubscriptionChanged();
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnSyncWxUser);
+			uni.$off('category_subscription_changed', this.fnOnSubscriptionChanged);
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
 			this.queryParams.page = 1;
+			// 多路分页也要重置，否则下拉后每一路都从中间页继续取
+			this.feedPages = {};
 			this.fnQuery();
 		},
 		onReachBottom(e) {
@@ -288,10 +340,217 @@
 			fnSyncWxUser() {
 				this.wxUserInfo = checkHasWxLogin() ? getWxLoginInfo() : null;
 			},
-			fnQuery() {
+			/**
+			 * 首页数据入口。
+			 *
+			 * <p>顺序有讲究：先拿订阅分类，才能决定主列表是「按订阅筛选」还是「站内默认」。</p>
+			 */
+			async fnQuery() {
+				// 每次重新拉取都从「没有回落」开始，否则上一轮的空列表提示会一直挂着
+				this.feedFallback = false;
+				await this.fnLoadSubscription();
 				this.fnGetBanner();
 				this.fnGetArticleList();
 			},
+
+			/**
+			 * 取订阅分类；未登录直接跳过。
+			 *
+			 * <p>未登录不做任何个性化：首页对公众保持完全一致，
+			 * 不能把公开浏览体验变成「先登录」。</p>
+			 */
+			async fnLoadSubscription() {
+				if (!checkHasWxLogin()) {
+					return;
+				}
+				try {
+					const res = await this.$httpApi.v2.getDigestSubscription();
+					const body = res?.data || res || {};
+					const sub = body.subscription || {};
+					const postCategories = Array.isArray(sub.postCategories) ? sub.postCategories : [];
+					this.subscription = { postCategories };
+					// 订阅了分类才影响主列表；一个都没订阅就是站内默认列表
+					this.feedPersonalized = postCategories.length > 0;
+					// 记下「已经按这一版订阅取过数据了」，避免每次切回首页都白取一次
+					this.subscriptionRev = uni.getStorageSync('category.subscription.rev') || '';
+					this.fnLoadFeedCategories();
+				} catch (err) {
+					// 静默：拿不到订阅分类就按站内默认列表展示
+					this.subscription = { postCategories: [] };
+					this.feedPersonalized = false;
+				}
+			},
+
+			/**
+			 * 按订阅的分类取文章：每类一路并发拉取，合并去重后按置顶 + 时间排序。
+			 *
+			 * <p>用 Halo 自己的分类文章接口（分类详情页也在用），因此分页、排序口径与站点一致，
+			 * 不需要另建一套内容接口。</p>
+			 */
+			async fnGetPersonalArticleList() {
+				const categories = this.subscription.postCategories || [];
+				if (!categories.length) {
+					this.fnFallbackToLatest();
+					return;
+				}
+				const size = this.queryParams.size;
+				const isLoadMore = this.isLoadMore;
+				if (!isLoadMore) {
+					this.loading = 'loading';
+				}
+				this.loadMoreText = '加载中...';
+
+				const results = await Promise.all(categories.map((name) => {
+					const page = isLoadMore ? (this.feedPages[name] || 1) + 1 : 1;
+					return this.$httpApi.v2.getCategoryPostList(name, { page, size })
+						.then((res) => ({
+							name,
+							page,
+							items: (res && res.items) || [],
+							hasNext: res && res.hasNext === true
+						}))
+						.catch(() => ({ name, page: 1, items: [], hasNext: false }));
+				}));
+
+				const gotAny = results.some((item) => item.items.length > 0);
+				// 一篇都没取到（订阅了冷门分类、或接口异常）：回落站内默认列表并说明，
+				// 否则用户会看到一个空首页，还以为站点坏了
+				if (!isLoadMore && !gotAny) {
+					this.fnFallbackToLatest();
+					return;
+				}
+
+				results.forEach((item) => {
+					this.feedPages[item.name] = item.page;
+				});
+				const flat = [];
+				results.forEach((item) => {
+					item.items.forEach((article) => flat.push(article));
+				});
+
+				this.articleList = this.fnMergeArticles(isLoadMore ? this.articleList.concat(flat) : flat);
+				this.result.hasNext = results.some((item) => item.hasNext);
+				this.loading = 'success';
+				this.loadMoreText = this.result.hasNext ? '上拉加载更多' : '呜呜，没有更多数据啦~';
+				uni.hideLoading();
+				uni.stopPullDownRefresh();
+			},
+
+			/** 合并多路结果：按文章名去重，置顶优先、其次发布时间倒序 */
+			fnMergeArticles(items) {
+				const seen = {};
+				const merged = [];
+				(this.$utils.stripDataUnsafeList(items) || []).forEach((item) => {
+					const name = item && item.metadata && item.metadata.name;
+					if (!name || seen[name]) {
+						return;
+					}
+					seen[name] = true;
+					merged.push(item);
+				});
+				merged.sort((a, b) => {
+					const pinnedA = a && a.spec && a.spec.pinned === true ? 1 : 0;
+					const pinnedB = b && b.spec && b.spec.pinned === true ? 1 : 0;
+					if (pinnedA !== pinnedB) {
+						return pinnedB - pinnedA;
+					}
+					const timeA = (a && a.spec && a.spec.publishTime) || '';
+					const timeB = (b && b.spec && b.spec.publishTime) || '';
+					if (timeA === timeB) {
+						return 0;
+					}
+					// Halo 的时间是 ISO 字符串，同格式下字典序即时间序
+					return timeA < timeB ? 1 : -1;
+				});
+				return merged;
+			},
+
+			/**
+			 * 回落站内默认列表。
+			 *
+			 * <p>订阅的分类一篇都没有时才会走到这里：内容换成站内默认列表，
+			 * 状态条仍然显示订阅了什么，提示条说明为什么变了——订阅没有被清掉。</p>
+			 */
+			fnFallbackToLatest() {
+				this.feedPersonalized = false;
+				this.feedFallback = true;
+				this.isLoadMore = false;
+				this.queryParams.page = 1;
+				this.fnGetArticleList();
+			},
+
+			/** 去分类页改订阅（分类页是 tabbar 页，只能用 switchTab） */
+			fnToCategoryTab() {
+				uni.switchTab({ url: '/pages/tabbar/category/category' });
+			},
+
+			/**
+			 * 切回首页时按版本号判断订阅是否变过，变过才重取。
+			 *
+			 * <p>不用每次都重取：首页是 tabbar 页，来回切很频繁，
+			 * 每次切都打一次接口既没必要也费流量。版本号由分类页在保存成功后写入本地存储，
+			 * 不依赖事件总线（事件在页面生命周期边界上可能错过）。</p>
+			 */
+			async fnCheckSubscriptionChanged() {
+				const rev = uni.getStorageSync('category.subscription.rev');
+				if (!rev || rev === this.subscriptionRev) {
+					return;
+				}
+				await this.fnOnSubscriptionChanged();
+			},
+
+			/**
+			 * 订阅在分类页被改过之后：重取分类与列表。
+			 *
+			 * <p>首页与分类页是两个 tab，改完订阅切回来时首页还停在旧结果上，
+			 * 靠这个事件当场刷新，不用等下拉或重启小程序。</p>
+			 */
+			async fnOnSubscriptionChanged() {
+				this.feedPages = {};
+				this.isLoadMore = false;
+				this.queryParams.page = 1;
+				this.feedFallback = false;
+				await this.fnLoadSubscription();
+				// fnGetArticleList 内部按 feedPersonalized 分流，两条路都从这里进
+				this.fnGetArticleList();
+			},
+
+			/**
+			 * 取订阅分类的中文名，用于状态条。
+			 *
+			 * <p>自动创建的主题分类其 name 是英文 key（{@code ai-ml}），
+			 * 直接显示给用户看不懂，所以要拿站点分类的显示名来映射。</p>
+			 */
+			async fnLoadFeedCategories() {
+				const followed = this.subscription.postCategories || [];
+				if (!checkHasWxLogin() || !followed.length) {
+					this.feedCategories = [];
+					return;
+				}
+				try {
+					const res = await this.$httpApi.v2.getCategoryList({
+						size: 100,
+						page: 1,
+						fieldSelector: ['spec.hideFromList=false']
+					});
+					const items = Array.isArray(res?.items) ? res.items : [];
+					const labels = {};
+					items.forEach((item) => {
+						const name = item.metadata?.name;
+						if (name) {
+							labels[name] = item.spec?.displayName || name;
+						}
+					});
+					this.feedCategories = followed.map((name) => ({
+						name,
+						label: labels[name] || name
+					}));
+				} catch (err) {
+					// 拿不到显示名就退回英文 key：状态条仍然可用，只是不够好看
+					this.feedCategories = followed.map((name) => ({ name, label: name }));
+				}
+			},
+
 			// 获取轮播图
 			fnGetBanner() {
 				if (this.calcAuditModeEnabled) {
@@ -429,6 +688,12 @@
 					uni.stopPullDownRefresh();
 					return;
 				}
+				// 配了「站点分类」关注条件时按它筛选；未配或已退回则走原路径
+				if (this.feedPersonalized && this.subscription.postCategories.length > 0) {
+					this.fnGetPersonalArticleList();
+					return;
+				}
+
 				// 设置状态为加载中
 				if (!this.isLoadMore) {
 					this.loading = 'loading';
@@ -448,10 +713,13 @@
 					success: (res) => {
 						const data = res.data;
 						this.result.hasNext = data.hasNext;
+						// 必须清洗：Halo 的 label 键名带点（content.halo.run/…），
+						// 微信 setData 会把它当路径解析并在中途抛错，导致整次数据更新失败
+						const items = this.$utils.stripDataUnsafeList(data.items);
 						if (this.isLoadMore) {
-							this.articleList = this.articleList.concat(data.items);
+							this.articleList = this.articleList.concat(items);
 						} else {
-							this.articleList = data.items;
+							this.articleList = items;
 						}
 						this.loading = 'success';
 						this.loadMoreText = data.hasNext ? '上拉加载更多' : '呜呜，没有更多数据啦~';
@@ -724,6 +992,29 @@
 		.ani-item {
 			width: 50%;
 		}
+	}
+
+	/* ===== 主列表个性化提示 ===== */
+	.feed-hint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 14rpx 20rpx;
+		border-radius: 12rpx;
+		background: #eef1fb;
+	}
+
+	.feed-hint-text {
+		flex: 1;
+		font-size: 21rpx;
+		color: #5b6ee8;
+	}
+
+	.feed-hint-action {
+		flex-shrink: 0;
+		margin-left: 16rpx;
+		font-size: 21rpx;
+		color: #667eea;
 	}
 
 	.daily-block {

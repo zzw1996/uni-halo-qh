@@ -199,6 +199,44 @@ const utils = {
             });
         }
         return output;
+    },
+
+    /**
+     * 把接口返回的文章/分类对象「洗」成可以安全放进页面 data 的形状。
+     *
+     * <p><b>为什么必须做</b>：微信的 setData 会把数据里的<b>键名</b>当作路径来解析，
+     * 而 Halo 的 labels / annotations 键名是带点的，例如
+     * {@code content.halo.run/owner}、{@code content.halo.run/published}。
+     * 解析到 {@code content} 这一段时若拿到的不是对象（Halo 文章在列表接口里
+     * `content` 就是空的），紧接着读 {@code .halo} 就会抛
+     * {@code Cannot read properties of null (reading 'halo')}。
+     * 后果不是"一条警告"：<b>这一次 setData 失败，页面数据就不再更新</b>——
+     * 表现是点了订阅按钮但界面不翻转、看起来像"点了没反应/无法取消订阅"。</p>
+     *
+     * <p>而这些 label / annotation 前端一个都用不上（渲染只用到 spec / status / stats /
+     * metadata.name 等），所以在数据进 data 之前先摘掉，既避开上面这个坑，
+     * 也让每次 setData 的数据量小一截。</p>
+     */
+    stripDataUnsafeFields: function (item) {
+        if (!item || typeof item !== 'object') return item;
+        const clone = { ...item };
+
+        // metadata 里只有 name 是渲染需要的
+        if (clone.metadata && typeof clone.metadata === 'object') {
+            clone.metadata = {
+                name: clone.metadata.name,
+                creationTimestamp: clone.metadata.creationTimestamp
+            };
+        }
+        // 文章正文不进列表（详情页单独取），留着只会把 data 撑大
+        delete clone.content;
+        return clone;
+    },
+
+    /** 批量清洗（列表接口返回的 items） */
+    stripDataUnsafeList: function (list) {
+        if (!Array.isArray(list)) return [];
+        return list.map((item) => this.stripDataUnsafeFields(item));
     }
 
 };

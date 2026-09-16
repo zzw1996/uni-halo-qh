@@ -147,7 +147,10 @@ export const resolvePointsApiPaths = (configs) => {
 	// 阅读券（付费内容）：status 允许未登录调用，故不走 requestPointsApi
 	contentStatus: custom.contentStatus || '/points/content/status',
 	contentUnlock: custom.contentUnlock || '/points/content/unlock',
-	contentTickets: custom.contentTickets || '/points/content/tickets'
+	contentTickets: custom.contentTickets || '/points/content/tickets',
+	contentUnlocked: custom.contentUnlocked || '/points/content/unlocked',
+	// 会员状态：未登录也允许调用（返回「未开通」而不是报错）
+	membership: custom.membership || '/points/membership'
 };
 };
 
@@ -176,7 +179,9 @@ const POINTS_API_FALLBACKS = {
 	luckyMine: ['/points/lucky/mine', '/getMyLuckyClaims'],
 	contentStatus: ['/points/content/status', '/getContentLockStatus'],
 	contentUnlock: ['/points/content/unlock', '/unlockPaidContent'],
-	contentTickets: ['/points/content/tickets', '/getContentTicketBalance']
+	contentTickets: ['/points/content/tickets', '/getContentTicketBalance'],
+	contentUnlocked: ['/points/content/unlocked', '/getUnlockedContentList'],
+	membership: ['/points/membership', '/getMembershipStatus']
 };
 
 export const getPointsApiPathCandidates = (key, configs) => {
@@ -455,16 +460,18 @@ export const fetchExchangeBalance = async (httpApi) => {
 		if (data?.error) {
 			return { ok: false, reason: data.error };
 		}
-		const items = Array.isArray(data.items)
-			? data.items.map((item) => ({
-				key: item.key || '',
-				name: item.name || '',
-				points: Number(item.points || 0) || 0,
-				dailyMaxCount: Number(item.dailyMaxCount || 0) || 0,
-				description: item.description || '',
-				todayCount: Number(item.todayCount || 0) || 0
-			}))
-			: [];
+				const items = Array.isArray(data.items)
+					? data.items.map((item) => ({
+						key: item.key || '',
+						name: item.name || '',
+						points: Number(item.points || 0) || 0,
+						dailyMaxCount: Number(item.dailyMaxCount || 0) || 0,
+						description: item.description || '',
+						// 券类兑换项每次发放的张数（新版插件下发）；旧版为 0，调用方按 1 兜底
+						ticketCount: Number(item.ticketCount || 0) || 0,
+						todayCount: Number(item.todayCount || 0) || 0
+					}))
+					: [];
 		return {
 			ok: true,
 			balance: data.balance != null ? Number(data.balance) : null,

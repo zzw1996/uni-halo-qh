@@ -10,6 +10,8 @@
  *  修改时间：
  */
 
+import { getDefaultAppSettings } from '@/utils/app.js'
+
 export default {
     install(Vue) {
         Vue.mixin({
@@ -24,8 +26,17 @@ export default {
                     return this.$tm.vx.getters().getConfigs;
                 },
                 // 获取全局应用设置
+                //
+                // 这里必须兜底：页面模板大量使用 globalAppSettings.layout.xxx / banner.xxx，
+                // 一旦设置对象是 null（存储损坏、首次启动读不到），render 期就会抛
+                // 「Cannot read properties of null」把整个页面渲染打断。
+                // 兜底成默认设置后，最坏情况是「回到默认外观」，而不是「页面白掉 + 控制台报错」。
                 globalAppSettings() {
-                    return uni.$tm.vx.getters().getSettings;
+                    const settings = uni.$tm.vx.getters().getSettings;
+                    if (settings && typeof settings === 'object') {
+                        return settings;
+                    }
+                    return getDefaultAppSettings();
                 },
                 // 计算动画索引
                 calcAniWait() {

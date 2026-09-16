@@ -39,6 +39,37 @@
 					@click="fnGoGetTickets"
 				>{{ calcLockIsLogin ? '阅读券不足，去获取' : '登录后查看并解锁' }}</tm-button>
 			</view>
+			<!--
+				会员引导：会员期内本文直接免券，因此这比「再买张券」更划算。
+				只在会员卡开启、用户不是会员、且会员确实含免券权益时展示
+				（承诺一个用户开了也享受不到的权益是最伤信任的做法）。
+			-->
+			<view v-if="calcLockIsLogin && !calcLockCanUnlock && memberPromo" class="locked-member mt-16">
+				<view class="locked-member-main">
+					<text class="locked-member-title">{{ memberPromo.title }}</text>
+					<text class="locked-member-desc">{{ memberPromo.desc }}</text>
+				</view>
+				<text class="locked-member-link" @click="fnGoGetTickets">去看看 ›</text>
+			</view>
+			<!--
+				券不够时的最高意图时刻：用户已经点开文章、看到摘要、被墙挡住。
+				在这里直接给一个「用积分换 1 张券」的按钮，比让他自己跳去充值页再找入口短得多。
+			-->
+			<view v-if="calcLockIsLogin && !calcLockCanUnlock && ticketExchange" class="locked-exchange mt-16">
+				<text class="locked-exchange-text">
+					可用 {{ ticketExchange.points }} 积分兑换 {{ ticketExchange.ticketCount || 1 }} 张阅读券
+					<text v-if="ticketExchange.todayCount >= ticketExchange.dailyMaxCount" class="locked-exchange-warn">
+						（今日已兑完）
+					</text>
+				</text>
+				<tm-button
+					size="s"
+					theme="primary"
+					:disabled="exchangingTicket || ticketExchange.todayCount >= ticketExchange.dailyMaxCount"
+					:loading="exchangingTicket"
+					@click="fnExchangeTicketForArticle"
+				>积分兑换</tm-button>
+			</view>
 		</view>
 		<view v-else-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
@@ -93,7 +124,12 @@
 					<text class="text-weight-b">标签：</text>
 					<text v-if="result.tags.length === 0" class="category-tag is-empty">未选择标签</text>
 					<block v-else>
-						<text class="category-tag" :style="{ backgroundColor: item.color }" v-for="(item, index) in result.tags" :key="index" @click="fnToTag(item)">
+						<!--
+							标签底色取 spec.color（Halo 的标签色字段），不是顶层的 color——
+							顶层没有这个字段，写成 item.color 等于永远没有底色，标签只剩灰字。
+							站长手工建的标签通常没设颜色，所以要有兜底底色。
+						-->
+						<text class="category-tag" :style="{ backgroundColor: fnTagColor(item) }" v-for="(item, index) in result.tags" :key="index" @click="fnToTag(item)">
 							{{ item.spec.displayName }}
 						</text>
 					</block>
@@ -409,7 +445,7 @@ import { getCommentAuthorInfo } from '@/utils/comment.js';
 import { isWxLoginRequired } from '@/utils/wxLogin.js';
 import { upvote } from '@/utils/upvote.js';
 import { recordUserActivity, removeUserActivity, syncArticleUpvoteStatus, USER_ACTIVITY_TYPES } from '@/utils/userActivity.js';
-import { getPointsConfig, isPointsEnabled, tryEarnPointsByAction, checkPointsEarnStatus, POINTS_ACTIONS } from '@/utils/points.js';
+import { getPointsConfig, isPointsEnabled, tryEarnPointsByAction, checkPointsEarnStatus, POINTS_ACTIONS, fetchExchangeBalance, exchangePointsItem, normalizePointsApiError } from '@/utils/points.js';
 import { getDomainOnly } from '@/utils/url.params.js'
 import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName } from '@/utils/restrictRead';
 import HaloTokenConfig from '@/config/uhalo.config';
@@ -517,7 +553,13 @@ export default {
 			/** 跳转充值页获取阅读券后返回，需要复查锁定态（券可能已增加） */
 			_needRecheckLock: false,
 			/** 券够但未登录时点了解锁，登录成功后自动复查并继续解锁 */
-			pendingLockUnlock: false
+			pendingLockUnlock: false,
+			/** 积分兑换券的兑换项；null 表示不可用（未开启付费内容/接口不可用） */
+			ticketExchange: null,
+			/** 兑换请求进行中，防止连点重复扣积分 */
+			exchangingTicket: false,
+			/** 会员状态：仅用于锁定卡上的引导文案（已开通会员根本不会进锁定态） */
+			membership: { enabled: false, active: false, freeContent: false, bonusTickets: 0 }
 		};
 	},
 		computed: {
@@ -592,6 +634,25 @@ export default {
 		/** 登录且券够才展示「解锁」按钮，否则展示「去获取」 */
 		calcLockCanUnlock() {
 			return this.calcLockIsLogin && this.calcLockTickets >= this.calcLockCostTickets;
+		},
+		/**
+		 * 会员引导文案；返回 null 表示不展示。
+		 *
+		 * <p>会员卡未开启、用户已是会员、或该站点的会员不含免券权益时都不展示——
+		 * 那三种情况下这条引导要么无意义，要么是在承诺用户享受不到的权益。</p>
+		 */
+		memberPromo() {
+			const member = this.membership;
+			if (member?.enabled !== true || member?.active === true || member?.freeContent !== true) {
+				return null;
+			}
+			const bonus = Number(member.bonusTickets || 0);
+			return {
+				title: '开通会员，付费文章免券阅读',
+				desc: bonus > 0
+					? `会员期内不再消耗阅读券，开通还送 ${bonus} 张券`
+					: '会员期内不再消耗阅读券'
+			};
 		}
 	},
 	watch: {
@@ -736,6 +797,9 @@ export default {
 						this.lockIsLogin = checkHasWxLogin() && !!getOpenid();
 						this.loading = 'locked';
 						this.fnSetPageTitle(lockData.title || '付费内容');
+						// 券不够时卡片要给「用积分兑换」与「开通会员」两个出口，进入锁定态就查一次
+						this.fnLoadTicketExchange();
+						this.fnLoadMembership();
 						return;
 					}
 					console.error('[article-detail] 加载失败', err);
@@ -1507,6 +1571,16 @@ export default {
 					this.commentDetail.loading = 'error';
 				});
 		},
+		/**
+		 * 标签底色：优先用标签自己的颜色（spec.color），没有就用一层中性底色。
+		 *
+		 * <p>不给兜底的话，站长手工建的标签（控制台不写 color）会渲染成没有底色的灰字，
+		 * 看起来像没加载完。</p>
+		 */
+		fnTagColor(tag) {
+			const color = tag && tag.spec && tag.spec.color;
+			return color || 'rgba(102, 126, 234, 0.12)';
+		},
 		fnToCate(category) {
 			uni.navigateTo({
 				url: `/pagesA/category-detail/category-detail?name=${category.metadata.name}&title=${category.spec.displayName}`
@@ -1735,6 +1809,75 @@ export default {
 				});
 		},
 
+		/**
+		 * 拉取「积分兑换阅读券」的兑换项。
+		 *
+		 * 只认 key=content_ticket：付费内容开启时后端会自动补一条内置兑换项，
+		 * 因此站长即使忘了在积分商城配置，这里也能拿到。失败静默——
+		 * 兑换入口只是补充路径，拿不到不影响「去获取」按钮。
+		 */
+		async fnLoadTicketExchange() {
+			try {
+				const status = await fetchExchangeBalance(this.$httpApi.v2);
+				if (!status.ok) {
+					this.ticketExchange = null;
+					return;
+				}
+				this.ticketExchange = (status.items || [])
+					.find((entry) => entry.key === 'content_ticket') || null;
+			} catch (err) {
+				this.ticketExchange = null;
+			}
+		},
+		/**
+		 * 拉取会员状态（仅用于锁定卡上的引导）。
+		 *
+		 * <p>会员身份不在这里做任何放行判断——放行完全由服务端决定，
+		 * 前端状态只影响文案，避免两处口径不一致导致「页面说我是会员但文章还是锁的」。</p>
+		 */
+		async fnLoadMembership() {
+			try {
+				const res = await this.$httpApi.v2.getMembershipStatus();
+				const body = res?.data || res || {};
+				if (body && typeof body === 'object' && !body.error) {
+					this.membership = {
+						enabled: body.enabled === true,
+						active: body.active === true,
+						freeContent: body.freeContent === true,
+						bonusTickets: Number(body.bonusTickets || 0)
+					};
+				}
+			} catch (err) {
+				// 静默：拿不到会员状态只是少一条引导，不影响解锁
+			}
+		},
+		/**
+		 * 用积分兑换阅读券。
+		 *
+		 * 兑换成功后不自动扣券解锁：解锁是消费行为，让用户看着新的券余额再点一次确认，
+		 * 避免「我只是想换张券，怎么文章直接被解锁了」的意外扣费感。
+		 */
+		async fnExchangeTicketForArticle() {
+			if (!this.ticketExchange || this.exchangingTicket) return;
+			this.exchangingTicket = true;
+			uni.showLoading({ title: '兑换中...' });
+			try {
+				const result = await exchangePointsItem(this.$httpApi.v2, 'content_ticket');
+				if (!result.ok) {
+					uni.showToast({ title: result.reason || '兑换失败，请稍后重试', icon: 'none' });
+					return;
+				}
+				uni.showToast({ title: result.message || '兑换成功', icon: 'success' });
+				// 重新拉取锁定态：券余额与今日兑换次数都会变，按钮随之切到「使用阅读券解锁」
+				await this.fnLoadTicketExchange();
+				this.fnGetData();
+			} catch (err) {
+				uni.showToast({ title: normalizePointsApiError(err), icon: 'none' });
+			} finally {
+				uni.hideLoading();
+				this.exchangingTicket = false;
+			}
+		},
 		/** 阅读券不足：去积分充值页获取（可兑换或购买阅读券） */
 		fnGoGetTickets() {
 			if (!this.calcLockIsLogin) {
@@ -1895,6 +2038,59 @@ export default {
 			}
 		}
 	}
+}
+
+.locked-member {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 18rpx 20rpx;
+	border-radius: 12rpx;
+	background: linear-gradient(135deg, #2c2f4a 0%, #4a3f6b 100%);
+}
+
+.locked-member-main {
+	flex: 1;
+	margin-right: 16rpx;
+}
+
+.locked-member-title {
+	display: block;
+	font-size: 24rpx;
+	font-weight: 600;
+	color: #f7d774;
+}
+
+.locked-member-desc {
+	display: block;
+	margin-top: 4rpx;
+	font-size: 20rpx;
+	color: rgba(255, 255, 255, 0.78);
+}
+
+.locked-member-link {
+	font-size: 22rpx;
+	color: #f7d774;
+}
+
+.locked-exchange {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 18rpx 20rpx;
+	border-radius: 12rpx;
+	background: #f2f4fa;
+}
+
+.locked-exchange-text {
+	flex: 1;
+	margin-right: 16rpx;
+	font-size: 22rpx;
+	color: #7b81a0;
+}
+
+.locked-exchange-warn {
+	color: #d1851a;
 }
 
 .content-locked {
