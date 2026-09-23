@@ -69,7 +69,7 @@ export default {
 	border-radius: 50%;
 	border: 4rpx solid #ffffff;
 	background-color: #bfe9ef;
-	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.1);
+	box-shadow: $uh-shadow-md;
 	z-index: 99;
 	transition: right 0.5s ease-in-out;
 

@@ -9,13 +9,13 @@
 					<view class="flex">
 						<tm-tags color="orange" style="min-width:40rpx;" :shadow="0" rounded size="s"
 							model="fill">{{ index + 1 }}</tm-tags>
-						<tm-tags color="light-blue" :shadow="0" rounded size="s"
+						<tm-tags color="indigo" :shadow="0" rounded size="s"
 							model="fill">{{ vote.spec._uh_type }}</tm-tags>
 						<tm-tags :color="vote.spec._uh_state.color" size="s" rounded :shadow="0"
 							model="fill">{{vote.spec._uh_state.state}}</tm-tags>
 					</view>
 					<view class="flex-shrink">
-						<tm-button theme="light-blue" :shadow="0" dense size="s"
+						<tm-button theme="indigo" :shadow="0" dense size="s"
 							@click="handleToVoteDetail(vote)">查看投票详情</tm-button>
 					</view>
 				</view>
@@ -51,7 +51,7 @@
 							<template v-else>
 								<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 									class="vote-select-option flex-1 w-full text-break"
-									:class="[option.checked?'light-blue':'grey-lighten-3']"
+									:class="[option.checked?'indigo':'grey-lighten-3']"
 									@click="handleSelectSingleOption(option)">
 									{{option.title }}
 								</view>
@@ -80,7 +80,7 @@
 							<template v-else>
 								<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 									class="vote-select-option flex-1 w-full text-break"
-									:class="[option.checked?'light-blue':'grey-lighten-3']"
+									:class="[option.checked?'indigo':'grey-lighten-3']"
 									@click="handleSelectCheckboxOption(option)">
 									{{option.title }}
 								</view>
@@ -120,7 +120,7 @@
 								<template v-else>
 									<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 										class="vote-select-option flex-1 w-full text-break"
-										:class="[option.checked?'light-blue':'grey-lighten-3']"
+										:class="[option.checked?'indigo':'grey-lighten-3']"
 										@click="handleSelectSingleOption(option)">
 										选项{{ optionIndex+1}}：{{option.title }}
 									</view>
@@ -146,7 +146,7 @@
 				<view class="right flex flex-end">
 					<tm-tags color="grey-darken-2" rounded size="s" model="text">{{ vote.stats.voteCount }}
 						人已参与</tm-tags>
-					<tm-tags v-if="vote.spec.isVoted" color="blue" rounded size="s" model="text">已投票</tm-tags>
+					<tm-tags v-if="vote.spec.isVoted" color="indigo" rounded size="s" model="text">已投票</tm-tags>
 				</view>
 			</view>
 
@@ -162,7 +162,7 @@
 					text :block="true" @click="handleSubmit()">不支持匿名投票</tm-button>
 				<tm-button v-else-if="submitForm.voteData.length===0" theme="white" text :fllowTheme="false" class="w-full" :height="72"
 					:block="true" @click="handleSubmitTip('请选择选项')">提交投票（请选择选项）</tm-button>
-				<tm-button v-else theme="light-blue" :fllowTheme="false" class="w-full" :height="72" :block="true" :loading="submitLoading"
+				<tm-button v-else theme="indigo" :fllowTheme="false" class="w-full" :height="72" :block="true" :loading="submitLoading"
 					:disabled="submitLoading" @click="handleSubmit()">提交投票</tm-button>
 			</view>
 		</template>
@@ -397,7 +397,7 @@
 		background-color: #ffff;
 		overflow: hidden;
 		margin-bottom: 12rpx;
-		border: 1px solid #eee;
+		border: 1px solid $uh-line;
 
 		&.error {
 			padding: 0;
@@ -410,9 +410,9 @@
 		&.loading {
 			padding: 0;
 			border-style: dashed;
-			border-color: rgba(3, 174, 252, 1);
-			color: rgba(3, 174, 252, 1);
-			background-color: rgba(3, 174, 252, 0.075);
+			border-color: $uh-accent;
+			color: $uh-accent;
+			background-color: $uh-accent;
 		}
 	}
 
@@ -447,7 +447,7 @@
 		box-sizing: border-box;
 		padding-top: 6px;
 		margin-top: 12px;
-		border-top: 2rpx solid #eee;
+		border-top: 2rpx solid $uh-line;
 
 		.left {}
 	}
@@ -554,7 +554,7 @@
 				width: 100%;
 				margin-top: 6rpx;
 				font-size: 24rpx;
-				color: #666;
+				color: $uh-ink-2;
 
 				.left {
 					box-sizing: border-box;

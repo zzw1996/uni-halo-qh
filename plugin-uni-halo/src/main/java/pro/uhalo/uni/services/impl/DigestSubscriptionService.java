@@ -49,6 +49,12 @@ public class DigestSubscriptionService {
     /** 站点分类上限：首页要按这几路并发拉取，太多既无必要也会拖慢首页 */
     private static final int MAX_POST_CATEGORIES = 5;
 
+    /** 从邀请人继承的分类上限；与自己的 5 个相加，首页并集上限就是 8 路 */
+    private static final int MAX_INHERITED_CATEGORIES = 3;
+
+    /** 首页实际生效的分类上限（自己 5 + 继承 3） */
+    private static final int MAX_EFFECTIVE_CATEGORIES = 8;
+
     /** 单个偏好项的长度上限 */
     private static final int MAX_ITEM_LENGTH = 40;
 
@@ -161,6 +167,137 @@ public class DigestSubscriptionService {
         return List.copyOf(cleaned);
     }
 
+    /**
+     * 从邀请人继承订阅分类（登录结算邀请关系时调用）。
+     *
+     * <p><b>只对「还没有自己订阅、也没继承过」的人生效</b>：新用户天然满足，于是他的首页
+     * 从第一眼起就是分享者订阅的那批内容；已经有自己订阅的老用户完全不动——他打开别人的
+     * 分享只会看到一个可点的推荐入口，首页该是什么还是什么。</p>
+     *
+     * <p>这里允许为新用户<b>预建</b>订阅记录：新用户本就没有记录，若只在已有记录上做继承，
+     * 这个功能对新人反而永远不生效。</p>
+     *
+     * @return 是否真的写入了继承项
+     */
+    public Mono<Boolean> applyInheritance(String openid, String inviterOpenid,
+        List<String> categories) {
+        return Mono.defer(() -> {
+            if (!StringUtils.hasText(openid) || !StringUtils.hasText(inviterOpenid)) {
+                return Mono.just(false);
+            }
+            var wanted = cap(categories, MAX_INHERITED_CATEGORIES);
+            if (wanted.isEmpty()) {
+                return Mono.just(false);
+            }
+            var normalized = openid.trim();
+            var inviter = inviterOpenid.trim();
+            return findOne(normalized)
+                .flatMap(existing -> {
+                    if (!ownCategoriesOf(existing).isEmpty()
+                        || !orEmpty(existing.getInheritedCategories()).isEmpty()) {
+                        // 已有自己的订阅 / 已经继承过：不覆盖、不叠加
+                        log.info("[UniHalo][Digest] 该用户已有订阅或已继承过，跳过继承 openid={}",
+                            mask(normalized));
+                        return Mono.just(false);
+                    }
+                    existing.setInheritedCategories(wanted);
+                    existing.setInheritedFrom(inviter);
+                    existing.setEnabled(true);
+                    existing.setUpdatedAt(Instant.now());
+                    return client.update(existing).map(saved -> true);
+                })
+                .switchIfEmpty(Mono.defer(() -> client.create(newInheritedSubscription(
+                    normalized, inviter, wanted)).map(created -> true)))
+                .doOnNext(applied -> {
+                    if (applied) {
+                        log.info("[UniHalo][Digest] 已按邀请人的订阅写入继承分类 openid={} 继承={}",
+                            mask(normalized), wanted);
+                    }
+                })
+                .onErrorResume(ex -> {
+                    // 继承是锦上添花，绝不能因为它让登录失败
+                    log.warn("[UniHalo][Digest] 写入继承分类失败（忽略）openid={}：{}",
+                        mask(normalized), ex.getMessage());
+                    return Mono.just(false);
+                });
+        });
+    }
+
+    /**
+     * 老用户点「也关注这些」：把别人的推荐并进他自己的订阅。
+     *
+     * <p>并入口径与首页一致——先占自己的 5 个名额，剩下的进继承位（最多 3 个），
+     * 已有的一律不重复加。所以「也关注这些」最多把他从 5 个变成 8 个，不会无限膨胀。</p>
+     */
+    public Mono<DigestSubscriptionDTO> acceptRecommendation(String openid, String inviterOpenid,
+        List<String> categories) {
+        return Mono.defer(() -> {
+            if (!StringUtils.hasText(openid)) {
+                return Mono.error(new WxAuthException("请先登录"));
+            }
+            var wanted = cap(categories, MAX_POST_CATEGORIES + MAX_INHERITED_CATEGORIES);
+            var normalized = openid.trim();
+            var inviter = inviterOpenid == null ? "" : inviterOpenid.trim();
+            return findOne(normalized)
+                .flatMap(existing -> {
+                    var own = new LinkedHashSet<>(ownCategoriesOf(existing));
+                    var inherited = new LinkedHashSet<>(
+                        orEmpty(existing.getInheritedCategories()));
+                    for (var name : wanted) {
+                        if (own.contains(name) || inherited.contains(name)) {
+                            continue;
+                        }
+                        if (own.size() < MAX_POST_CATEGORIES) {
+                            own.add(name);
+                        } else if (inherited.size() < MAX_INHERITED_CATEGORIES) {
+                            inherited.add(name);
+                        }
+                    }
+                    existing.setPostCategories(List.copyOf(own));
+                    existing.setInheritedCategories(List.copyOf(inherited));
+                    if (StringUtils.hasText(inviter)) {
+                        existing.setInheritedFrom(inviter);
+                    }
+                    existing.setEnabled(true);
+                    existing.setCategories(List.of());
+                    existing.setUpdatedAt(Instant.now());
+                    return client.update(existing);
+                })
+                .switchIfEmpty(Mono.defer(() -> client.create(newInheritedSubscription(
+                    normalized, inviter, cap(wanted, MAX_INHERITED_CATEGORIES)))))
+                .map(DigestSubscriptionService::toDto);
+        });
+    }
+
+    /** 预建一条「只有继承项」的订阅记录（新用户、尚无记录的老用户都走这里） */
+    private static DigestSubscription newInheritedSubscription(String openid, String inviterOpenid,
+        List<String> inherited) {
+        var subscription = newSubscription(openid, true, List.of(), List.of(), List.of(),
+            List.of());
+        subscription.setInheritedCategories(inherited);
+        subscription.setInheritedFrom(inviterOpenid);
+        return subscription;
+    }
+
+    /** 去空、去重、截断到 limit（不抛异常：这里的数据都来自服务端自己算出的清单） */
+    private static List<String> cap(List<String> values, int limit) {
+        var cleaned = new LinkedHashSet<String>();
+        for (var value : orEmpty(values)) {
+            if (cleaned.size() >= limit) {
+                break;
+            }
+            if (StringUtils.hasText(value)) {
+                cleaned.add(value.trim());
+            }
+        }
+        return List.copyOf(cleaned);
+    }
+
+    /** 日志用的 openid 脱敏 */
+    private static String mask(String openid) {
+        return openid.length() <= 6 ? "***" : openid.substring(0, 6) + "***";
+    }
+
     private Mono<DigestSubscription> findOne(String openid) {
         var listOptions = new ListOptions();
         listOptions.setFieldSelector(FieldSelector.of(equal("wxOpenid", openid)));
@@ -189,24 +326,69 @@ public class DigestSubscriptionService {
     }
 
     private static DigestSubscriptionDTO toDto(DigestSubscription subscription) {
-        // 旧订阅只存了 AI 分类（categories）。自动打标上线后，AI 分类 key 与自动创建出来的
-        // 站点分类名是同一串（都来自 DigextAiHelper 的固定枚举），所以直接把老值当作
-        // postCategories 用即可，无需数据迁移脚本——用户不会发现自己的订阅"失效"了。
-        var postCategories = orEmpty(subscription.getPostCategories());
-        if (postCategories.isEmpty()) {
-            postCategories = orEmpty(subscription.getCategories());
-        }
+        var postCategories = ownCategoriesOf(subscription);
+        var inherited = orEmpty(subscription.getInheritedCategories());
         var dto = DigestSubscriptionDTO.builder()
             .enabled(Boolean.TRUE.equals(subscription.getEnabled()))
             .categories(orEmpty(subscription.getCategories()))
             .keywords(orEmpty(subscription.getKeywords()))
             .sources(orEmpty(subscription.getSources()))
             .postCategories(postCategories)
+            .inheritedCategories(inherited)
+            .inheritedFrom(subscription.getInheritedFrom())
+            .effectiveCategories(effectiveOf(postCategories, inherited))
             .updatedAt(subscription.getUpdatedAt() == null ? null
                 : subscription.getUpdatedAt().atZone(ZONE).format(TIME_FMT))
             .build();
         dto.setFiltered(DigestPreferenceMatcher.hasPreferences(dto));
         return dto;
+    }
+
+    /**
+     * 用户**自己**订阅的站点分类。
+     *
+     * <p>旧订阅只存了 AI 分类（categories）。自动打标上线后 AI 分类 key 与自动创建出来的
+     * 站点分类名是同一串，所以直接把老值当作 postCategories 用即可，无需迁移脚本——
+     * 用户不会发现自己的订阅"失效"了。</p>
+     */
+    private static List<String> ownCategoriesOf(DigestSubscription subscription) {
+        var own = orEmpty(subscription.getPostCategories());
+        if (own.isEmpty()) {
+            own = orEmpty(subscription.getCategories());
+        }
+        return own;
+    }
+
+    /**
+     * 首页实际生效的分类：自己订阅的在前（最多 5 个），继承来的在后（最多 3 个），
+     * 去重后总共最多 8 个。
+     *
+     * <p>「自己优先」是刻意的：用户亲手选的分类不该被别人的推荐挤掉；名额有余量时
+     * 才把继承项补进来，所以继承永远是「额外看到」，不是「替代」。</p>
+     */
+    static List<String> effectiveOf(List<String> own, List<String> inherited) {
+        var merged = new LinkedHashSet<String>();
+        for (var name : orEmpty(own)) {
+            if (merged.size() >= MAX_POST_CATEGORIES) {
+                break;
+            }
+            if (StringUtils.hasText(name)) {
+                merged.add(name.trim());
+            }
+        }
+        // 继承项自身也限 3 个：写侧已经限过，这里再限一次是防御历史脏数据——
+        // 否则「自己只订了 1 个」的用户会把继承项全部摊开，与「自己 5 + 继承 3」的口径不一致
+        var inheritedUsed = 0;
+        for (var name : orEmpty(inherited)) {
+            if (inheritedUsed >= MAX_INHERITED_CATEGORIES
+                || merged.size() >= MAX_EFFECTIVE_CATEGORIES) {
+                break;
+            }
+            if (StringUtils.hasText(name) && merged.add(name.trim())) {
+                inheritedUsed++;
+            }
+        }
+        return List.copyOf(merged);
     }
 
     private static DigestSubscriptionDTO empty() {

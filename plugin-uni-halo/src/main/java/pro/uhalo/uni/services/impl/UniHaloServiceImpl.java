@@ -2,6 +2,7 @@ package pro.uhalo.uni.services.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,9 @@ import run.halo.app.plugin.ReactiveSettingFetcher;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,13 +75,64 @@ public class UniHaloServiceImpl implements UniHaloService {
     private static final java.util.Set<String> PAY_SECRET_FIELDS =
         java.util.Set.of("appKey", "offerId");
 
+    /** 基本配置分组名（内含个人令牌） */
+    private static final String BASIC_CONFIG_GROUP = "basicConfig";
+
+    /** 仅供服务端使用、禁止下发到小程序的个人令牌字段 */
+    private static final java.util.Set<String> BASIC_SECRET_FIELDS =
+        java.util.Set.of("personalToken");
+
+    /** 底部导航配置分组名 */
+    private static final String TABBAR_CONFIG_GROUP = "tabbarConfig";
+
+    /**
+     * 底部导航最少/最多显示项。
+     *
+     * <p>微信官方的限制只针对原生 {@code tabBar.list}：2~5 项。这里是产品口径——
+     * 下限 3（不至于空得不像底栏）、上限 5（与原生一致），改这里即可整体调整。</p>
+     */
+    private static final int TABBAR_MIN_ITEMS = 3;
+    private static final int TABBAR_MAX_ITEMS = 5;
+
+    /**
+     * 底部导航的固定项：不提供开关，也不会被归一化裁掉（首页与「我的」关掉后底栏会失去锚点）。
+     */
+    private static final TabbarPreset TABBAR_LOCKED_HEAD = new TabbarPreset("home", null, true,
+        "首页", "select_home", "/pages/tabbar/home/home", true, null);
+
+    private static final TabbarPreset TABBAR_LOCKED_TAIL = new TabbarPreset("about", null, true,
+        "我的", "select_mine", "/pages/tabbar/about/about", true, null);
+
+    /**
+     * 可选项。<b>顺序即规则</b>：不足 4 项时按此顺序补齐，超过 5 项时按逆序丢弃。
+     *
+     * <p>{@code nativeTab=true} 表示对应页面在 pages.json 的 tabBar.list 里，能走 switchTab（保留页面状态）。
+     * 微信原生 tabBar 最多只能声明 5 项，而候选有 7 项，所以图库/小店以「视图」形式挂在瞬间页里：
+     * 它们的 path 指向宿主页、{@code mode} 指明视图名，底栏点它们 = switchTab 宿主页 + 切视图，
+     * 表现与原生 tab 一致（无返回箭头、不重载）。</p>
+     */
+    private static final java.util.List<TabbarPreset> TABBAR_OPTIONAL = java.util.List.of(
+        new TabbarPreset("category", "showCategory", false, "分类", "select_category",
+            "/pages/tabbar/category/category", true, null),
+        new TabbarPreset("moments", "showMoments", false, "瞬间", "select_gallery",
+            "/pages/tabbar/moments/moments", true, "moments"),
+        new TabbarPreset("rank", "showRank", false, "榜单", "select_rank",
+            "/pages/tabbar/rank/rank", true, null),
+        // 图库 / 小店挂在瞬间页上（同一个原生页，靠 mode 区分视图）
+        new TabbarPreset("gallery", "showGallery", false, "图库", "select_picture",
+            "/pages/tabbar/moments/moments", true, "gallery"),
+        new TabbarPreset("store", "showStore", false, "小店", "select_shop",
+            "/pages/tabbar/moments/moments", true, "store"));
+
     public static String TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
     public static String GET_WXA_CODE_URL = "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=";
 
     @Override
     public Mono<Map<String, JsonNode>> getAppConfigs() {
         // 全量配置接口为匿名可访问，且小程序会把响应整体写入本地存储，
-        // 因此必须在此剥离仅供服务端使用的支付密钥，避免密钥下发到客户端。
+        // 因此必须在此剥离仅供服务端使用的密钥，避免下发到客户端：
+        // - 支付密钥（paySig 签名用）
+        // - 个人令牌（等同于管理员权限：拿到它就能以管理员身份调 Halo 任何接口）
         return this.settingFetcher.getValues()
             .map(configs -> {
                 var sanitized = new HashMap<String, JsonNode>(configs);
@@ -86,15 +140,34 @@ public class UniHaloServiceImpl implements UniHaloService {
                 if (payConfig != null) {
                     sanitized.put(PAY_CONFIG_GROUP, stripPaySecrets(payConfig));
                 }
+                var basicConfig = sanitized.get(BASIC_CONFIG_GROUP);
+                if (basicConfig != null) {
+                    sanitized.put(BASIC_CONFIG_GROUP, stripBasicSecrets(basicConfig));
+                }
+                var tabbarConfig = sanitized.get(TABBAR_CONFIG_GROUP);
+                if (tabbarConfig != null) {
+                    sanitized.put(TABBAR_CONFIG_GROUP, normalizeTabbarConfig(tabbarConfig));
+                }
                 return sanitized;
             });
     }
 
     @Override
     public Mono<JsonNode> getAppConfigsByGroupName(String groupName) {
-        // 按分组查询同样匿名可访问，payConfig 需一并脱敏
+        // 按分组查询同样匿名可访问，敏感分组需一并脱敏
         return this.settingFetcher.get(groupName)
-            .map(config -> PAY_CONFIG_GROUP.equals(groupName) ? stripPaySecrets(config) : config);
+            .map(config -> {
+                if (PAY_CONFIG_GROUP.equals(groupName)) {
+                    return stripPaySecrets(config);
+                }
+                if (BASIC_CONFIG_GROUP.equals(groupName)) {
+                    return stripBasicSecrets(config);
+                }
+                if (TABBAR_CONFIG_GROUP.equals(groupName)) {
+                    return normalizeTabbarConfig(config);
+                }
+                return config;
+            });
     }
 
     /**
@@ -111,6 +184,142 @@ public class UniHaloServiceImpl implements UniHaloService {
         var copy = node.deepCopy();
         PAY_SECRET_FIELDS.forEach(copy::remove);
         return copy;
+    }
+
+    /**
+     * 移除个人令牌（{@code basicConfig.tokenConfig.personalToken}）。
+     *
+     * <p><b>为什么必须删</b>：个人令牌等同管理员权限，而这又是匿名接口、响应还会被小程序
+     * 整包写进本地存储——之前「瞬间发布」就是靠客户端拿着它直连 Halo 实现的，
+     * 等于把管理员身份发给了每个用户。现在瞬间发布/删除/配图上传都改由服务端用令牌代办，
+     * 客户端不再需要它。</p>
+     */
+    private static JsonNode stripBasicSecrets(JsonNode config) {
+        if (config == null || !(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        var tokenConfig = copy.get("tokenConfig");
+        if (tokenConfig instanceof ObjectNode tokenNode) {
+            BASIC_SECRET_FIELDS.forEach(tokenNode::remove);
+        }
+        return copy;
+    }
+
+    /**
+     * 归一化底部导航配置：把「哪些项要显示」的一组开关整理成小程序可直接渲染的 {@code items[]}。
+     *
+     * <p><b>为什么必须在服务端做</b>：Halo 的插件设置由 core 直接写 ConfigMap，插件拿不到保存钩子，
+     * 表单里也做不了跨字段校验；而「最少 4 项、最多 5 项」是微信原生底栏的硬约束
+     * （原生 list 上限 5 项，少于 4 项底栏会退化成不像底栏的样子），任何情况下都必须成立，
+     * 所以只能在下发配置时兜住。补齐/裁剪只影响下发结果，不修改站长保存的配置本身。</p>
+     */
+    private static JsonNode normalizeTabbarConfig(JsonNode config) {
+        if (config == null || !(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var result = node.deepCopy();
+        if (!result.path("enabled").asBoolean(false)) {
+            // 没开启就原样返回：小程序端只看 enabled，不会接管底栏
+            return result;
+        }
+
+        // 1. 按开关收集可选项
+        var picked = new ArrayList<TabbarPreset>();
+        for (var preset : TABBAR_OPTIONAL) {
+            if (result.path(preset.switchField()).asBoolean(preset.defaultOn())) {
+                picked.add(preset);
+            }
+        }
+        // 固定项占 2 席，可选项的可选数量区间就是这个区间
+        int minOptional = TABBAR_MIN_ITEMS - 2;
+        int maxOptional = TABBAR_MAX_ITEMS - 2;
+        // 2. 超过上限：按预设逆序裁掉（小店 → 图库 → 榜单 → 瞬间 → 分类）
+        for (int i = TABBAR_OPTIONAL.size() - 1; i >= 0 && picked.size() > maxOptional; i--) {
+            picked.remove(TABBAR_OPTIONAL.get(i));
+        }
+        // 3. 不足下限：按预设顺序补齐（补齐项等于默认显示；只影响下发结果，不改站长保存的配置）
+        for (var preset : TABBAR_OPTIONAL) {
+            if (picked.size() >= minOptional) {
+                break;
+            }
+            if (!picked.contains(preset)) {
+                picked.add(preset);
+            }
+        }
+
+        // 4. 组装最终清单：首页 + 可选项 + 我的。
+        //    这里按 TABBAR_OPTIONAL 顺序遍历输出，而不是直接用 picked 的顺序——
+        //    第 3 步补进来的项是追加在末尾的，直接用会把顺序打乱（例如补进来的「分类」跑到「小店」后面）。
+        var items = JsonNodeFactory.instance.arrayNode();
+        items.add(toTabbarItemNode(TABBAR_LOCKED_HEAD));
+        for (var preset : TABBAR_OPTIONAL) {
+            if (picked.contains(preset)) {
+                items.add(toTabbarItemNode(preset));
+            }
+        }
+        items.add(toTabbarItemNode(TABBAR_LOCKED_TAIL));
+        result.set("items", items);
+
+        // 5. 候选清单：小程序端「我的 → 系统设置」里让用户自己勾选时要用。
+        //    必须把全部 7 项都下发（含站长关掉的），否则用户没有可选的东西；
+        //    locked 标记告诉前端哪些项不许取消（首页/我的）。
+        //    adminOn 是站长那份开关的原始值，用于「恢复站长默认」。
+        var candidates = JsonNodeFactory.instance.arrayNode();
+        candidates.add(toTabbarCandidateNode(TABBAR_LOCKED_HEAD, true));
+        for (var preset : TABBAR_OPTIONAL) {
+            candidates.add(toTabbarCandidateNode(preset,
+                result.path(preset.switchField()).asBoolean(preset.defaultOn())));
+        }
+        candidates.add(toTabbarCandidateNode(TABBAR_LOCKED_TAIL, true));
+        result.set("candidates", candidates);
+        return result;
+    }
+
+    private static ObjectNode toTabbarItemNode(TabbarPreset preset) {
+        var item = JsonNodeFactory.instance.objectNode();
+        item.put("key", preset.key());
+        item.put("label", preset.label());
+        item.put("icon", "/static/tabbar/" + preset.icon() + ".png");
+        item.put("activeIcon", "/static/tabbar/" + preset.icon() + "_active.png");
+        item.put("path", preset.pagePath());
+        item.put("nativeTab", preset.nativeTab());
+        // 宿主页的视图名：小程序端据此判断「切视图」而不是「换页面」
+        if (preset.mode() != null) {
+            item.put("mode", preset.mode());
+        }
+        return item;
+    }
+
+    /**
+     * 候选项节点：items[] 的超集（多了 locked 与 adminOn），供小程序端做用户级偏好勾选。
+     *
+     * @param locked  固定项（首页/我的）：前端不给开关，服务端归一化也不会裁掉
+     * @param adminOn 站长开关的原始值
+     */
+    private static ObjectNode toTabbarCandidateNode(TabbarPreset preset, boolean adminOn) {
+        var node = toTabbarItemNode(preset);
+        node.put("locked", preset.switchField() == null);
+        node.put("adminOn", adminOn);
+        return node;
+    }
+
+    /**
+     * 底部导航候选项。
+     *
+     * @param key        小程序端用来标记当前项（页面里写死的 current 值）
+     * @param switchField 配置里控制它显示与否的开关字段名；固定项为 null
+     * @param defaultOn  开关缺失时的默认值（小店默认关，其余默认开）
+     * @param label      底栏文案
+     * @param icon       图标文件名前缀，实际路径为 /static/tabbar/{icon}.png 与 {icon}_active.png
+     * @param pagePath   页面路径
+     * @param nativeTab  是否为 pages.json 里声明的原生 tabBar 页（决定用 switchTab 还是 navigateTo）
+     * @param mode       多视图宿主页里的视图名；普通页面为 null。
+     *                   微信原生 tab 页上限 5 项、候选有 7 项，于是图库/小店作为「视图」
+     *                   挂在瞬间页（原生页）里，底栏点它们等于 switchTab 到宿主页再切视图。
+     */
+    private record TabbarPreset(String key, String switchField, boolean defaultOn, String label,
+                                String icon, String pagePath, boolean nativeTab, String mode) {
     }
 
     @Override

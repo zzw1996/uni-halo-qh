@@ -126,12 +126,12 @@
 		gap: 6rpx;
 		padding: 10rpx 20rpx;
 		border-radius: 999rpx;
-		background: #f5f6fa;
+		background: $uh-fill;
 		border: 2rpx solid transparent;
 
 		&.is-active {
 			background: #eef4ff;
-			border-color: #667eea;
+			border-color: $uh-accent;
 		}
 
 		&.is-loading {
@@ -146,10 +146,10 @@
 
 	.reaction-count {
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 
 		.is-active & {
-			color: #667eea;
+			color: $uh-accent;
 			font-weight: 600;
 		}
 	}

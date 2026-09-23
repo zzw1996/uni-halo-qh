@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -23,7 +23,7 @@
 				</block>
 				<view class="load-text">{{ loadMoreText }}</view>
 			</block>
-			<tm-flotbutton @click="fnToTopPage" color="light-blue" size="m" icon="icon-angle-up"></tm-flotbutton>
+			<tm-flotbutton @click="fnToTopPage" color="indigo" size="m" icon="icon-angle-up"></tm-flotbutton>
 		</block>
 	</view>
 </template>
@@ -167,7 +167,7 @@
 .app-page {
 	width: 100vw;
 	min-height: 100vh;
-	background: #f5f6fa;
+	background: $uh-fill;
 }
 
 .loading-wrap {
@@ -191,17 +191,17 @@
 
 .activity-meta text {
 	font-size: 22rpx;
-	color: #909399;
+	color: $uh-ink-3;
 }
 
 .activity-points {
-	color: #ff9800;
+	color: $uh-warning;
 }
 
 .load-text {
 	text-align: center;
 	font-size: 24rpx;
-	color: #909399;
+	color: $uh-ink-3;
 	padding: 24rpx 0 48rpx;
 }
 </style>

@@ -1,9 +1,9 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后生成邀请码"></tm-empty>
-			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
+			<tm-button class="mt-24" theme="bg-gradient-indigo-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
 			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
@@ -56,13 +56,13 @@
 						<text class="poster-count">已邀请 {{ inviteInfo.invitedCount }} 人</text>
 					</view>
 					<image class="poster-img" :src="poster.url" mode="widthFix" @click="fnSavePoster()"></image>
-					<tm-button class="poster-save mt-16" theme="bg-gradient-light-blue-accent" size="m" :block="true"
+					<tm-button class="poster-save mt-16" theme="bg-gradient-indigo-accent" size="m" :block="true"
 						@click="fnSavePoster()">保存到相册</tm-button>
 				</view>
 
 				<tm-button
 					v-if="inviteInfo.enabled !== false"
-					theme="bg-gradient-light-blue-accent"
+					theme="bg-gradient-indigo-accent"
 					:shadow="4"
 					:height="88"
 					:block="true"
@@ -83,7 +83,7 @@
 				<view v-if="inviteInfo.inviterNickname" class="inviter-card flex flex-center">
 					<image v-if="inviteInfo.inviterAvatar" class="inviter-avatar" :src="inviteInfo.inviterAvatar" mode="aspectFill"></image>
 					<view v-else class="inviter-avatar inviter-avatar-empty flex flex-center">
-						<tm-icons name="icon-user" :size="22" color="#03a9f4"></tm-icons>
+						<tm-icons name="icon-user" :size="22" color="#2f54eb"></tm-icons>
 					</view>
 					<text class="inviter-text">我的邀请人：{{ inviteInfo.inviterNickname }} 邀请加入</text>
 				</view>
@@ -168,7 +168,9 @@
 			const code = this.inviteInfo.inviteCode;
 			return {
 				title: `${this.userNickname} 邀请你加入 uni-halo，和我一起玩`,
-				path: '/pages/index/index' + (code ? '?inviteCode=' + encodeURIComponent(code) : ''),
+				// 指向邀请落地页：被邀请人先看到「我关注的内容」，再决定要不要登录
+				path: '/pagesA/invite-landing/invite-landing'
+					+ (code ? '?code=' + encodeURIComponent(code) : ''),
 				imageUrl: this.poster.url || this.userAvatar || ''
 			};
 		},
@@ -176,7 +178,7 @@
 			return {
 				title: `${this.userNickname} 邀请你加入 uni-halo`,
 				query: this.inviteInfo.inviteCode
-					? { inviteCode: this.inviteInfo.inviteCode }
+					? { code: this.inviteInfo.inviteCode }
 					: {}
 			};
 		},
@@ -675,7 +677,7 @@
 						radius: 22,
 						lineWidth: 0,
 						lineColor: '#FFFFFF',
-						colorObj: { colorList: ['#667eea'], direction: 2 }
+						colorObj: { colorList: ['#2f54eb'], direction: 2 }
 					},
 					{
 						type: 'text',
@@ -695,7 +697,7 @@
 						height: 30,
 						x: 420,
 						y: 329,
-						color: '#909399',
+						color: '#9a9a94',
 						fontSize: 20,
 						lineHeight: 30,
 						bold: false,
@@ -746,7 +748,7 @@
 						radius: 29,
 						lineWidth: 0,
 						lineColor: '#FFFFFF',
-						colorObj: { colorList: ['#667eea', '#764ba2'], direction: 3 }
+						colorObj: { colorList: ['#2f54eb', '#4c6ef5'], direction: 3 }
 					},
 					{
 						type: 'text',
@@ -777,7 +779,7 @@
 						height: 34,
 						x: chip2X,
 						y: 620,
-						color: '#03a9f4',
+						color: '#2f54eb',
 						fontSize: 22,
 						lineHeight: 34,
 						bold: true,
@@ -824,7 +826,7 @@
 						height: 30,
 						x: 236,
 						y: 818,
-						color: '#909399',
+						color: '#9a9a94',
 						fontSize: 20,
 						lineHeight: 30,
 						bold: false,
@@ -895,7 +897,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -919,7 +921,7 @@
 	.invite-card {
 		padding: 40rpx 28rpx;
 		border-radius: 20rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		color: #fff;
 		margin-bottom: 24rpx;
 		text-align: center;
@@ -930,7 +932,7 @@
 		height: 120rpx;
 		border-radius: 50%;
 		border: 4rpx solid rgba(255, 255, 255, 0.6);
-		background: #eee;
+		background: $uh-line;
 	}
 
 	.invite-title {
@@ -1015,7 +1017,7 @@
 	}
 
 	.poster-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 20rpx;
 		padding: 24rpx;
 		margin-bottom: 24rpx;
@@ -1031,26 +1033,26 @@
 		display: block;
 		font-size: 30rpx;
 		font-weight: 700;
-		color: #333;
+		color: $uh-ink-1;
 	}
 
 	.poster-sub {
 		display: block;
 		margin-top: 4rpx;
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.poster-count {
 		font-size: 22rpx;
 		font-weight: 600;
-		color: #667eea;
+		color: $uh-accent;
 	}
 
 	.poster-img {
 		width: 100%;
 		border-radius: 12rpx;
-		background: #f5f6fa;
+		background: $uh-fill;
 	}
 
 	.poster-card-loading {
@@ -1072,7 +1074,7 @@
 		width: 100%;
 		height: 100%;
 		z-index: 2;
-		color: #909399;
+		color: $uh-ink-3;
 		font-size: 24rpx;
 	}
 
@@ -1080,7 +1082,7 @@
 		margin-bottom: 24rpx;
 		padding: 18rpx 24rpx;
 		border-radius: 14rpx;
-		background: #f0f8ff;
+		background: $uh-accent-weak;
 	}
 
 	.inviter-avatar {
@@ -1098,6 +1100,6 @@
 
 	.inviter-text {
 		font-size: 22rpx;
-		color: #03a9f4;
+		color: $uh-accent;
 	}
 </style>

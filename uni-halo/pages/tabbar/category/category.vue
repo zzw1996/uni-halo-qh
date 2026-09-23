@@ -1,5 +1,5 @@
 <template>
-    <view class="app-page" :style="{
+    <view :class="skinClass" class="app-page" :style="{
 		padding:calcShowType==='list-post'? 0 : '24rpx 0'
 	}">
         <view v-if="loading !== 'success'" class="loading-wrap">
@@ -19,18 +19,17 @@
                         订阅说明条：卡片右上角的「订阅」按钮本身只有两个字，但它决定首页显示什么，
                         所以动手之前先把后果说清楚，否则用户点了几张卡之后会发现首页"少了一半文章"。
                     -->
-                    <view class="wall-head">
-                        <text class="wall-title">按分类订阅</text>
-                        <text class="wall-tip">{{ subTipText }}</text>
-                        <view v-if="subscribedCount > 0" class="wall-summary">
-                            <text class="wall-summary-text">已订阅 {{ subscribedCount }}/{{ maxSubscribe }}</text>
-                            <text class="wall-summary-action" @click="fnClearSubscribe">全部取消</text>
-                        </view>
+                    <!-- 顶部只留一个「全部取消订阅」：说明文字一律不摆在这一屏 -->
+                    <view v-if="subscribedCount > 0" class="wall-toolbar">
+                        <text class="wall-toolbar-btn" @click="fnClearSubscribe">全部取消订阅</text>
                     </view>
 
                     <!-- 分类卡片墙：点卡片进分类，点右上角订阅 -->
                     <view class="cat-wall">
-                        <view v-for="(item, index) in dataList" :key="index" class="cat-card">
+                        <view v-for="(item, index) in dataList" :key="index" class="cat-card"
+                              :class="{ 'is-on': item.subscribed, 'is-off': !item.subscribed }">
+                            <!-- 从好友分享继承来的分类：标出来，用户才知道不是自己选的 -->
+                            <text v-if="fnIsInherited(item)" class="cat-inherit-badge">好友推荐</text>
                             <!-- 封面当底色的柔光；没有封面时用一组固定色板，保证每张卡都有颜色 -->
                             <image v-if="fnCatCover(item)" class="cat-card-glow" :src="fnCatCover(item)"
                                    mode="aspectFill" lazy-load></image>
@@ -46,11 +45,17 @@
                             </view>
 
                             <view class="cat-card-main" @click="handleToCategory(item)">
-                                <image v-if="fnCatCover(item)" class="cat-icon" :src="fnCatCover(item)"
-                                       mode="aspectFill" lazy-load></image>
-                                <view v-else class="cat-icon cat-icon-fallback"
-                                      :style="{ backgroundImage: fnCatGlow(index) }">
-                                    <text class="cat-icon-letter">{{ fnCatInitial(item) }}</text>
+                                <view class="cat-icon-wrap">
+                                    <image v-if="fnCatCover(item)" class="cat-icon" :src="fnCatCover(item)"
+                                           mode="aspectFill" lazy-load></image>
+                                    <view v-else class="cat-icon cat-icon-fallback"
+                                          :style="{ backgroundImage: fnCatGlow(index) }">
+                                        <text class="cat-icon-letter">{{ fnCatInitial(item) }}</text>
+                                    </view>
+                                    <!-- 已订阅：图标右下角一枚小对勾徽章，比顶部色条更精致 -->
+                                    <view v-if="item.subscribed" class="cat-icon-check">
+                                        <text class="cat-icon-check-text">✓</text>
+                                    </view>
                                 </view>
                                 <text class="cat-name">{{ item.spec.displayName }}</text>
                                 <text class="cat-count">{{ item.postCount || 0 }}篇文章</text>
@@ -62,12 +67,12 @@
                 </block>
                 <view v-else-if="calcShowType==='list-post'" class="fulled flex" style="min-height:100vh">
                     <view class="bg-white" :style="{height: '100%'}">
-                        <tm-sliderNav :list="categoryList" bg-color="white" color="light-blue" rang-key="displayName"
+                        <tm-sliderNav :list="categoryList" bg-color="white" color="indigo" rang-key="displayName"
                                       @change="fnOnCategoryChange"></tm-sliderNav>
                     </view>
                     <scroll-view class="right-content pt-12 pb-12" :scroll-y="true" :scroll-top="scrollTop"
                                  :scroll-with-animation="true" :refresher-enabled="true" :refresher-triggered="triggered"
-                                 :refresher-threshold="60" refresher-background="#fafafa"
+                                 :refresher-threshold="60" refresher-background="#f2f2ec"
                                  @refresherrefresh="fnGetPostByCategory(true)" @scrolltolower="fnGetPostByCategory(false)"
                                  @scroll="fnOnScroll" @touchmove.stop @touchstart="fnOnTouchStart" @touchend="fnOnTouchEnd"
                                  @touchcancel="fnOnTouchEnd">
@@ -86,15 +91,15 @@
                 </view>
 
                 <view class="flot-buttons">
-                    <tm-button @click="fnScrollTop" size="m" :fab="true" theme="light-blue"
+                    <tm-button @click="fnScrollTop" size="m" :fab="true" theme="indigo"
                                icon="icon-angle-up"></tm-button>
-                    <tm-button v-if="!calcAuditModeEnabled" @click="fnChangeShowType" size="m" :fab="true" theme="light-blue"
+                    <tm-button v-if="!calcAuditModeEnabled" @click="fnChangeShowType" size="m" :fab="true" theme="indigo"
                                :icon="calcShowType==='list'?'icon-align-left':'icon-all'"></tm-button>
                 </view>
             </block>
         </view>
 
-        <!-- 订阅要存到账号上，所以未登录点开关时先引导登录 -->
+        <!-- 订阅要存到账号上，所以未登录点订阅按钮时先引导登录 -->
         <wx-login-dialog
             :show.sync="loginDialogShow"
             title="登录后订阅分类"
@@ -102,6 +107,8 @@
             @success="fnOnLoginSuccess"
         ></wx-login-dialog>
 
+        <!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏 -->
+        <uh-tabbar current="category"></uh-tabbar>
     </view>
 </template>
 
@@ -113,8 +120,8 @@ import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 import tmSliderNav from '@/tm-vuetify/components/tm-sliderNav/tm-sliderNav.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 import ArticleMinCard from '@/components/article-min-card/article-min-card.vue';
+import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 import { checkHasWxLogin } from '@/utils/auth.js';
-
 
 export default {
     components: {
@@ -124,7 +131,8 @@ export default {
         tmEmpty,
         tmSliderNav,
         wxLoginDialog,
-        ArticleMinCard
+        ArticleMinCard,
+        uhTabbar
     },
     created() {
         this.fnLoadSubscribed();
@@ -154,6 +162,8 @@ export default {
             triggered: false,
             /** 已订阅的分类（metadata.name），列表里每行的开关状态由它投影出来 */
             subscribedCategories: [],
+            /** 从邀请人继承来的分类：卡片上标一下，用户才知道这几个不是自己选的 */
+            inheritedCategories: [],
             /** 与后端 DigestSubscriptionService.MAX_POST_CATEGORIES 保持一致 */
             maxSubscribe: 5,
             loggedIn: false,
@@ -191,18 +201,7 @@ export default {
         subscribedCount() {
             return this.subscribedCategories.length
         },
-        /**
-         * 说明条文案：三种状态各说各的，重点是让用户知道「一个都不订阅会怎样」。
-         */
-        subTipText() {
-            if (!this.loggedIn) {
-                return '登录后可以订阅分类：订阅什么，首页就只显示什么分类的文章';
-            }
-            if (this.subscribedCount === 0) {
-                return '订阅后首页只显示这些分类的文章；一个都不订阅时，首页按站内默认顺序展示全部文章';
-            }
-            return '首页当前只显示已订阅分类的文章，取消全部订阅即恢复站内默认';
-        },
+
     },
     watch: {
         categoryConfig: {
@@ -220,6 +219,33 @@ export default {
         this.isLoadMore = false;
         this.queryParams.page = 0;
         this.fnGetData();
+    },
+    /**
+     * 分享「我的订阅」：卡片指向邀请落地页并带上我的邀请码。
+     *
+     * <p>落地页会展示我订阅了哪些分类、以及这些分类下的文章——
+     * 「谁给你挑了什么」比一句泛泛的邀请更容易让人点进来。</p>
+     */
+    onShareAppMessage() {
+        const code = this.fnMyInviteCode();
+        const labels = (this.dataList || [])
+            .filter((item) => item.subscribed)
+            .map((item) => item.spec.displayName)
+            .slice(0, 2);
+        return {
+            title: labels.length
+                ? `我在关注「${labels.join('、')}」，这些内容分享给你`
+                : '这些内容分享给你',
+            path: '/pagesA/invite-landing/invite-landing'
+                + (code ? `?code=${encodeURIComponent(code)}` : '')
+        };
+    },
+    onShareTimeline() {
+        const code = this.fnMyInviteCode();
+        return {
+            title: '看看我在关注哪些内容',
+            query: code ? { code } : {}
+        };
     },
     /**
      * 每次切回本 tab 都重新对一次登录态与订阅状态。
@@ -309,7 +335,8 @@ export default {
                 const res = await this.$httpApi.v2.getDigestSubscription();
                 const body = res?.data || res || {};
                 const sub = body.subscription || {};
-                this.fnApplySubscribed(Array.isArray(sub.postCategories) ? sub.postCategories : []);
+                this.fnApplySubscribed(Array.isArray(sub.postCategories) ? sub.postCategories : [],
+                    Array.isArray(sub.inheritedCategories) ? sub.inheritedCategories : []);
             } catch (err) {
                 // 静默：拿不到订阅状态就按「一个都没订阅」显示，分类列表本身照常可用
                 this.fnApplySubscribed([]);
@@ -321,8 +348,9 @@ export default {
          * <p>不做「已订阅的排到前面」：列表里每行都有开关，一点开关整行位置就变，
          * 手指下的那一行会跳到别处——订阅状态靠开关本身表达就够，顺序保持站长排的。</p>
          */
-        fnApplySubscribed(names) {
+        fnApplySubscribed(names, inherited) {
             this.subscribedCategories = Array.isArray(names) ? names.slice() : [];
+            this.inheritedCategories = Array.isArray(inherited) ? inherited.slice() : [];
             const mark = (item) => {
                 const name = item && item.metadata && item.metadata.name;
                 item.subscribed = !!name && this.subscribedCategories.includes(name);
@@ -387,14 +415,21 @@ export default {
             if (!name) {
                 return;
             }
-            const next = !item.subscribed;
+            // 关键：按 name 从 dataList 取回「当前这一行」再改，不要用事件参数里的那个对象。
+            // 小程序事件参数拿到的是渲染期快照里的对象，改它改不到页面数据——
+            // 于是下面读到的还是旧值、提交上去还是原来那份清单，表现就是「怎么点都取消不掉」。
+            const row = this.fnRowOf(name);
+            if (!row) {
+                return;
+            }
+            const next = !row.subscribed;
             if (!this.loggedIn) {
                 // 未登录先不动本地状态：登录成功后按 pendingSubscribeName 接着订阅
                 this.pendingSubscribeName = name;
                 this.loginDialogShow = true;
                 return;
             }
-            // 要订阅时先看上限（未登录/取消不受限）。取消订阅永远允许。
+            // 要订阅时先看上限（取消订阅永远允许）
             if (next && this.fnSubscribedNames().length >= this.maxSubscribe) {
                 uni.showToast({
                     title: `最多订阅 ${this.maxSubscribe} 个分类，先取消一个再选`,
@@ -402,10 +437,28 @@ export default {
                 });
                 return;
             }
-            item.subscribed = next;
+            row.subscribed = next;
             await this.fnSaveSubscription(next
-                ? `已订阅「${item.spec.displayName}」`
-                : `已取消「${item.spec.displayName}」`);
+                ? `已订阅「${row.spec.displayName}」`
+                : `已取消「${row.spec.displayName}」`);
+        },
+        /** 这个分类是不是从邀请人那里继承来的（标出来，用户才知道不是自己选的） */
+        fnIsInherited(item) {
+            const name = item && item.metadata && item.metadata.name;
+            return !!name && this.inheritedCategories.includes(name);
+        },
+        /** 我自己的邀请码；没有就返回空（照常分享，只是不带邀请） */
+        fnMyInviteCode() {
+            try {
+                return uni.getStorageSync('invite.code') || '';
+            } catch (e) {
+                return '';
+            }
+        },
+        /** 按 metadata.name 取回列表里的当前行（事件参数可能是快照，不能直接改它） */
+        fnRowOf(name) {
+            return (this.dataList || []).find((entry) => entry && entry.metadata
+                && entry.metadata.name === name) || null;
         },
         /** 全部取消：一次请求清空，比让人一个个点回去快得多 */
         async fnClearSubscribe() {
@@ -460,14 +513,19 @@ export default {
                     await this.fnLoadSubscribed();
                     return;
                 }
-                this.subscribedCategories = names;
+                // 以服务端返回的为准回写界面：本地标记万一有偏差（事件参数是快照、
+                // 或两次点击挨得太近），这里能把状态与服务端对齐，不会停在"看起来没生效"
+                const saved = Array.isArray(body.postCategories) ? body.postCategories : names;
+                const savedInherited = Array.isArray(body.inheritedCategories)
+                    ? body.inheritedCategories : this.inheritedCategories;
                 // 提示语由调用方给：订阅某一个、取消某一个、全部取消，说清楚做的是哪件事，
                 // 比统一回一句「已订阅 N 个分类」好懂
                 uni.showToast({
-                    title: message || (names.length
-                        ? `已订阅 ${names.length} 个分类` : '已取消全部订阅'),
+                    title: message || (saved.length
+                        ? `已订阅 ${saved.length} 个分类` : '已取消全部订阅'),
                     icon: 'none'
                 });
+                this.fnApplySubscribed(saved, savedInherited);
                 // 首页可能正停在旧的筛选结果上：写一个版本号（切回首页时据它重取），
                 // 同时发事件（首页还活着时立刻刷新）。两条路都留着——
                 // 事件在页面生命周期边界上可能错过，版本号则一定对得上。
@@ -701,44 +759,18 @@ export default {
 }
 
 /* ===== 分类卡片墙 ===== */
-.wall-head {
-    padding: 24rpx 28rpx 0;
+.wall-toolbar {
     display: flex;
-    flex-direction: column;
+    justify-content: flex-end;
+    padding: 20rpx 28rpx 0;
 }
 
-.wall-title {
-    font-size: 30rpx;
-    font-weight: 700;
-    color: #2f3548;
-}
-
-.wall-tip {
-    margin-top: 8rpx;
-    font-size: 22rpx;
-    line-height: 1.7;
-    color: #9aa1b5;
-}
-
-.wall-summary {
-    margin-top: 16rpx;
-    padding: 12rpx 22rpx;
-    border-radius: 999rpx;
-    background: #eef1fb;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.wall-summary-text {
-    font-size: 22rpx;
-    color: #4c5480;
-}
-
-.wall-summary-action {
-    margin-left: 16rpx;
-    font-size: 22rpx;
-    color: #667eea;
+.wall-toolbar-btn {
+    padding: 8rpx 22rpx;
+    border-radius: $uh-radius-pill;
+    background: $uh-accent-weak;
+    color: $uh-accent;
+    font-size: 21rpx;
 }
 
 .cat-wall {
@@ -755,10 +787,63 @@ export default {
     display: flex;
     flex-direction: column;
     min-height: 340rpx;
-    border-radius: 24rpx;
-    background-color: #fff;
-    box-shadow: 0 8rpx 24rpx rgba(31, 41, 55, 0.08);
+    border-radius: $uh-radius-lg;
+    background-color: $uh-card;
+    box-shadow: $uh-shadow-sm;
     overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+/* 已订阅：淡靛底 + 品牌色阴影；未订阅保持纯白，视觉上更轻 */
+.cat-card.is-on {
+    background: linear-gradient(165deg, $uh-accent-weak 0%, #ffffff 62%);
+    box-shadow: 0 10rpx 26rpx rgba(47, 84, 235, 0.16);
+}
+
+.cat-card.is-off .cat-icon {
+    opacity: 0.88;
+}
+
+.cat-icon-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 对勾徽章：小圆点压在图标右下角，是「已订阅」最直观的标识 */
+.cat-icon-check {
+    position: absolute;
+    right: -4rpx;
+    bottom: -4rpx;
+    width: 44rpx;
+    height: 44rpx;
+    border-radius: 50%;
+    background-image: $uh-grad-accent;
+    border: 4rpx solid $uh-card;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4rpx 10rpx rgba(47, 84, 235, 0.32);
+}
+
+.cat-icon-check-text {
+    font-size: 24rpx;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+}
+
+.cat-inherit-badge {
+    position: absolute;
+    left: 16rpx;
+    top: 18rpx;
+    z-index: 3;
+    padding: 4rpx 14rpx;
+    border-radius: $uh-radius-pill;
+    background: rgba(255, 255, 255, 0.92);
+    font-size: 18rpx;
+    color: $uh-accent;
 }
 
 /* 封面当底色：压到很低的不透明度再叠一层白色渐变，出来的是柔和色晕而不是一张照片 */
@@ -782,18 +867,19 @@ export default {
 
 .cat-sub {
     position: absolute;
-    top: 16rpx;
-    right: 16rpx;
+    top: 18rpx;
+    right: 18rpx;
     z-index: 3;
-    padding: 6rpx 18rpx;
-    border-radius: 999rpx;
-    background: rgba(255, 255, 255, 0.86);
+    padding: 7rpx 20rpx;
+    border-radius: $uh-radius-pill;
+    background: rgba(255, 255, 255, 0.9);
     border: 1rpx solid rgba(255, 255, 255, 0.95);
-    box-shadow: 0 4rpx 12rpx rgba(31, 41, 55, 0.08);
+    box-shadow: $uh-shadow-sm;
+    transition: background 0.2s;
 }
 
 .cat-sub.is-on {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-image: $uh-grad-accent;
     border-color: transparent;
 }
 
@@ -843,7 +929,7 @@ export default {
     margin-top: 20rpx;
     font-size: 34rpx;
     font-weight: 700;
-    color: #2f3548;
+    color: $uh-ink-1;
     text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -854,14 +940,14 @@ export default {
 .cat-count {
     margin-top: 10rpx;
     font-size: 22rpx;
-    color: #9aa1b5;
+    color: $uh-ink-3;
 }
 
 .cat-desc {
     margin-top: 12rpx;
     font-size: 22rpx;
     line-height: 1.5;
-    color: #9aa1b5;
+    color: $uh-ink-3;
     text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -875,12 +961,12 @@ export default {
     text-align: center;
     padding: 24rpx 0 16rpx;
     font-size: 22rpx;
-    color: #909399;
+    color: $uh-ink-3;
 }
 
 /* ===== 左右分栏模式 ===== */
 .right-content {
-    background: #fafafa;
+    background: $uh-bg;
     padding-left: 24rpx;
     padding-right: 24rpx;
     box-sizing: border-box;

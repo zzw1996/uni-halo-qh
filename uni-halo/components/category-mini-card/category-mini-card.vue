@@ -30,9 +30,9 @@
 		height: 180rpx;
 		position: relative;
 		border-radius: 12rpx;
-		background-color: #fff;
+		background-color: $uh-card;
 		overflow: hidden;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 		position: relative;
 		text-align: center;
 		color: #ffffff;

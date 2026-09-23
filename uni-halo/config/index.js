@@ -33,6 +33,44 @@ export const DefaultAppConfigs = {
 			ownerOpenid: '',
 			profileModifyLimit: 0,
 		},
+	/**
+	 * 视频号配置（由插件后台 channelsConfig 下发）。
+	 *
+	 * enabled 为 false 或没填 finderUserName 时，首页不展示视频号入口卡片——
+	 * 没有视频号 ID 的卡片点不动，展示出来只会让人误以为功能坏了。
+	 */
+	channelsConfig: {
+		enabled: false,
+		finderUserName: '',
+		nickname: '',
+		desc: '',
+		avatarUrl: '',
+		buttonText: '进入视频号',
+		tip: ''
+	},
+	/**
+	 * 底部导航配置（由插件后台 tabbarConfig 下发）。
+	 *
+	 * 真实值以服务端下发的 items[] 为准：服务端已经把「最少 3 项、最多 5 项」的规则
+	 * 和固定顺序都算好了，前端只负责画。
+	 *
+	 * ⚠️ 这里的 items 必须是**空数组**：配置合并走 utils.deepMerge，而它对数组是
+	 * `concat`（不是替换）——写死默认项会和服务端下发的项拼在一起，底栏就会把
+	 * 5 项渲染成 10 项（同一个「首页」出现两次、两处都高亮）。缺省项请放在
+	 * utils/tabbar.js 的 FALLBACK_TABBAR_ITEMS 里。
+	 */
+	tabbarConfig: {
+		enabled: false,
+		items: [],
+		store: {
+			appId: '',
+			name: '',
+			desc: '',
+			coverUrl: '',
+			qrCodeUrl: '',
+			guideUrl: ''
+		}
+	},
 	auditConfig: {
 		auditModeEnabled: false,
 		auditModeData: {

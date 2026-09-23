@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page card-shadow" :class="[uniHaloPluginPageClass]">
+	<view class="app-page card-shadow" :class="[skinClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
@@ -30,7 +30,7 @@
 								<view class="flex flex-col pl-30 info-detail">
 									<view class="link-card_name text-size-l text-weight-b text-red">
 										<tm-tags style="margin-right: 12rpx;margin-left: -2rpx;"
-											color="bg-gradient-light-blue-lighten" :shadow="0" size="s" model="fill">
+											color="bg-gradient-indigo-lighten" :shadow="0" size="s" model="fill">
 											{{ link.spec.groupName || '暂未分组' }}
 										</tm-tags>
 										{{ link.spec.displayName }}
@@ -48,7 +48,7 @@
 				</view>
 
 				<!-- 返回顶部 -->
-				<tm-flotbutton color="light-blue" @click="fnToTopPage" size="m" icon="icon-angle-up"></tm-flotbutton>
+				<tm-flotbutton color="indigo" @click="fnToTopPage" size="m" icon="icon-angle-up"></tm-flotbutton>
 				<!-- 详情弹窗 -->
 				<tm-poup v-model="detail.show" :width="640" height="auto" position="center" :round="6">
 					<view class="poup pa-36" v-if="detail.data">
@@ -61,7 +61,7 @@
 								<view class="poup-name text-size-lg text-weight-b">{{ detail.data.spec.displayName }}
 								</view>
 								<view class="poup-tag ml--10">
-									<tm-tags color="bg-gradient-light-blue-lighten" size="n" model="fill">
+									<tm-tags color="bg-gradient-indigo-lighten" size="n" model="fill">
 										{{ detail.data.spec.groupName }}
 									</tm-tags>
 								</view>
@@ -309,7 +309,7 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
-		background-color: #fafafd;
+		background-color: $uh-bg;
 	}
 
 	.loading-wrap {
@@ -330,15 +330,15 @@
 	}
 
 	.link-card {
-		border-bottom: 2rpx solid #f5f5f5;
-		background-color: #ffffff;
+		border-bottom: 2rpx solid $uh-fill;
+		background-color: $uh-card;
 
 		&.one {
 			border: 0;
-			box-shadow: 0rpx 2rpx 24rpx 0rpx rgba(0, 0, 0, 0.03);
+			box-shadow: $uh-shadow-sm;
 
 			.logo {
-				box-shadow: 0rpx 2rpx 12rpx rgba(0, 0, 0, 0.1);
+				box-shadow: $uh-shadow-md;
 			}
 		}
 
@@ -360,7 +360,7 @@
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
-				color: #303133;
+				color: $uh-ink-1;
 				font-size: 30rpx;
 				font-weight: bold;
 			}
@@ -369,21 +369,21 @@
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
-				color: #303133;
+				color: $uh-ink-1;
 				font-size: 28rpx;
 			}
 		}
 	}
 
 	.link-card_name {
-		// color: #303133;
+		// color: $uh-ink-1;
 		// color: #0080fe;
 	}
 
 	.link-card_desc {
 		font-size: 24rpx;
 		line-height: 1.6;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.link-logo {

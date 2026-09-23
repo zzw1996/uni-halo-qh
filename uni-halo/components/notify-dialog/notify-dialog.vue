@@ -14,7 +14,7 @@
                 </scroll-view>
             </view>
             <view v-if="url" class="fulled mt-12 flex flex-center">
-                <tm-button theme="bg-gradient-light-blue-accent" size="m" @click="fnToWebview()">
+                <tm-button theme="bg-gradient-indigo-accent" size="m" @click="fnToWebview()">
                     点击跳转内容链接
                 </tm-button>
             </view>

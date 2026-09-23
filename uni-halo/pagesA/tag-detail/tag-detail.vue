@@ -1,5 +1,5 @@
 <template>
-    <view class="app-page">
+    <view :class="skinClass" class="app-page">
         <view v-if="loading != 'success'" class="loading-wrap">
             <tm-skeleton model="listAvatr"></tm-skeleton>
             <tm-skeleton model="listAvatr"></tm-skeleton>
@@ -21,7 +21,7 @@
                 <view class="load-text">{{ loadMoreText }}</view>
             </block>
 
-            <tm-flotbutton @click="fnToTopPage" color="light-blue" size="m" icon="icon-angle-up"></tm-flotbutton>
+            <tm-flotbutton @click="fnToTopPage" color="indigo" size="m" icon="icon-angle-up"></tm-flotbutton>
         </block>
     </view>
 </template>
@@ -138,7 +138,7 @@ export default {
     display: flex;
     flex-direction: column;
     padding: 24rpx 0;
-    background-color: #fafafd;
+    background-color: $uh-bg;
 }
 
 .loading-wrap {

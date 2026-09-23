@@ -15,7 +15,7 @@
 				"navigationStyle": "custom",
 				"app-plus": {
 					"pullToRefresh": {
-						"color": "#03a9f4",
+						"color": "#2F54EB",
 						"style": "circle"
 					}
 				}
@@ -28,20 +28,7 @@
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
-						"color": "#03a9f4",
-						"style": "circle"
-					}
-				}
-			}
-		},
-		{
-			"path": "pages/tabbar/gallery/gallery",
-			"style": {
-				"navigationBarTitleText": "图库",
-				"enablePullDownRefresh": true,
-				"app-plus": {
-					"pullToRefresh": {
-						"color": "#03a9f4",
+						"color": "#2F54EB",
 						"style": "circle"
 					}
 				}
@@ -54,7 +41,7 @@
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
-						"color": "#03a9f4",
+						"color": "#2F54EB",
 						"style": "circle"
 					}
 				}
@@ -73,7 +60,7 @@
 				},
 				"app-plus": {
 					"pullToRefresh": {
-						"color": "#03a9f4",
+						"color": "#2F54EB",
 						"style": "circle"
 					}
 				}
@@ -87,7 +74,7 @@
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
-						"color": "#03a9f4",
+						"color": "#2F54EB",
 						"style": "circle"
 					}
 				}
@@ -106,13 +93,20 @@
 					}
 				},
 				{
+					"path": "article-publish/article-publish",
+					"style": {
+						"navigationBarTitleText": "投稿文章",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
 					"path": "article-detail/article-detail",
 					"style": {
 						"navigationBarTitleText": "内容详情",
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -129,7 +123,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -142,7 +136,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -155,7 +149,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -168,7 +162,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -203,7 +197,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -216,7 +210,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -236,7 +230,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -250,7 +244,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -270,7 +264,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -283,7 +277,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -296,7 +290,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -306,13 +300,6 @@
 					"path": "points-recharge/points-recharge",
 					"style": {
 						"navigationBarTitleText": "权益直购",
-						"enablePullDownRefresh": false
-					}
-				},
-				{
-					"path": "toolbox/toolbox",
-					"style": {
-						"navigationBarTitleText": "工具箱",
 						"enablePullDownRefresh": false
 					}
 				},
@@ -330,7 +317,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -343,7 +330,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -356,7 +343,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -370,13 +357,26 @@
 					}
 				},
 				{
+					"path": "invite-landing/invite-landing",
+					"style": {
+						"navigationBarTitleText": "为你精选",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#2F54EB",
+								"style": "circle"
+							}
+						}
+					}
+				},
+				{
 					"path": "my-orders/my-orders",
 					"style": {
 						"navigationBarTitleText": "我的订单",
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -389,7 +389,7 @@
 						"enablePullDownRefresh": true,
 						"app-plus": {
 							"pullToRefresh": {
-								"color": "#03a9f4",
+								"color": "#2F54EB",
 								"style": "circle"
 							}
 						}
@@ -430,13 +430,13 @@
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "uni-halo",
 		"navigationBarBackgroundColor": "#ffffff",
-		"backgroundColor": "#F8F8F8"
+		"backgroundColor": "#F2F2EC"
 	},
 	"tabBar": {
-		"backgroundColor": "#fff",
+		"backgroundColor": "#ffffff",
 		"borderStyle": "white",
-		"color": "#303133",
-		"selectedColor": "#03a9f4",
+		"color": "#9A9A94",
+		"selectedColor": "#2F54EB",
 		"list": [{
 				"iconPath": "static/tabbar/select_home.png",
 				"selectedIconPath": "static/tabbar/select_home_active.png",
@@ -450,8 +450,14 @@
 				"text": "分类"
 			},
 			{
-				"iconPath": "static/tabbar/select_links.png",
-				"selectedIconPath": "static/tabbar/select_links_active.png",
+				"iconPath": "static/tabbar/select_gallery.png",
+				"selectedIconPath": "static/tabbar/select_gallery_active.png",
+				"pagePath": "pages/tabbar/moments/moments",
+				"text": "瞬间"
+			},
+			{
+				"iconPath": "static/tabbar/select_rank.png",
+				"selectedIconPath": "static/tabbar/select_rank_active.png",
 				"pagePath": "pages/tabbar/rank/rank",
 				"text": "榜单"
 			},

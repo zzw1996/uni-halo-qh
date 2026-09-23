@@ -10,9 +10,6 @@
  *   - 其他接口：{halo站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo
  */
 
-import {
-	getPersonalToken
-} from '@/utils/token.js'
 import HttpHandler from '@/common/http/request.js'
 import qs from 'qs'
 
@@ -509,160 +506,22 @@ export default {
 		return HttpHandler.Get(`/apis/api.content.halo.run/v1alpha1/tags/${tagName}/posts`, params)
 	},
 
+	/**
+	 * 瞬间列表
+	 * GET /apis/api.moment.halo.run/v1alpha1/moments?page=&size=
+	 */
 	getMomentList: (params) => {
-		return HttpHandler.Get(`/apis/api.moment.halo.run/v1alpha1/moments`, params, {
-			custom: {
-				personalToken: getPersonalToken()
-			}
-		})
+		// 读瞬间走插件暴露的公开查询接口（api.moment.halo.run），匿名可读：
+		// 不需要个人令牌，也不经插件服务端代理——少一跳，也不受插件接口变动影响。
+		// 注意与「写」接口不是同一条路径：写操作在 moment.halo.run 且需要令牌。
+		return HttpHandler.Get('/apis/api.moment.halo.run/v1alpha1/moments', params)
 	},
 
-	getMomentByName: (name) => {
-		return HttpHandler.Get(`/apis/api.moment.halo.run/v1alpha1/moments/${name}`, {}, {
-			custom: {
-				personalToken: getPersonalToken()
-			}
-		})
-	},
 
-	/** 获取 personalToken 对应的 Halo 用户（用于瞬间发布权限校验） */
-	getPersonalTokenUser: async () => {
-		const token = getPersonalToken();
-		if (!token) {
-			return Promise.reject({ error: '未配置个人令牌' });
-		}
-		const paths = [
-			'/apis/api.console.halo.run/v1alpha1/users/-',
-			'/apis/api.halo.run/v1alpha1/users/-'
-		];
-		let lastErr = null;
-		for (const path of paths) {
-			try {
-				return await HttpHandler.Get(path, {}, {
-					custom: {
-						personalToken: token
-					}
-				});
-			} catch (err) {
-				lastErr = err;
-			}
-		}
-		return Promise.reject(lastErr || { error: '获取博主信息失败' });
-	},
 
-	/** 按用户名获取 Halo 用户（personalToken 需具备用户读取权限） */
-	getHaloUserByName: (userName) => {
-		const token = getPersonalToken();
-		const name = (userName || '').trim();
-		if (!token) {
-			return Promise.reject({ error: '未配置个人令牌' });
-		}
-		if (!name) {
-			return Promise.reject({ error: '缺少用户名' });
-		}
-		return HttpHandler.Get(`/apis/api.halo.run/v1alpha1/users/${encodeURIComponent(name)}`, {}, {
-			custom: {
-				personalToken: token
-			}
-		});
-	},
 
-	/**
-	 * 发表瞬间（瞬间插件扩展 API）
-	 * POST /apis/moment.halo.run/v1alpha1/moments
-	 * 请求体需包含 apiVersion / kind / metadata / spec（spec.owner 必填）
-	 */
-	createMoment: (moment) => {
-		const token = getPersonalToken();
-		if (!token) {
-			return Promise.reject({ error: '未配置个人令牌' });
-		}
-		if (!moment?.spec?.owner) {
-			return Promise.reject({ error: '缺少瞬间所属用户' });
-		}
-		return HttpHandler.Post('/apis/moment.halo.run/v1alpha1/moments', moment, {
-			custom: {
-				personalToken: token
-			}
-		});
-	},
 
-	/**
-	 * 删除瞬间（瞬间插件扩展 API）
-	 * DELETE /apis/moment.halo.run/v1alpha1/moments/{name}
-	 */
-	deleteMoment: (name) => {
-		const token = getPersonalToken();
-		const momentName = (name || '').trim();
-		if (!token) {
-			return Promise.reject({ error: '未配置个人令牌' });
-		}
-		if (!momentName) {
-			return Promise.reject({ error: '缺少瞬间标识' });
-		}
-		return HttpHandler.Delete(
-			`/apis/moment.halo.run/v1alpha1/moments/${encodeURIComponent(momentName)}`,
-			{},
-			{
-				custom: {
-					personalToken: token
-				}
-			}
-		);
-	},
 
-	/**
-	 * 上传附件（瞬间图片等）
-	 * POST /apis/api.console.halo.run/v1alpha1/attachments/upload
-	 * formData: file, policyName, groupName(可选)
-	 */
-	uploadAttachment: (filePath, { policyName = 'default-policy', groupName = '' } = {}) => {
-		const token = getPersonalToken();
-		if (!token) {
-			return Promise.reject({ error: '未配置个人令牌' });
-		}
-		if (!filePath) {
-			return Promise.reject({ error: '缺少上传文件' });
-		}
-		const baseUrl = UHaloBaseConfig.BASE_API.replace(/\/+$/, '');
-		const formData = {
-			policyName: policyName || 'default-policy'
-		};
-		if (groupName) {
-			formData.groupName = groupName;
-		}
-		return new Promise((resolve, reject) => {
-			uni.uploadFile({
-				url: `${baseUrl}/apis/api.console.halo.run/v1alpha1/attachments/upload`,
-				filePath,
-				name: 'file',
-				formData,
-				header: {
-					Authorization: `Bearer ${token}`
-				},
-				success: (res) => {
-					let data = res.data;
-					if (typeof data === 'string') {
-						try {
-							data = JSON.parse(data);
-						} catch (e) {
-							reject({ error: '附件上传响应解析失败', statusCode: res.statusCode });
-							return;
-						}
-					}
-					if (res.statusCode === 200 && data) {
-						resolve(data);
-						return;
-					}
-					const apiError = extractResponseError(data);
-					reject({ error: apiError || '图片上传失败', statusCode: res.statusCode, data });
-				},
-				fail: (err) => {
-					reject({ error: err.errMsg || '图片上传失败', detail: err });
-				}
-			});
-		});
-	},
 
 	getMomentCommentList: (momentName, params = {}) => {
 		const name = (momentName || '').trim();
@@ -785,11 +644,25 @@ export default {
 		return HttpHandler.Get(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/user-list`, {})
 	},
 
-	submitVote: (name, data, canAnonymously = true) => {
-		return HttpHandler.Post(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/submit`, data, {
-			custom: {
-				personalToken: canAnonymously ? undefined : getPersonalToken()
-			}
+	/**
+	 * 提交投票。
+	 *
+	 * <p>匿名投票直接调投票插件接口；非匿名投票需要身份，原先由客户端带个人令牌提交，
+	 * 令牌不再下发后改由插件服务端代办（服务端持有令牌）。</p>
+	 */
+	submitVote: async (name, data, canAnonymously = true) => {
+		if (canAnonymously) {
+			return HttpHandler.Post(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/submit`, data)
+		}
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/vote')}/${encodeURIComponent(name)}`,
+			method: 'POST',
+			data: data || {},
+			header: { 'Wechat-Session-Id': openid }
 		})
 	},
 
@@ -1856,6 +1729,48 @@ export default {
 		});
 	},
 
+	// ==================== 邀请分享落地 ====================
+
+	/**
+	 * 分享落地页数据：分享人是谁、他订阅了哪些分类、访问者当前状态。
+	 *
+	 * <p>无需登录：被分享者往往还没登录，要求先登录才能看内容会把裂变入口堵死。
+	 * 文章列表不在这里返回，由落地页按分类直接调站点内容接口取（与首页同一套口径）。</p>
+	 */
+	getInviteLanding: async (inviteCode) => {
+		const code = String(inviteCode || '').trim();
+		if (!code) {
+			return Promise.reject({ error: '缺少邀请码' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/points/invite/landing')}?${qs.stringify({ code })}`,
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 「也关注这些」：把分享人订阅的分类并进自己的订阅。
+	 *
+	 * <p>服务端口径：自己已有的优先占满名额（自己 5 个 + 继承位 3 个），
+	 * 所以最多从 5 个变 8 个，不会挤掉用户原来的订阅。</p>
+	 */
+	acceptInviteRecommendation: async (inviteCode) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先登录' });
+		}
+		const code = String(inviteCode || '').trim();
+		if (!code) {
+			return Promise.reject({ error: '缺少邀请码' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/points/invite/accept')}?${qs.stringify({ code })}`,
+			method: 'POST',
+			header: buildOpenidHeader()
+		});
+	},
+
 	// ==================== 我的订单 ====================
 
 	/**
@@ -1877,6 +1792,134 @@ export default {
 			header: {
 				'Wechat-Session-Id': openid
 			}
+		});
+	},
+
+	// ==================== 用户投稿（积分兑换发布） ====================
+
+	/**
+	 * 投稿状态：开关、积分门槛、文章/瞬间价格、余额、角色策略结论、今日已发数。
+	 *
+	 * <p>能不能发、发出来是直发还是待审，全部以本接口的结论为准：
+	 * 前端不要自己拼条件，否则后台一改规则就会出现「按钮能点但一发就报错」。</p>
+	 *
+	 * GET /userPublish/status
+	 */
+	getUserPublishStatus: async () => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/userPublish/status'),
+			method: 'GET',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 投稿文章（正文为 Markdown）
+	 * POST /userPublish/article
+	 * 请求体：{ title, content, summary?, cover? }
+	 * 返回：{ type, mode, statusText, name, permalink, pointsCost, balance }
+	 */
+	publishUserArticle: async (payload) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/userPublish/article'),
+			method: 'POST',
+			data: payload || {},
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 发布瞬间（文字 + 已上传的图片地址）
+	 * POST /userPublish/moment
+	 * 请求体：{ content, images?: string[] }
+	 */
+	publishUserMoment: async (payload) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/userPublish/moment'),
+			method: 'POST',
+			data: payload || {},
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 删除瞬间（服务端代办：客户端不再持有个人令牌）
+	 * DELETE /userPublish/moment/{name}
+	 * 权限：瞬间作者本人，或博主/管理员
+	 */
+	deleteUserMoment: async (name) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/moment')}/${encodeURIComponent(name)}`,
+			method: 'DELETE',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 读取瞬间详情（服务端带令牌读取，客户端不再需要令牌）
+	 * GET /userPublish/moment/{name}
+	 */
+	getUserMoment: (name) => {
+		// 同上：详情也是公开可读（api.moment.halo.run），无需令牌
+		return HttpHandler.Get(`/apis/api.moment.halo.run/v1alpha1/moments/${encodeURIComponent(name)}`, {})
+	},
+
+	/**
+	 * 投稿瞬间配图上传（multipart，字段名 file）
+	 * POST /userPublish/image
+	 * 返回：{ url: string }
+	 */
+	uploadUserPublishImage: (filePath) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return new Promise((resolve, reject) => {
+			uni.uploadFile({
+				url: buildUniHaloUrl('/userPublish/image'),
+				filePath,
+				name: 'file',
+				header: { 'Wechat-Session-Id': openid },
+				success: (res) => {
+					let data = res.data;
+					if (typeof data === 'string') {
+						try {
+							data = JSON.parse(data);
+						} catch (e) {
+							reject({ error: '图片上传响应解析失败', statusCode: res.statusCode });
+							return;
+						}
+					}
+					if (res.statusCode === 200 && data?.url) {
+						resolve({ statusCode: 200, data });
+						return;
+					}
+					reject({
+						error: extractResponseError(data) || '图片上传失败',
+						statusCode: res.statusCode,
+						data
+					});
+				},
+				fail: (err) => {
+					reject({ error: err.errMsg || '图片上传失败', detail: err });
+				}
+			});
 		});
 	},
 }

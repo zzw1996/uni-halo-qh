@@ -414,6 +414,9 @@ public class WxAuthServiceImpl implements WxAuthService {
     /** 带邀请码注册：仅首次进入小程序的新用户可绑定邀请关系并发放奖励（失败不影响登录） */
     private Mono<Void> applyInvite(String openid, String inviteCode) {
         return inviteService.grantInviteReward(openid, inviteCode, true)
+            // 绑定与发奖之后，再把邀请人订阅的分类继承给这位新用户，
+            // 让他的首页从第一眼起就是分享者的那批内容
+            .flatMap(rewarded -> inviteService.applyInviteInheritance(openid, inviteCode))
             .onErrorResume(ex -> {
                 log.warn("apply invite failed, openid={}: {}", openid, ex.getMessage());
                 return Mono.just(false);

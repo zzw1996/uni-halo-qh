@@ -8,11 +8,14 @@ import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.AdminInviteRecordItemDTO;
 import pro.uhalo.uni.dto.AdminInviteRecordListResponse;
 import pro.uhalo.uni.dto.AdminInviteSummaryItemDTO;
+import pro.uhalo.uni.dto.DigestSubscriptionDTO;
 import pro.uhalo.uni.dto.InviteInfoDTO;
+import pro.uhalo.uni.dto.InviteLandingDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
+import pro.uhalo.uni.services.DigestTaxonomyService;
 import pro.uhalo.uni.scheme.WxUser;
 import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.WxUserService;
@@ -43,6 +46,9 @@ public class InviteServiceImpl implements InviteService {
 
     private static final String CONFIG_GROUP = "inviteConfig";
     private static final String INVITE_ACTION = "invite";
+
+    /** 被邀请人（新用户）那一侧的奖励，与被邀请人自己的「新人礼」是两笔独立奖励 */
+    private static final String INVITEE_ACTION = "invitee_invite";
     private static final String INVITE_CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
     private static final int INVITE_CODE_LENGTH = 8;
     private static final int INVITE_CODE_MAX_ATTEMPTS = 5;
@@ -54,6 +60,8 @@ public class InviteServiceImpl implements InviteService {
     private final PointsPersistence persistence;
     private final ReactiveSettingFetcher settingFetcher;
     private final RateLimiter rateLimiter;
+    private final DigestSubscriptionService subscriptionService;
+    private final DigestTaxonomyService taxonomyService;
 
     @Override
     public Mono<InviteInfoDTO> getInviteInfo(String openid) {
@@ -145,7 +153,7 @@ public class InviteServiceImpl implements InviteService {
         }
         return loadConfig()
             .flatMap(config -> {
-                if (!config.enabled() || config.rewardPoints() <= 0) {
+                if (!config.enabled()) {
                     return Mono.just(false);
                 }
                 return wxUserService.fetchByInviteCode(normalizedCode)
@@ -159,8 +167,15 @@ public class InviteServiceImpl implements InviteService {
                                     return Mono.just(false);
                                 }
                                 invitee.setInviterOpenid(inviter.getOpenid());
+                                // 绑定成功即算「邀请成立」：两侧奖励各自判断额度，
+                                // 一侧配 0 不影响另一侧（也才谈得上「各得 N 积分」）
                                 return wxUserService.update(invitee)
-                                    .then(issueReward(inviter, inviteeOpenid, config.rewardPoints()));
+                                    .then(issueInviterReward(inviter, inviteeOpenid,
+                                        config.rewardPoints())
+                                        .flatMap(inviterRewarded -> issueInviteeReward(inviteeOpenid,
+                                            inviter.getOpenid(), config.inviteeRewardPoints())
+                                            .map(inviteeRewarded -> inviterRewarded
+                                                || inviteeRewarded)));
                             })
                             .switchIfEmpty(Mono.just(false));
                     })
@@ -172,7 +187,11 @@ public class InviteServiceImpl implements InviteService {
             });
     }
 
-    private Mono<Boolean> issueReward(WxUser inviter, String inviteeOpenid, int reward) {
+    /** 邀请人侧奖励；额度为 0 时直接跳过（不是错误） */
+    private Mono<Boolean> issueInviterReward(WxUser inviter, String inviteeOpenid, int reward) {
+        if (reward <= 0) {
+            return Mono.just(false);
+        }
         var inviterOpenid = inviter.getOpenid();
         var earnKey = PointsServiceImpl.buildEarnKey(inviterOpenid, INVITE_ACTION, inviteeOpenid);
         return persistence.findRecordByEarnKey(earnKey)
@@ -385,23 +404,188 @@ public class InviteServiceImpl implements InviteService {
         return builder.toString();
     }
 
-    private record InviteConfig(boolean enabled, int rewardPoints) {
+    /**
+     * 邀请奖励配置。
+     *
+     * @param enabled             邀请奖励总开关
+     * @param rewardPoints        邀请人每成功邀请 1 位新用户的积分
+     * @param inviteeRewardPoints 被邀请人（新用户）同一次注册拿到的积分，0 表示不发
+     */
+    private record InviteConfig(boolean enabled, int rewardPoints, int inviteeRewardPoints) {
     }
 
     private Mono<InviteConfig> loadConfig() {
         return settingFetcher.get(CONFIG_GROUP)
             .map(node -> parseConfig(node))
-            .defaultIfEmpty(new InviteConfig(true, 30));
+            .defaultIfEmpty(new InviteConfig(true, 30, 30));
     }
 
     private static InviteConfig parseConfig(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) {
-            return new InviteConfig(true, 30);
+            return new InviteConfig(true, 30, 30);
         }
         return new InviteConfig(
             node.path("enabled").asBoolean(true),
-            Math.max(1, node.path("rewardPoints").asInt(30))
+            Math.max(0, node.path("rewardPoints").asInt(30)),
+            // 被邀请人奖励允许配 0（只给邀请人发），所以下限是 0 而不是 1
+            Math.max(0, node.path("inviteeRewardPoints").asInt(30))
         );
+    }
+
+    /**
+     * 被邀请人侧奖励（新用户同一次注册也能拿到积分）。
+     *
+     * <p>幂等键含邀请人 openid：同一个人即使被不同人邀请，也只会作为「被邀请人」领一次；
+     * 走的是与新人礼同款的一次性通道，不受每日积分上限影响。</p>
+     */
+    private Mono<Boolean> issueInviteeReward(String inviteeOpenid, String inviterOpenid, int reward) {
+        if (reward <= 0) {
+            return Mono.just(false);
+        }
+        var earnKey = PointsServiceImpl.buildEarnKey(inviteeOpenid, INVITEE_ACTION, inviterOpenid);
+        return persistence.findRecordByEarnKey(earnKey)
+            .flatMap(existing -> Mono.just(false))
+            .switchIfEmpty(Mono.defer(() -> persistence.getOrCreateAccount(inviteeOpenid)
+                .flatMap(account -> {
+                    var newBalance = PointsServiceImpl.safeBalance(account) + reward;
+                    return resolveWxUserId(inviteeOpenid, account)
+                        .flatMap(wxUserId -> {
+                            account.setBalance(newBalance);
+                            if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
+                                account.setWxUserId(wxUserId);
+                            }
+                            var record = PointsPersistence.newRecord(inviteeOpenid, INVITEE_ACTION,
+                                reward, newBalance, "受邀注册奖励", inviterOpenid, earnKey, wxUserId);
+                            return persistence.saveAccount(account)
+                                .then(persistence.appendRecord(record))
+                                .thenReturn(true)
+                                .onErrorResume(ex -> isDuplicateRecordError(ex)
+                                    ? Mono.just(false)
+                                    : Mono.error(ex));
+                        });
+                })))
+            .onErrorResume(ex -> {
+                // 奖励失败不该让邀请绑定失败
+                log.warn("issue invitee reward failed, invitee={}: {}", inviteeOpenid,
+                    ex.getMessage());
+                return Mono.just(false);
+            });
+    }
+
+    @Override
+    public Mono<InviteLandingDTO> landing(String inviteCode, String viewerOpenid) {
+        var code = normalizeInviteCode(inviteCode);
+        if (code == null) {
+            return Mono.just(invalidLanding("分享链接不完整，请让好友重新分享一次"));
+        }
+        var viewer = StringUtils.hasText(viewerOpenid) ? viewerOpenid.trim() : "";
+        return wxUserService.fetchByInviteCode(code)
+            .flatMap(sharer -> Mono.zip(
+                    subscriptionService.load(sharer.getOpenid()),
+                    // 未登录时 load("") 会返回空偏好，不需要单独分支
+                    subscriptionService.load(viewer),
+                    taxonomyService.categoryLabels())
+                .map(tuple -> buildLanding(sharer, code, viewer, tuple.getT1(), tuple.getT2(),
+                    tuple.getT3())))
+            .switchIfEmpty(Mono.fromSupplier(
+                () -> invalidLanding("这个分享链接已失效，请让好友重新分享一次")))
+            .onErrorResume(ex -> {
+                log.warn("invite landing failed code={}: {}", code, ex.getMessage());
+                return Mono.just(invalidLanding("分享内容加载失败，请稍后重试"));
+            });
+    }
+
+    @Override
+    public Mono<DigestSubscriptionDTO> acceptRecommendation(String viewerOpenid, String inviteCode) {
+        var code = normalizeInviteCode(inviteCode);
+        if (code == null) {
+            return Mono.error(new WxAuthException("分享链接不完整"));
+        }
+        if (!StringUtils.hasText(viewerOpenid)) {
+            return Mono.error(new WxAuthException("请先登录"));
+        }
+        return wxUserService.fetchByInviteCode(code)
+            .switchIfEmpty(Mono.error(new WxAuthException("这个分享链接已失效")))
+            .flatMap(sharer -> subscriptionService.load(sharer.getOpenid())
+                .flatMap(shared -> subscriptionService.acceptRecommendation(viewerOpenid.trim(),
+                    sharer.getOpenid(), shared.getPostCategories())));
+    }
+
+    private static InviteLandingDTO invalidLanding(String message) {
+        return InviteLandingDTO.builder()
+            .valid(false)
+            .message(message)
+            .categories(List.of())
+            .followedCategories(List.of())
+            .build();
+    }
+
+    private static InviteLandingDTO buildLanding(WxUser sharer, String code, String viewer,
+        DigestSubscriptionDTO sharerSubscription, DigestSubscriptionDTO viewerSubscription,
+        Map<String, String> labels) {
+        var items = orEmptyList(sharerSubscription.getPostCategories()).stream()
+            .map(name -> InviteLandingDTO.CategoryItem.builder()
+                .name(name)
+                .label(labels.getOrDefault(name, name))
+                .build())
+            .toList();
+        return InviteLandingDTO.builder()
+            .valid(true)
+            .inviteCode(code)
+            .sharerName(nullToEmpty(sharer.getNickname()))
+            .sharerAvatar(nullToEmpty(sharer.getAvatarUrl()))
+            .categories(items)
+            .loggedIn(StringUtils.hasText(viewer))
+            .hasOwnSubscription(!orEmptyList(viewerSubscription.getPostCategories()).isEmpty())
+            .followedCategories(orEmptyList(viewerSubscription.getEffectiveCategories()))
+            .message(items.isEmpty() ? "这位读者还没有订阅分类，下面为你展示全站最新内容" : "")
+            .build();
+    }
+
+    /** 邀请码归一化：去空、转大写、格式校验；不合法返回 null */
+    private static String normalizeInviteCode(String inviteCode) {
+        if (!StringUtils.hasText(inviteCode)) {
+            return null;
+        }
+        var normalized = inviteCode.trim().toUpperCase();
+        return normalized.matches("[A-Z0-9]{4,32}") ? normalized : null;
+    }
+
+    private static List<String> orEmptyList(List<String> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    @Override
+    public Mono<Boolean> applyInviteInheritance(String inviteeOpenid, String inviteCode) {
+        if (!StringUtils.hasText(inviteeOpenid) || !StringUtils.hasText(inviteCode)) {
+            return Mono.just(false);
+        }
+        var normalizedCode = inviteCode.trim().toUpperCase();
+        if (!normalizedCode.matches("[A-Z0-9]{4,32}")) {
+            return Mono.just(false);
+        }
+        return wxUserService.fetchByInviteCode(normalizedCode)
+            .flatMap(inviter -> {
+                if (inviteeOpenid.equals(inviter.getOpenid())) {
+                    return Mono.just(false);
+                }
+                // 用邀请人「自己订阅的」分类作为被邀请人首页的起点；
+                // 只继承一层，不做链式继承（否则一个人的订阅会被越传越杂）
+                return subscriptionService.load(inviter.getOpenid())
+                    .flatMap(inviterSubscription -> subscriptionService.applyInheritance(
+                        inviteeOpenid, inviter.getOpenid(),
+                        inviterSubscription.getPostCategories()));
+            })
+            .defaultIfEmpty(false)
+            .onErrorResume(ex -> {
+                log.warn("apply invite inheritance failed, invitee={}: {}", inviteeOpenid,
+                    ex.getMessage());
+                return Mono.just(false);
+            });
     }
 
     private Mono<String> resolveWxUserId(String openid, UserPoints account) {

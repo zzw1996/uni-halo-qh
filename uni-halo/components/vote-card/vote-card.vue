@@ -3,7 +3,7 @@
 		<view class="vote-card-head flex">
 			<view class="left flex flex-center w-full">
 				<view class="flex-shrink">
-					<tm-tags color="light-blue" :shadow="0" rounded size="s" model="fill">{{ vote.spec._uh_type}}</tm-tags>
+					<tm-tags color="indigo" :shadow="0" rounded size="s" model="fill">{{ vote.spec._uh_type}}</tm-tags>
 				</view>
 				<view class="title text-overflow">
 					{{ vote.spec.title }}
@@ -20,7 +20,7 @@
 				<tm-tags :color="vote.spec._uh_state.color" size="s" rounded :shadow="0"
 					model="text">{{vote.spec._uh_state.state}}</tm-tags>
 
-				<tm-tags v-if="vote.spec.isVoted" color="blue" rounded size="s" model="text">已投票</tm-tags>
+				<tm-tags v-if="vote.spec.isVoted" color="indigo" rounded size="s" model="text">已投票</tm-tags>
 
 				<tm-tags v-if="vote.spec.timeLimit==='permanent'" color="grey-darken-2" rounded size="s"
 					model="text">结束时间：永久有效 </tm-tags>
@@ -97,10 +97,10 @@
 		padding: 24rpx;
 		border-radius: 12rpx;
 		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 12rpx rgba(0, 0, 0, 0.035);
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		margin-bottom: 24rpx;
-		// border: 1px solid #eee;
+		// border: 1px solid $uh-line;
 	}
 
 	.vote-card-head {
@@ -235,7 +235,7 @@
 				width: 100%;
 				margin-top: 6rpx;
 				font-size: 24rpx;
-				color: #666;
+				color: $uh-ink-2;
 
 				.left {
 					box-sizing: border-box;

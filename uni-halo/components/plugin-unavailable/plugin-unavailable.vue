@@ -24,11 +24,11 @@
 		<!-- 反馈按钮/复制地址 -->
 		<view class="plugin-btns w-full flex-center">
 			<!-- #ifndef MP-WEIXIN -->
-			<tm-button theme="light-blue" :block="true" class="w-full" :height="70" @click="copy">复制地址</tm-button>
+			<tm-button theme="indigo" :block="true" class="w-full" :height="70" @click="copy">复制地址</tm-button>
 			<!-- #endif -->
 			<!-- #ifdef MP-WEIXIN -->
-			<tm-button theme="light-blue" plan text :height="70" @click="copy">复制地址</tm-button>
-			<tm-button theme="light-blue" open-type="contact" :height="70">提交反馈</tm-button>
+			<tm-button theme="indigo" plan text :height="70" @click="copy">复制地址</tm-button>
+			<tm-button theme="indigo" open-type="contact" :height="70">提交反馈</tm-button>
 			<!-- #endif -->
 		</view>
 
@@ -122,7 +122,7 @@
 
 		&.border {
 			// border: 2rpx solid #E2E8F0;
-			border: 2rpx solid #eee;
+			border: 2rpx solid $uh-line;
 		}
 
 		&.decoration {
@@ -144,7 +144,7 @@
 	.plugin-name {
 		box-sizing: border-box;
 		font-weight: bold;
-		color: #333;
+		color: $uh-ink-1;
 		font-size: 32rpx;
 	}
 
@@ -181,7 +181,7 @@
 		padding: 16rpx 24rpx;
 		border-radius: 12rpx;
 		background-color: #F1F5F9;
-		color: #666;
+		color: $uh-ink-2;
 		font-size: 24rpx;
 		white-space: nowrap;
 		overflow: hidden;
@@ -194,7 +194,7 @@
 
 	.plugin-copyright {
 		font-size: 20rpx;
-		color: #999;
+		color: $uh-ink-3;
 		transform: scale(0.9) translateY(20px);
 	}
 </style>

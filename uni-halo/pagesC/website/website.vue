@@ -1,5 +1,5 @@
 <template>
-    <view class="app-page">
+    <view :class="skinClass" class="app-page">
         <web-view :src="webUrl"></web-view>
     </view>
 </template>

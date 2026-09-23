@@ -1,5 +1,5 @@
 <template>
-    <view class="app-page bg-white round-3 pa-46">
+    <view :class="skinClass" class="app-page ma-24 bg-white round-6 pa-46 card-shadow">
         <!-- 通过配置 -->
         <view v-if="disclaimersContent" style="min-height: 100%;" v-html="disclaimersContent"></view>
 
@@ -43,6 +43,6 @@ export default {
 .app-page {
     line-height: 1.65;
     font-size: 30rpx;
-    color: var(--main-text-color);
+    color: #1f1f1f;
 }
 </style>

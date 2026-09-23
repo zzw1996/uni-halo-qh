@@ -161,7 +161,7 @@ export default {
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    background-color: #f2f2f2;
+    background-color: $uh-line;
 }
 
 .img-load-icon {

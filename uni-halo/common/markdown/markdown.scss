@@ -1,7 +1,8 @@
 :root {
-	--main: #303133;
-	--theme: #fb6c28;
-	--code-background: #e8f3ff;
+	// 本文件在 app.theme.scss 之后加载，:root 变量会覆盖全局主题，故直接引用设计 Token
+	--main: #1f1f1f;
+	--theme: #2f54eb;
+	--code-background: #eef2fe;
 	--radius-inner: 4px;
 	--classA: #dcdfe6;
 	--classB: #e4e7ed;
@@ -16,8 +17,8 @@
 	--classK: #e4e7ed;
 	--classL: #666;
 	--classM: #2d2e37;
-	--quote: #50bfff;
-	--code: #409eff;
+	--quote: #2f54eb;
+	--code: #2f54eb;
 }
 .evan-markdown {
 	::v-deep {
@@ -42,7 +43,7 @@
 			top: -4px;
 			margin-right: 12px;
 			font-size: 24px;
-			color: var(--theme);
+			color: #2f54eb;
 		}
 		h2::before {
 			top: -2px;
@@ -65,7 +66,7 @@
 			top: -2px;
 			width: 22px;
 			height: 22px;
-			color: var(--theme);
+			color: #2f54eb;
 			background-size: auto 100%;
 			background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAndJREFUWEftVkty2kAQfT1SBLtwg6AqwzbxCQIniG8QvAmwCp8kRqvgFa5KwHjlkI3NCeIbhJwgXptUgW9AdiDQdGoITqUsjcZyuYqNZ6WSXs88vel+3YQtL9ry+Xgk8KhApALNAe8x5PPbCUrgabdsD2/e+1edEpN4FsIRps7OwT9cXKKHCLw75QIL+V0XRFIUP1dptBx3ChKkxQlw8UnOG5mqLESgdsYZy5dTAE8jg5lH3Ypd5Mlxxl8ttDgGRulcq5iYgApofgn6ILzVBQsSu5/e0OXiqnMOotdatVjsOvkPl4muQIFrp5y1hJzEBA67ZavEk07WX5EexzxM5b1SYgJrFQbBOQDt3wVSuP0qTRfjowsAr3SHODa75HrqqiKX1gdMycjAYa9stU3JCPBhKue1ExNQAY3BakSgl1HBDMykI9z+Ps0WV0eXIITKdhM3c+yUS259FrVPrBM2TlclEnSmY8+S93tV+/yvH+hxxLzv5D11paFltOLmIFD3FzIbtRMzpr2K5arn+bgzJZAWl8631rjby0zAUJI3xnTfkjQTiFEAwHW3bGWNCoCv0zlvjUukgOoJgPymzQGg3itbfVMOMKiezh30ExOIqwIAvwNHZFUVzMcdbbUonGOnsomr4P1XfiFZ/tS6GOOkW7FqJh8gwomz06ol9oE7O6GhH9zLCbfeCxqDoE3AR61sm5nA/3XUZ47pmneYCSLnAeHLCQGZaAvmH72yXdjMA6oTanHpnFfQ5tDmQ+KJ6MZ+jckXY7//k4pWYB7sQVCUccxU3a9teHKcWS7ne0wI4Rhipqv7REZkku8hvhut+CEOidvjkcDWFfgD9RMzMKE7f80AAAAASUVORK5CYII=);
 		}

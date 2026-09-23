@@ -1,10 +1,15 @@
 <template>
-	<view class="app-page" :class="[uniHaloPluginPageClass]">
+	<view class="app-page" :class="[skinClass, uniHaloPluginPageClass, { 'is-host-fixed': viewMode === 'store' }]">
+		<!--
+			瞬间本体：作为宿主页的第一个视图。切到图库/小店时用 v-show 隐藏而不是卸载，
+			切回来能保留列表与滚动位置（这正是原生 tab 的行为）。
+		-->
+		<view v-show="viewMode === 'moments'">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<view v-else-if="!canShowMoments" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看瞬间"></tm-empty>
-			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
+			<tm-button class="mt-24" theme="bg-gradient-indigo-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
 			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
@@ -121,27 +126,29 @@
 			</view>
 			<tm-flotbutton
 				v-if="loading === 'success' && canPublishMoment"
-				:offset="[16, 80]"
+				:offset="[16, 80 + calcTabbarOffset]"
 				label="发表"
 				:show-text="true"
 				actions-pos="left"
 				:width="90"
 				size="xs"
-				color="bg-gradient-light-blue-accent"
+				color="bg-gradient-indigo-accent"
 				icon="icon-plus"
 				:icon-size="24"
 				@click="fnToPublishMoment"
 			></tm-flotbutton>
 			<tm-flotbutton
 				v-if="loading === 'success'"
+				:offset="[16, 16 + calcTabbarOffset]"
 				@click="fnToTopPage"
 				:width="90"
 				size="xs"
-				color="light-blue"
+				color="indigo"
 				:icon-size="24"
 				icon="icon-angle-up"
 			></tm-flotbutton>
 		</template>
+		</view>
 
 		<wx-login-dialog
 			:show.sync="loginDialogShow"
@@ -170,11 +177,28 @@
 			subject-type="moment"
 			@on-close="fnOnCommentModalClose"
 		></comment-modal>
+		<!--
+			图库 / 小店视图。
+			微信原生 tab 页最多 5 个、候选却有 7 个，所以这两个页面以「视图」形式挂在本页（原生页）里：
+			底栏点它们时走 switchTab 切到本页再换视图——和原生 tab 一样没有返回箭头、不产生页面栈。
+			图库用 v-show 保留状态（首次进入才挂载，避免每次启动都预加载）；
+			小店首次进入才挂载并传 active（隐藏时节点高度为 0，会把正常小店误判成未开通）。
+		-->
+		<gallery-view v-if="calcViewLoaded.gallery" v-show="viewMode === 'gallery'"
+			:pull-down-tick="galleryPulldownTick" :reach-bottom-tick="galleryReachBottomTick"></gallery-view>
+		<store-view v-if="calcViewLoaded.store" v-show="viewMode === 'store'"
+			:active="viewMode === 'store' && pageVisible"></store-view>
+		<!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏。current 跟着视图走 -->
+		<uh-tabbar :current="viewMode"></uh-tabbar>
 	</view>
 </template>
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
+	import galleryView from '@/components/gallery-view/gallery-view.vue';
+	import storeView from '@/components/store-view/store-view.vue';
+	import { consumePendingTabbarMode, getTabbarItems, tabbarBottomOffsetPx, tabbarViewRequest } from '@/utils/tabbar.js';
 	import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
@@ -196,13 +220,13 @@
 	import momentInteraction from '@/pagesA/components/moment-interaction/moment-interaction.vue';
 	import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
+	import { fetchUserPublishStatus } from '@/utils/userPublish.js';
 	import { isWxLoginRequired } from '@/utils/wxLogin.js';
 	import { USER_ACTIVITY_TYPES, recordMomentUserActivity } from '@/utils/userActivity.js';
 	import {
-		canShowMomentPublish,
+		canDeleteMoment,
 		isOwnMoment,
-		normalizeMomentListItem,
-		resolveMomentPublishPermission
+		normalizeMomentListItem
 	} from '@/utils/momentPublish.js';
 	
 	export default {
@@ -218,10 +242,27 @@
 			wxLoginDialog,
 			tmButton,
 			momentInteraction,
-			commentModal
+			commentModal,
+			uhTabbar,
+			galleryView,
+			storeView
 		},
 		data() {
 			return {
+				/**
+				 * 当前视图：moments（瞬间本体）/ gallery（图库）/ store（小店）。
+				 * 三者共用这一个原生 tab 页，底栏点哪项就切到哪个视图。
+				 */
+				viewMode: 'moments',
+				/** 视图首次进入才挂载：图库/小店没被访问过就不加载 */
+				loadedViews: { gallery: false, store: false },
+				/** 页面是否在前台：小店视图的渲染探测要同时看「当前视图 + 页面可见」 */
+				pageVisible: false,
+				/** 放进 data 才能按路径 watch：底栏在「已停留本页」时靠它通知换视图 */
+				tabbarViewRequest,
+				/** 下拉/触底信号：图库视图用它接收宿主页的转发（属性比全局事件可靠） */
+				galleryPulldownTick: 0,
+				galleryReachBottomTick: 0,
 				markdownConfig: MarkdownConfig,
 				loading: 'loading',
 				queryParams: {
@@ -250,13 +291,28 @@
 				activeCommentMomentName: '',
 				wxUserInfo: null,
 				canPublishMoment: false,
+				/** 是否博主/管理员（服务端判定）：决定「删除任意瞬间」的按钮是否展示 */
+				publishPrivileged: false,
 				momentOwnerName: '',
 				deletingMomentName: '',
 				activeFeed: 'latest'
 			};
 		},
 
+		watch: {
+			/** 底栏在本页停留时切换视图（switchTab 到同一页不会触发 onShow） */
+			'tabbarViewRequest.seq'() {
+				if (tabbarViewRequest.mode) this.fnSwitchView(tabbarViewRequest.mode);
+			}
+		},
 		computed: {
+			calcViewLoaded() {
+				return this.loadedViews;
+			},
+			/** 悬浮按钮抬高量：自绘底栏开启时窗口占满全屏，不抬高会被底栏压住 */
+			calcTabbarOffset() {
+				return tabbarBottomOffsetPx();
+			},
 			// 瞬间 feed 切换：latest=最新发布，hot=点赞最多（客户端排序）
 			feedTabs() {
 				return [
@@ -352,6 +408,18 @@
 			this.fnGetData();
 		},
 		onShow() {
+			this.pageVisible = true;
+			// 底栏从别的 tab 切过来时，模式是通过这里带进来的
+			const pending = consumePendingTabbarMode();
+			if (pending) {
+				this.fnSwitchView(pending);
+			} else if (this.viewMode !== 'moments') {
+				// 回到本页时视图要保持一致（例如从图库切回来后又被系统恢复）
+				this.fnSwitchView(this.viewMode, { silent: true });
+			}
+			if (this.viewMode !== 'moments') {
+				return;
+			}
 			this.fnSyncWxUser();
 			this.fnRefreshPublishPermission();
 			if (!this.uniHaloPluginAvailable) return;
@@ -373,8 +441,18 @@
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
 			uni.$off('moments_list_should_refresh', this.fnReloadMomentList);
+			this.pageVisible = false;
+		},
+		onHide() {
+			// 页面进后台：通知小店视图停掉渲染探测（隐藏时节点高度为 0，会误判成未开通）
+			this.pageVisible = false;
 		},
 		onPullDownRefresh() {
+			// 图库视图挂在同一个原生页上，下拉刷新用属性信号转发（小程序端既不能用 $refs，也不宜用全局事件）
+			if (this.viewMode === 'gallery') {
+				this.galleryPulldownTick += 1;
+				return;
+			}
 			if (!this.uniHaloPluginAvailable || !this.canShowMoments) {
 				uni.hideLoading();
 				uni.stopPullDownRefresh();
@@ -387,6 +465,10 @@
 			this.fnGetData();
 		},
 		onReachBottom(e) {
+			if (this.viewMode === 'gallery') {
+				this.galleryReachBottomTick += 1;
+				return;
+			}
 			if (!this.uniHaloPluginAvailable || !this.canShowMoments) return;
 			if (this.calcAuditModeEnabled) {
 				uni.showToast({
@@ -407,6 +489,40 @@
 			}
 		},
 		methods: {
+			/**
+			 * 视图切换（瞬间 / 图库 / 小店）。
+			 *
+			 * 底栏点「图库/小店」时：不在本页就先 switchTab 过来（原生 tab 行为），
+			 * 已经在就由底栏写共享状态（tabbarViewRequest）触发 watch 换视图——两种路径最终都走这里。
+			 */
+			fnSwitchView(mode, opts) {
+				if (!['moments', 'gallery', 'store'].includes(mode)) return;
+				if (mode === 'gallery') this.loadedViews.gallery = true;
+				if (mode === 'store') this.loadedViews.store = true;
+				const changed = this.viewMode !== mode;
+				this.viewMode = mode;
+				this.fnSyncViewTitle();
+				this.$nextTick(() => {
+					// 换视图后回到顶部，避免沿用上一个视图的滚动位置（除非是系统恢复）
+					if (changed && !opts?.silent) uni.pageScrollTo({ scrollTop: 0, duration: 0 });
+				});
+			},
+
+			/**
+			 * 导航栏标题跟着视图走。
+			 *
+			 * 文案取底栏那份配置（后台可改），拿不到就退回内置名称。
+			 */
+			fnSyncViewTitle() {
+				if (this.viewMode === 'moments') {
+					this.fnSetPageTitle('瞬间');
+					return;
+				}
+				const items = getTabbarItems(this.haloConfigs, this.globalAppSettings?.tabbar);
+				const matched = items.find((item) => item.key === this.viewMode);
+				const fallback = { gallery: '图库', store: '小店' };
+				this.fnSetPageTitle(matched?.label || fallback[this.viewMode]);
+			},
 			fnOnWxLoginStatusChanged(userInfo) {
 				this.fnSyncWxUser(userInfo);
 				this.fnRefreshPublishPermission();
@@ -415,22 +531,31 @@
 				this.wxUserInfo = userInfo || (checkHasWxLogin() ? getWxLoginInfo() : null);
 				this.isLoggedIn = checkHasWxLogin();
 			},
+			/**
+			 * 发布权限与删除判定。
+			 *
+			 * <p>原来靠客户端拿 personalToken 比对博主身份，令牌不再下发后
+			 * 一律以服务端结论为准：能不能发看 status，是不是特权用户看 status.privileged。
+			 * 删除权限本身由服务端校验，这里只决定按钮显不显示。</p>
+			 */
 			async fnRefreshPublishPermission() {
 				if (!this.uniHaloPluginAvailable || this.calcAuditModeEnabled) {
 					this.canPublishMoment = false;
 					this.momentOwnerName = '';
+					this.publishPrivileged = false;
 					return;
 				}
-				const permission = await resolveMomentPublishPermission(
-					this.$httpApi.v2,
-					this.haloConfigs,
-					this.wxUserInfo || getWxLoginInfo()
-				);
-				this.canPublishMoment = canShowMomentPublish(permission);
-				this.momentOwnerName = permission.ownerName || '';
+				const status = await fetchUserPublishStatus(this.$httpApi.v2);
+				this.canPublishMoment = !!(status && status.canPublishMoment && status.visible);
+				this.publishPrivileged = !!(status && status.privileged);
+				// 用于「我的瞬间」标注：普通用户就是自己的 Halo 用户名，博主/管理员不限制
+				this.momentOwnerName = (this.wxUserInfo?.haloUserName || '').trim();
 			},
 			fnCanDeleteMoment(moment) {
-				return !!this.momentOwnerName && isOwnMoment(moment, this.momentOwnerName);
+				return canDeleteMoment(moment, {
+					ownerName: this.momentOwnerName,
+					privileged: this.publishPrivileged
+				});
 			},
 			fnConfirmDeleteMoment(moment) {
 				const name = (moment?.metadata?.name || '').trim();
@@ -457,7 +582,7 @@
 				this.deletingMomentName = name;
 				uni.showLoading({ mask: true, title: '删除中...' });
 				try {
-					await this.$httpApi.v2.deleteMoment(name);
+					await this.$httpApi.v2.deleteUserMoment(name);
 					uni.showToast({ icon: 'success', title: '已删除' });
 					this.fnReloadMomentList();
 				} catch (err) {
@@ -582,7 +707,9 @@
 						const displayUser = this.fnGetMomentUser();
 						const items = Array.isArray(res?.items) ? res.items : [];
 						const tempItems = items
-							.filter((item) => item?.spec?.visible === 'PUBLIC')
+							// visible=公开 且 非待审（approved=false 是「待站长审核」状态）
+							.filter((item) => item?.spec?.visible === 'PUBLIC'
+								&& item?.spec?.approved !== false)
 							.map((item) => normalizeMomentListItem(item, {
 								displayUser,
 								checkThumbnailUrl: (url, thumb) => this.$utils.checkThumbnailUrl(url, thumb),
@@ -604,7 +731,11 @@
 					.catch(err => {
 						console.error(err);
 						this.loading = 'error';
-						this.loadMoreText = '加载失败，请下拉刷新！';
+						// 把服务端原因透出来（如「接口不存在(404)，请确认插件已升级」），
+						// 否则只显示「加载失败」时，分不清是网络、插件未升级还是没登录
+						this.loadMoreText = err?.error
+							? `加载失败：${err.error}`
+							: '加载失败，请下拉刷新！';
 					})
 					.finally(() => {
 						setTimeout(() => {
@@ -752,6 +883,12 @@
 </script>
 
 <style lang="scss" scoped>
+	/* 小店视图里 store-home 要撑满，整页改成固定高度（其他视图照旧随内容增高） */
+	.app-page.is-host-fixed {
+		height: 100vh;
+		overflow: hidden;
+	}
+
 	.app-page {
 		box-sizing: border-box;
 		width: 100vw;
@@ -774,14 +911,14 @@
 
 	.feed-tab {
 		padding: 8rpx 32rpx;
-		border-radius: 999rpx;
-		background: #fff;
+		border-radius: $uh-radius-pill;
+		background: $uh-card;
 		font-size: 26rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.feed-tab.is-active {
-		background: #03a9f4;
+		background: $uh-accent;
 		color: #fff;
 		font-weight: 600;
 	}
@@ -797,9 +934,9 @@
 		flex-direction: column;
 		box-sizing: border-box;
 		margin: 0 24rpx;
-		border-radius: 12rpx;
-		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		border-radius: $uh-radius-lg;
+		background-color: $uh-card;
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}
@@ -838,14 +975,14 @@
 	.moment-card__name {
 		font-size: 30rpx;
 		font-weight: bold;
-		color: #333333;
+		color: $uh-ink-1;
 		line-height: 1.4;
 	}
 
 	.moment-card__time {
 		margin-top: 6rpx;
 		font-size: 24rpx;
-		color: #666;
+		color: $uh-ink-2;
 		line-height: 1.4;
 	}
 
@@ -858,19 +995,19 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: #f5f7fa;
+		background: $uh-fill;
 		transition: background-color 0.2s ease;
 
 		.icon {
 			font-size: 28rpx;
-			color: #b0b8c4;
+			color: $uh-ink-3;
 		}
 
 		&:active {
-			background: #fdeeee;
+			background: $uh-danger-weak;
 
 			.icon {
-				color: #f56c6c;
+				color: $uh-danger;
 			}
 		}
 

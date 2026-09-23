@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -937,7 +937,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -952,8 +952,8 @@
 		justify-content: space-between;
 		padding: 36rpx 32rpx;
 		border-radius: 24rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		box-shadow: 0 16rpx 40rpx rgba(102, 126, 234, 0.28);
+		background-image: $uh-grad-accent;
+		box-shadow: 0 16rpx 40rpx rgba(47, 84, 235, 0.28);
 		color: #fff;
 	}
 
@@ -1033,7 +1033,7 @@
 	.section-sub {
 		max-width: 62%;
 		font-size: 22rpx;
-		color: #9aa1b5;
+		color: $uh-ink-3;
 		text-align: right;
 	}
 
@@ -1047,7 +1047,7 @@
 		margin-bottom: 20rpx;
 		padding: 28rpx 28rpx 24rpx;
 		border-radius: 20rpx;
-		background: #fff;
+		background: $uh-card;
 		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
 	}
 
@@ -1221,7 +1221,7 @@
 		align-items: center;
 		padding: 28rpx;
 		border-radius: 20rpx;
-		background: #fff;
+		background: $uh-card;
 		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
 	}
 
@@ -1271,7 +1271,7 @@
 		margin-bottom: 20rpx;
 		padding: 22rpx 24rpx;
 		border-radius: 16rpx;
-		background: linear-gradient(135deg, #eef1fb 0%, #f6eeff 100%);
+		background: linear-gradient(135deg, $uh-accent-weak 0%, #f6eeff 100%);
 	}
 
 	.milestone-head {
@@ -1289,7 +1289,7 @@
 	.milestone-value {
 		font-size: 30rpx;
 		font-weight: 700;
-		color: #667eea;
+		color: $uh-accent;
 	}
 
 	.milestone-tip {
@@ -1320,15 +1320,15 @@
 		width: 48.5%;
 		margin-bottom: 20rpx;
 		border-radius: 20rpx;
-		background: #fff;
+		background: $uh-card;
 		overflow: hidden;
 		border: 2rpx solid transparent;
 		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
 	}
 
 	.outfit-card.is-active {
-		border-color: #667eea;
-		box-shadow: 0 10rpx 28rpx rgba(102, 126, 234, 0.22);
+		border-color: $uh-accent;
+		box-shadow: 0 10rpx 28rpx rgba(47, 84, 235, 0.22);
 	}
 
 	.outfit-card.is-owned .outfit-preview {
@@ -1341,7 +1341,7 @@
 		align-items: center;
 		justify-content: center;
 		height: 200rpx;
-		background: linear-gradient(160deg, #eef1fb 0%, #e6e9f7 100%);
+		background: linear-gradient(160deg, $uh-accent-weak 0%, #e6e9f7 100%);
 	}
 
 	.outfit-avatar {
@@ -1369,7 +1369,7 @@
 		left: 0;
 		padding: 4rpx 16rpx;
 		border-bottom-right-radius: 16rpx;
-		background: #667eea;
+		background: $uh-accent;
 		color: #fff;
 		font-size: 20rpx;
 	}

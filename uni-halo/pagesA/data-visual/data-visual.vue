@@ -1,10 +1,10 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<!-- 高级版卡片 -->
 		<view class="advanced-card">
 			<view class="advanced-head">
 				<text class="advanced-title">数据看板高级版</text>
-				<tm-tags v-if="advancedUnlocked" color="bg-gradient-light-blue-accent" :shadow="0" size="s" model="fill">今日已解锁</tm-tags>
+				<tm-tags v-if="advancedUnlocked" color="bg-gradient-indigo-accent" :shadow="0" size="s" model="fill">今日已解锁</tm-tags>
 			</view>
 			<text class="advanced-tip">{{ advancedUnlocked ? '已解锁：完整数据导出（含近 7 日趋势与热榜数据）' : '解锁当日高级功能：完整数据导出（30 积分/次，每日 1 次）' }}</text>
 			<view class="advanced-actions">
@@ -198,7 +198,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -216,7 +216,7 @@
 	.empty-tip {
 		margin-top: 16rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		text-align: center;
 	}
 
@@ -224,7 +224,7 @@
 		margin-bottom: 24rpx;
 		padding: 24rpx 28rpx;
 		border-radius: 16rpx;
-		background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
+		background: linear-gradient(135deg, $uh-accent-weak 0%, #ffffff 100%);
 		border: 1rpx solid #b9dcff;
 	}
 
@@ -237,7 +237,7 @@
 	.advanced-title {
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.advanced-tip {
@@ -245,7 +245,7 @@
 		margin-top: 8rpx;
 		font-size: 22rpx;
 		line-height: 1.6;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.advanced-actions {
@@ -260,7 +260,7 @@
 
 	.stat-card {
 		width: 23%;
-		background: #fff;
+		background: $uh-card;
 		border-radius: 16rpx;
 		padding: 24rpx 0;
 		margin-bottom: 20rpx;
@@ -271,18 +271,18 @@
 		display: block;
 		font-size: 34rpx;
 		font-weight: 800;
-		color: #03a9f4;
+		color: $uh-accent;
 	}
 
 	.stat-label {
 		display: block;
 		margin-top: 6rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.section-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 16rpx;
 		padding: 24rpx 28rpx;
 		margin-bottom: 24rpx;
@@ -295,7 +295,7 @@
 	.section-title {
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.trend-row {
@@ -314,7 +314,7 @@
 
 	.trend-count {
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.trend-bar-wrap {
@@ -327,30 +327,30 @@
 	.trend-bar {
 		width: 36rpx;
 		border-radius: 8rpx 8rpx 0 0;
-		background: linear-gradient(180deg, #74b9ff 0%, #03a9f4 100%);
+		background: linear-gradient(180deg, #74b9ff 0%, $uh-accent 100%);
 	}
 
 	.trend-date {
 		margin-top: 8rpx;
 		font-size: 20rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.rank-item {
 		display: flex;
 		align-items: center;
 		padding: 14rpx 0;
-		border-bottom: 1rpx solid #f5f6fa;
+		border-bottom: 1rpx solid $uh-fill;
 	}
 
 	.rank-no {
 		width: 40rpx;
 		font-size: 24rpx;
 		font-weight: 700;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 
 		&.is-top {
-			color: #ff9800;
+			color: $uh-warning;
 		}
 	}
 
@@ -358,7 +358,7 @@
 		flex: 1;
 		min-width: 0;
 		font-size: 26rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -367,7 +367,7 @@
 	.rank-visit {
 		margin-left: 16rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.footer-tip {

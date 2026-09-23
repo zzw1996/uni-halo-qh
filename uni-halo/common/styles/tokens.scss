@@ -1,0 +1,33 @@
+/**
+ * 全局设计 Token ——「宣纸白 · 墨韵」· 说明文件
+ *
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │ 唯一权威来源：根目录 uni.scss 的 $uh-* 变量。               │
+ * │ 改配色只改 uni.scss 一处；本文件不定义任何值。              │
+ * └─────────────────────────────────────────────────────────────┘
+ *
+ * 页面与组件统一使用 $uh-*（uni-app 会把 uni.scss 注入每个
+ * <style lang="scss"> 块），编译期即替换为字面值，三端一致。
+ *
+ * 【为什么不用 CSS 自定义属性——踩过的坑，勿回退】
+ * 本文件早期版本用 `page, :root { --uh-accent: … }` 定义 Token，
+ * 页面用 var(--uh-accent) 取值。结果小程序端界面大面积失效：
+ * 背景全变透明、整页塌成白色，"我的"页的靛青渐变头直接消失导致
+ * 白字标题隐形。原因是 wxss 不保证解析 `:root`（按 CSS 规则，
+ * 选择器列表中有一个非法选择器就会丢弃整条规则），变量因此从未
+ * 定义，而 var() 取值失败会退化成初始值（背景透明）。
+ * 微信自身注入的 var(--window-bottom) 可用，说明能用的只是内建变量。
+ *
+ * 【Token 清单（值见 uni.scss）】
+ * 品牌色   $uh-accent / $uh-accent-strong / $uh-accent-weak / $uh-grad-accent
+ * 墨色文字 $uh-ink-1(主) / $uh-ink-2 / $uh-ink-3 / $uh-ink-4(占位)
+ * 纸面     $uh-bg(页面底 #f2f2ec) / $uh-card(卡片 #fff) / $uh-fill / $uh-line
+ * 功能色   $uh-success|warning|danger(含 -weak 淡底)
+ * 圆角     $uh-radius-sm|md|lg|pill
+ * 阴影     $uh-shadow-sm|md（双层柔和，替代旧单层重阴影）
+ * 字体     $uh-font-serif（文章详情衬线标题）
+ *
+ * 【原生侧需要同步的地方】
+ * pages.json 的 globalStyle.backgroundColor / tabBar.color / selectedColor
+ * 是原生配置，不读 SCSS 变量，改主题色时需一并手改。
+ */

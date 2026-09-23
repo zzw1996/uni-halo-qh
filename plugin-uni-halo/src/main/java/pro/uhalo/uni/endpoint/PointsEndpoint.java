@@ -150,6 +150,30 @@ public class PointsEndpoint implements CustomEndpoint {
                     .operationId("GetInviteInfo")
                     .description("Get invite code and reward config.")
                     .tag(apiTag))
+            .GET(basePath + "/points/invite/landing", pointsController::inviteLanding,
+                builder -> builder
+                    .operationId("GetInviteLanding")
+                    .description("Landing data for an invite share: who shared it, which categories "
+                        + "that user subscribes to, and the viewer's state. Anonymous-readable.")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("code")
+                        .in(ParameterIn.QUERY)
+                        .description("Invite code of the sharer")
+                        .required(true)
+                        .implementation(String.class)))
+            .POST(basePath + "/points/invite/accept", pointsController::inviteAccept,
+                builder -> builder
+                    .operationId("AcceptInviteRecommendation")
+                    .description("Merge the sharer's subscribed categories into the viewer's own "
+                        + "subscription (own categories first, max 8 in total).")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("code")
+                        .in(ParameterIn.QUERY)
+                        .description("Invite code of the sharer")
+                        .required(true)
+                        .implementation(String.class)))
             .POST(basePath + "/points/invite/poster/generate", pointsController::invitePosterGenerate,
                 builder -> builder
                     .operationId("MarkInvitePosterGenerated")

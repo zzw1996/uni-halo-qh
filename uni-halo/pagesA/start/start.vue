@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page bg-gradient-blue-lighten-b" :class="calcPageClass" :style="[calcPageStyle]">
+	<view class="app-page bg-gradient-blue-lighten-b" :class="[skinClass, calcPageClass]" :style="[calcPageStyle]">
 		<view v-if="calcBackgroundType!=='video'" class="tn-satr">
 			<view class="sky"></view>
 			<view class="stars">
@@ -318,7 +318,7 @@
 
 	.star {
 		border-radius: 50%;
-		background: #ffffff;
+		background: $uh-card;
 		box-shadow: 0 0 6px 0 rgba(255, 255, 255, 0.8);
 	}
 

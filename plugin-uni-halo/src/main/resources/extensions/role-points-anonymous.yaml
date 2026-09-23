@@ -18,4 +18,8 @@ rules:
       - "plugins/points/content"
       - "plugins/points/content/unlocked"
       - "plugins/points/*"
+      # 邀请分享落地页（未登录的被分享者也要能看），同样把常见推导粒度都放行
+      - "plugins/points/invite"
+      - "plugins/points/invite/landing"
+      - "plugins/points/invite/accept"
     verbs: [ "get", "list", "create" ]

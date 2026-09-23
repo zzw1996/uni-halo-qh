@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page flex flex-center">
+	<view :class="skinClass" class="app-page flex flex-center">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId" :error-text="uniHaloPluginAvailableError" :use-border="false" :use-decoration="false" />
 	</view>
 </template>
@@ -66,6 +66,16 @@ export default {
 					url: _DEV_TO_PATH_
 				});
 			}
+			return;
+		}
+
+		// 带邀请码进来（分享卡片 / 海报小程序码）：先去落地页看「分享人关注的内容」。
+		// 落地页会自己完成静默登录与邀请结算，也负责把码写进待消费存储；
+		// 这里就不再往下走启动流程，免得用户先看到首页、再被弹到别处。
+		if (pendingInvite) {
+			uni.redirectTo({
+				url: '/pagesA/invite-landing/invite-landing?code=' + encodeURIComponent(pendingInvite)
+			});
 			return;
 		}
 

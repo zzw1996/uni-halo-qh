@@ -1,8 +1,19 @@
 // 主题
+// 设计 Token 的权威定义在根目录 uni.scss（$uh-*），本文件只保留旧变量名的兼容值。
+// 说明与踩坑记录见 ./tokens.scss。
+@import './tokens.scss';
+
+// 注意：不要写成 `page, :root { … }`。小程序 wxss 对 :root 支持不可靠，
+// 而选择器列表里有一个非法选择器会整条规则被丢弃；两个选择器分开写，page 段才能生效。
+// 旧值：--theme #f79ea3（樱花粉）→ 品牌靛青；--main* → 墨色文字
+page {
+	--theme: #2f54eb;
+	--main: #1f1f1f;
+	--main-text-color: #1f1f1f;
+}
 
 :root {
-	--theme: #f79ea3;
-	// --theme: #ffaec3;
-	--main: #303133;
-	--main-text-color: rgba(12, 25, 50, 1);
+	--theme: #2f54eb;
+	--main: #1f1f1f;
+	--main-text-color: #1f1f1f;
 }

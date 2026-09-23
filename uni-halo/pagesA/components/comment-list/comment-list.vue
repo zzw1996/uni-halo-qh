@@ -1,5 +1,5 @@
 <template>
-    <view class="comment-list">
+    <view :class="skinClass" class="comment-list">
         <!-- 顶部区域 -->
         <view class="comment-list_head">
             <view class="title">
@@ -20,7 +20,7 @@
                 </view>
                 <view v-else-if="loading === 'error'" class="error">
                     <tm-empty icon="icon-wind-cry" label="加载失败">
-                        <tm-button theme="bg-gradient-light-blue-accent" size="m" v-if="!disallowComment"
+                        <tm-button theme="bg-gradient-indigo-accent" size="m" v-if="!disallowComment"
                                    @click="fnToComment()">刷新试试
                         </tm-button>
                     </tm-empty>
@@ -34,7 +34,7 @@
                         <text class="text-red text-size-s">- 文章已开启禁止评论 -</text>
                     </tm-empty>
                     <tm-empty v-else icon="icon-shiliangzhinengduixiang-" label="暂无评论">
-                        <tm-button theme="light-blue" :dense="true" :shadow="0" size="m" @click="fnToComment(null)">抢沙发
+                        <tm-button theme="indigo" :dense="true" :shadow="0" size="m" @click="fnToComment(null)">抢沙发
                         </tm-button>
                     </tm-empty>
                 </view>
@@ -57,7 +57,7 @@
                         </block>
                     </block>
                     <view v-if="false" class="to-more-comment">
-                        <tm-button item-class="btn" :block="true" width="90vw" theme="bg-gradient-light-blue-lighten"
+                        <tm-button item-class="btn" :block="true" width="90vw" theme="bg-gradient-indigo-lighten"
                                    size="m">点击查看全部评论
                         </tm-button>
                     </view>
@@ -244,7 +244,7 @@ export default {
             top: 8rpx;
             width: 8rpx;
             height: 26rpx;
-            background-color: rgb(3, 174, 252);
+            background-color: $uh-accent;
             border-radius: 6rpx;
         }
 
@@ -261,7 +261,7 @@ export default {
 
             &-item {
                 margin-left: 20rpx;
-                color: #666;
+                color: $uh-ink-2;
 
                 &.active {
                     font-weight: bold;

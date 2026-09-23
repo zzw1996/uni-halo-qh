@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -218,7 +218,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding-bottom: 40rpx;
 	}
 
@@ -265,7 +265,7 @@
 		margin: 0 28rpx 16rpx;
 		padding: 24rpx 28rpx;
 		border-radius: 20rpx;
-		background: #fff;
+		background: $uh-card;
 	}
 
 	.section-head {
@@ -276,14 +276,14 @@
 		display: block;
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.section-sub {
 		display: block;
 		margin-top: 4rpx;
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.empty-tip {
@@ -297,7 +297,7 @@
 		display: flex;
 		align-items: center;
 		padding: 20rpx 0;
-		border-bottom: 2rpx solid #f5f6fa;
+		border-bottom: 2rpx solid $uh-fill;
 	}
 
 	.claim-item:last-child {
@@ -319,14 +319,14 @@
 		display: block;
 		font-size: 26rpx;
 		font-weight: 600;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.claim-time {
 		display: block;
 		margin-top: 4rpx;
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.claim-express {
@@ -338,7 +338,7 @@
 
 	.claim-arrow {
 		font-size: 30rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 		margin-left: 8rpx;
 	}
 
@@ -382,7 +382,7 @@
 		align-items: flex-start;
 		justify-content: space-between;
 		padding: 20rpx 0;
-		border-bottom: 2rpx solid #f5f6fa;
+		border-bottom: 2rpx solid $uh-fill;
 	}
 
 	.draw-item:last-child {
@@ -398,7 +398,7 @@
 	.draw-title {
 		display: block;
 		font-size: 26rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -408,7 +408,7 @@
 		display: block;
 		margin-top: 6rpx;
 		font-size: 21rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.draw-side {
@@ -420,21 +420,21 @@
 		display: block;
 		font-size: 30rpx;
 		font-weight: 700;
-		color: #e53935;
+		color: $uh-danger;
 	}
 
 	.draw-balance {
 		display: block;
 		margin-top: 6rpx;
 		font-size: 21rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.load-text {
 		padding: 20rpx 0 8rpx;
 		text-align: center;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.footer-tip {

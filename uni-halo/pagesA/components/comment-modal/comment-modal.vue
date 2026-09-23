@@ -245,14 +245,14 @@ export default {
         text-align: center;
         font-size: 32rpx;
         font-weight: 600;
-        color: #303133;
+        color: $uh-ink-1;
     }
 
     &__subtitle {
         display: block;
         text-align: center;
         font-size: 24rpx;
-        color: #909399;
+        color: $uh-ink-3;
         margin-top: 8rpx;
     }
 
@@ -271,7 +271,7 @@ export default {
         border-radius: 12rpx;
         flex-shrink: 0;
         border: 2rpx solid #fff;
-        box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+        box-shadow: $uh-shadow-sm;
 
         &.is-radius {
             border-radius: 50%;
@@ -306,13 +306,13 @@ export default {
         display: block;
         font-size: 28rpx;
         font-weight: 600;
-        color: #303133;
+        color: $uh-ink-1;
     }
 
     &__hint {
         display: block;
         font-size: 22rpx;
-        color: #909399;
+        color: $uh-ink-3;
         margin-top: 4rpx;
     }
 
@@ -325,7 +325,7 @@ export default {
 
     &__counter {
         font-size: 24rpx;
-        color: #c0c4cc;
+        color: $uh-ink-4;
     }
 }
 </style>

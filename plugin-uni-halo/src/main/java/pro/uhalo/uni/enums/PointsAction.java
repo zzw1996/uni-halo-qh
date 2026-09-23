@@ -50,6 +50,7 @@ public enum PointsAction {
             case "vote" -> "参与投票";
             case "task" -> "每日任务";
             case "invite" -> "邀请奖励";
+            case "invitee_invite" -> "受邀奖励";
             case "lucky_draw" -> "积分抽奖";
             case "purchase_publish_ticket" -> "道具直购·发布券";
             case "purchase_content_ticket" -> "道具直购·阅读券";
@@ -72,6 +73,9 @@ public enum PointsAction {
             case "ticket_member_bonus" -> "会员开通礼赠券";
             case "purchase_membership" -> "道具直购·会员卡";
             case "unlock_content" -> "解锁付费文章";
+            case "publish_article" -> "投稿文章";
+            case "publish_moment" -> "发布瞬间";
+            case "publish_refund" -> "投稿失败退还";
             case "exchange_dashboard" -> "积分兑换·数据看板";
             case "admin_adjust" -> "系统调整";
             default -> {

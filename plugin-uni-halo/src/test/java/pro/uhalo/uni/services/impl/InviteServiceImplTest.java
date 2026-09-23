@@ -48,6 +48,8 @@ class InviteServiceImplTest {
     private WxUser inviter;
     private WxUser invitee;
     private UserPoints inviterAccount;
+    /** 被邀请人账户：邀请成立时他也能拿一笔 */
+    private UserPoints inviteeAccount;
 
     @BeforeEach
     void setUp() {
@@ -63,6 +65,10 @@ class InviteServiceImplTest {
         inviterAccount.setWxUserId("wx-inviter");
         inviterAccount.setWxOpenid("openid-inviter");
         inviterAccount.setBalance(100L);
+        inviteeAccount = new UserPoints();
+        inviteeAccount.setWxUserId("wx-invitee");
+        inviteeAccount.setWxOpenid("openid-invitee");
+        inviteeAccount.setBalance(0L);
         lenient().when(rateLimiter.tryAcquire(any(), anyInt(), any())).thenReturn(true);
     }
 
@@ -73,6 +79,10 @@ class InviteServiceImplTest {
     private void stubRewardFlow() {
         when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
         when(persistence.getOrCreateAccount("openid-inviter")).thenReturn(Mono.just(inviterAccount));
+        lenient().when(persistence.getOrCreateAccount("openid-invitee"))
+            .thenReturn(Mono.just(inviteeAccount));
+        lenient().when(wxUserService.fetchByOpenid("openid-invitee"))
+            .thenReturn(Mono.just(invitee));
         when(persistence.saveAccount(any(UserPoints.class)))
             .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         when(persistence.appendRecord(any(PointsRecord.class)))
@@ -80,8 +90,8 @@ class InviteServiceImplTest {
     }
 
     @Test
-    void grantInviteRewardShouldBindAndRewardInviter() throws Exception {
-        stubInviteConfig("{\"enabled\":true,\"rewardPoints\":30}");
+    void grantInviteRewardShouldBindAndRewardBothSides() throws Exception {
+        stubInviteConfig("{\"enabled\":true,\"rewardPoints\":30,\"inviteeRewardPoints\":30}");
         when(wxUserService.fetchByInviteCode("ABC23456")).thenReturn(Mono.just(inviter));
         when(wxUserService.fetchByOpenid("openid-invitee")).thenReturn(Mono.just(invitee));
         when(wxUserService.update(invitee)).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
@@ -92,7 +102,28 @@ class InviteServiceImplTest {
             .verifyComplete();
 
         assertThat(invitee.getInviterOpenid()).isEqualTo("openid-inviter");
+        assertThat(inviterAccount.getBalance()).as("邀请人 +30").isEqualTo(130L);
+        assertThat(inviteeAccount.getBalance()).as("被邀请人也 +30").isEqualTo(30L);
+    }
+
+    /**
+     * 被邀请人奖励额度可配为 0：那样只给邀请人发，被邀请人那一笔不发。
+     * 两侧奖励互相独立，一侧配 0 不影响另一侧。
+     */
+    @Test
+    void grantInviteRewardShouldAllowZeroInviteeReward() throws Exception {
+        stubInviteConfig("{\"enabled\":true,\"rewardPoints\":30,\"inviteeRewardPoints\":0}");
+        when(wxUserService.fetchByInviteCode("ABC23456")).thenReturn(Mono.just(inviter));
+        when(wxUserService.fetchByOpenid("openid-invitee")).thenReturn(Mono.just(invitee));
+        when(wxUserService.update(invitee)).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        stubRewardFlow();
+
+        StepVerifier.create(inviteService.grantInviteReward("openid-invitee", "ABC23456", true))
+            .expectNext(true)
+            .verifyComplete();
+
         assertThat(inviterAccount.getBalance()).isEqualTo(130L);
+        assertThat(inviteeAccount.getBalance()).as("配 0 时被邀请人不发").isEqualTo(0L);
     }
 
     @Test

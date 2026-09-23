@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading != 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -15,7 +15,7 @@
 					<view class="sub-title"> 投票信息 </view>
 					<view class="vote-card-body flex flex-col uh-mt-8">
 						<view class="">
-							投票类型：<tm-tags color="light-blue" :shadow="0" size="xs" model="fill">
+							投票类型：<tm-tags color="indigo" :shadow="0" size="xs" model="fill">
 								{{ vote.spec._uh_type }} </tm-tags>
 						</view>
 						<view class="">
@@ -23,7 +23,7 @@
 								model="fill">{{vote.spec._uh_state.state}}</tm-tags>
 						</view>
 						<view class="">
-							投票方式：<tm-tags v-if="vote.spec.canAnonymously" color="light-blue" size="xs" :shadow="0"
+							投票方式：<tm-tags v-if="vote.spec.canAnonymously" color="indigo" size="xs" :shadow="0"
 								model="fill">匿名</tm-tags>
 							<tm-tags v-else color="red" size="xs" :shadow="0" model="fill">不匿名</tm-tags>
 						</view>
@@ -74,7 +74,7 @@
 								<template v-else>
 									<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 										class="vote-select-option flex-1 w-full text-break"
-										:class="[option.checked?'light-blue':'grey-lighten-3']"
+										:class="[option.checked?'indigo':'grey-lighten-3']"
 										@click="handleSelectSingleOption(option)">
 										{{option.title }}
 									</view>
@@ -102,7 +102,7 @@
 								<template v-else>
 									<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 										class="vote-select-option flex-1 w-full text-break"
-										:class="[option.checked?'light-blue':'grey-lighten-3']"
+										:class="[option.checked?'indigo':'grey-lighten-3']"
 										@click="handleSelectCheckboxOption(option)">
 										{{option.title }}
 									</view>
@@ -140,7 +140,7 @@
 								<template v-else>
 									<view v-for="(option,optionIndex) in vote.spec.options" :key="optionIndex"
 										class="vote-select-option flex-1 w-full text-break"
-										:class="[option.checked?'light-blue':'grey-lighten-3']"
+										:class="[option.checked?'indigo':'grey-lighten-3']"
 										@click="handleSelectSingleOption(option)">
 										选项{{ optionIndex+1}}：{{option.title }}
 									</view>
@@ -156,7 +156,7 @@
 						<view class="">
 							<tm-tags color="grey-darken-4" size="s" model="text">{{ vote.stats.voteCount }}
 								人已参与</tm-tags>
-							<!-- <tm-tags v-if="vote.spec.isVoted" color="blue" rounded size="s" model="text">已投票</tm-tags> -->
+							<!-- <tm-tags v-if="vote.spec.isVoted" color="indigo" rounded size="s" model="text">已投票</tm-tags> -->
 						</view>
 					</view>
 				</view>
@@ -185,7 +185,7 @@
 						:block="true" @click="handleSubmit()">不支持匿名投票</tm-button>
 					<tm-button v-else-if="submitForm.voteData.length===0" theme="white" text :fllowTheme="false" class="w-full"
 						:block="true" @click="handleSubmitTip('请选择选项')">提交投票（请选择选项）</tm-button>
-					<tm-button v-else theme="light-blue" :fllowTheme="false" class="w-full" :block="true" :loading="submitLoading"
+					<tm-button v-else theme="indigo" :fllowTheme="false" class="w-full" :block="true" :loading="submitLoading"
 						:disabled="submitLoading" @click="handleSubmit()">提交投票</tm-button>
 				</view>
 			</block>
@@ -455,7 +455,7 @@
 		flex-direction: column;
 		padding: 24rpx 0;
 		padding-bottom: 160rpx;
-		background-color: #fafafd;
+		background-color: $uh-bg;
 	}
 
 	.loading-wrap {
@@ -486,7 +486,7 @@
 		padding: 24rpx;
 		border-radius: 12rpx;
 		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}
@@ -530,7 +530,7 @@
 		box-sizing: border-box;
 		margin-top: 12px;
 		padding-top: 6px;
-		border-top: 2rpx solid #eee;
+		border-top: 2rpx solid $uh-line;
 	}
 
 	.is-voted-item {
@@ -641,7 +641,7 @@
 				margin-top: 24rpx;
 				width: 100%;
 				font-size: 24rpx;
-				color: #666;
+				color: $uh-ink-2;
 
 				.tm-groupradio {
 					display: flex;
@@ -702,7 +702,7 @@
 			position: absolute;
 			left: 0;
 			top: 6rpx;
-			background: #03A9F4;
+			background: $uh-accent;
 			border-radius: 6rpx;
 		}
 
@@ -720,8 +720,8 @@
 		width: 100vw;
 		bottom: 0;
 		background-color: rgba(255, 255, 255, 0.98);
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
-		border-top: 2rpx solid #eee;
+		box-shadow: $uh-shadow-sm;
+		border-top: 2rpx solid $uh-line;
 		z-index: 99;
 
 		::v-deep {

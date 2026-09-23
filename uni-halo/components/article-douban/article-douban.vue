@@ -19,15 +19,15 @@
 					<view class="content text-overflow-2">{{ detail.spec.cardSubtitle }}</view>
 					<view class="flex flex-wrap" style="margin-left: -10rpx">
 						<tm-tags color="orange" :shadow="0" size="s" model="fill">{{ types[detail.spec.type] }}</tm-tags>
-						<tm-tags v-for="(gen, genIndex) in detail.spec.genres" :key="genIndex" color="light-blue" :shadow="0" size="s" model="fill">{{ gen }}</tm-tags>
+						<tm-tags v-for="(gen, genIndex) in detail.spec.genres" :key="genIndex" color="indigo" :shadow="0" size="s" model="fill">{{ gen }}</tm-tags>
 					</view>
 				</view>
 			</view>
 			<!-- 扩展内容 -->
 			<view class="btn-group">
 				<tm-button theme="bg-gradient-orange-accent" icon="icon-copy" :shadow="0" :dense="true" size="m" @click="copy('post')">原文地址</tm-button>
-				<tm-button theme="bg-gradient-light-blue-accent" icon="icon-copy" :shadow="0" :dense="true" size="m" @click="copy('douban')">豆瓣地址</tm-button>
-				<tm-button theme="bg-gradient-light-blue-accent" icon="icon-copy" :shadow="0" :dense="true" size="m" @click="copy('info')">资源信息</tm-button>
+				<tm-button theme="bg-gradient-indigo-accent" icon="icon-copy" :shadow="0" :dense="true" size="m" @click="copy('douban')">豆瓣地址</tm-button>
+				<tm-button theme="bg-gradient-indigo-accent" icon="icon-copy" :shadow="0" :dense="true" size="m" @click="copy('info')">资源信息</tm-button>
 			</view>
 		</template>
 	</view>
@@ -154,7 +154,7 @@ export default {
 	background-color: #ffff;
 	overflow: hidden;
 	margin-bottom: 12rpx;
-	border: 1px solid #eee;
+	border: 1px solid $uh-line;
 
 	&.error {
 		padding: 0;
@@ -167,9 +167,9 @@ export default {
 	&.loading {
 		padding: 0;
 		border-style: dashed;
-		border-color: rgba(3, 174, 252, 1);
-		color: rgba(3, 174, 252, 1);
-		background-color: rgba(3, 174, 252, 0.075);
+		border-color: $uh-accent;
+		color: $uh-accent;
+		background-color: $uh-accent;
 	}
 }
 
@@ -185,7 +185,7 @@ export default {
 	width: 180rpx;
 	height: 220rpx;
 	flex-shrink: 0;
-	background-color: #eee;
+	background-color: $uh-line;
 	display: flex;
 	align-items: center;
 	justify-content: center;

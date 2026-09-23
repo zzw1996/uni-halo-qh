@@ -160,6 +160,27 @@ public class PointsController {
             .flatMap(this::jsonOk));
     }
 
+    /**
+     * 分享落地页数据。匿名可读：被分享者往往还没登录，要求先登录才能看内容会把裂变入口堵死。
+     */
+    public Mono<ServerResponse> inviteLanding(ServerRequest request) {
+        var code = request.queryParam("code").orElse(null);
+        var openid = resolveOpenid(request);
+        return inviteService.landing(code, openid)
+            .flatMap(this::jsonOk)
+            .onErrorResume(Exception.class, e -> {
+                log.warn("invite landing failed: {}", e.getMessage());
+                return badRequest("分享内容加载失败，请稍后重试");
+            });
+    }
+
+    /** 老用户点「也关注这些」：把分享人的订阅并进自己的（自己优先，最多 8 个） */
+    public Mono<ServerResponse> inviteAccept(ServerRequest request) {
+        var code = request.queryParam("code").orElse(null);
+        return withOpenid(request, openid -> inviteService.acceptRecommendation(openid, code)
+            .flatMap(this::jsonOk));
+    }
+
     public Mono<ServerResponse> invitePosterGenerate(ServerRequest request) {
         return withOpenid(request, openid -> inviteService.markPosterGenerated(openid)
             .flatMap(this::jsonOk));

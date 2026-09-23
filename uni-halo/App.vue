@@ -4,6 +4,7 @@ import v2Api from '@/api/v2/all.api.js';
 import { syncPointsAfterLogin, resetPointsSession } from '@/utils/points.js';
 import { checkHasWxLogin } from '@/utils/auth.js';
 import { restoreThemeSkin } from '@/utils/themeSkin.js';
+import { hideNativeTabBar } from '@/utils/tabbar.js';
 
 import {CheckWxUpdate} from '@/utils/update.js';
 // #ifdef APP-PLUS
@@ -31,6 +32,8 @@ export default {
         restoreThemeSkin();
 
         uni.$tm.vx.actions('config/fetchConfigs').then((res) => {
+            // 配置到手后才能知道是否启用自绘底栏：尽早压掉原生栏，减少冷启动时那一帧闪动
+            hideNativeTabBar();
         })
         // 启动检查app的配置是否已经就绪，若未就绪则设置默认的
         uni.$tm.vx.actions('setting/checkAndSetDefaultAppSettings');
@@ -73,7 +76,11 @@ export default {
 @import './common/markdown/markdown.scss';
 /* #endif */
 
+/* 皮肤包（装扮商店可穿戴）：放在最后，其 !important 覆盖规则才能压过前面的基础样式 */
+@import './common/styles/skins.scss';
+
+/* 页面底色走 SCSS 变量，编译期即为字面值（小程序端 CSS 变量不可靠，见 tokens.scss 说明） */
 page {
-    background-color: #fafafa;
+    background-color: $uh-bg;
 }
 </style>

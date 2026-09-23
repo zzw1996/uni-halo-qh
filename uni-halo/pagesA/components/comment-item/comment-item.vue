@@ -1,6 +1,6 @@
 <template>
 	<view v-if="comment" class="comment-item flex flex-col mt-30 pt-24"
-		:class="{ 'child-comment-item': isChild, 'no-solid': !useSolid, classItem }">
+		:class="[{ 'child-comment-item': isChild, 'no-solid': !useSolid, classItem }, skinClass]">
 		<view class="comment-item_user flex">
 			<image class="user-avatar"
 				:class="resolvedOwner.avatarFrame ? avatarFrameClass(resolvedOwner.avatarFrame) : ''"
@@ -9,7 +9,7 @@
 			<view class="user-info pl-14">
 				<view class="author flex items-center">
 					<text class="mr-6 text-grey-darken-1 text-size-m text-weight-b">{{ displayName }}</text>
-					<tm-tags v-if="isWxUser" dense :round="24" color="light-blue" size="xs" label="微信用户"></tm-tags>
+					<tm-tags v-if="isWxUser" dense :round="24" color="indigo" size="xs" label="微信用户"></tm-tags>
 				</view>
 				<view class="flex mt-4">
 					<view class="time text-size-xs text-grey">
@@ -19,7 +19,7 @@
 				</view>
 			</view>
 			<view v-if="useActions" class="comment-item_actions">
-				<tm-button v-if="!disallowComment" size="s" text theme="blue"
+				<tm-button v-if="!disallowComment" size="s" text theme="indigo"
 					@click="$emit('on-comment', { type: 'user', comment: comment })">回复</tm-button>
 				<tm-button v-if="showDelete" size="s" text theme="red" :fllowTheme="false"
 					@click.stop="$emit('on-delete', comment)">删除</tm-button>
@@ -117,7 +117,7 @@
 <style scoped lang="scss">
 	.comment-item {
 		box-sizing: border-box;
-		border-top: 2rpx solid #f5f5f5;
+		border-top: 2rpx solid $uh-fill;
 
 		&.child-comment-item {
 			padding-top: 0;
@@ -138,7 +138,7 @@
 				width: 70rpx;
 				height: 70rpx;
 				box-sizing: border-box;
-				box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.05);
+				box-shadow: $uh-shadow-sm;
 				border: 4rpx solid #ffffff;
 				border-radius: 12rpx;
 				flex-shrink: 0;
@@ -182,10 +182,10 @@
 			box-sizing: border-box;
 			border-radius: 10rpx;
 			line-height: 1.8;
-			color: var(--main-text-color);
+			color: #1f1f1f;
 
 			&.has-bg {
-				background-color: #fafafa;
+				background-color: $uh-bg;
 				padding: 6rpx 24rpx;
 			}
 

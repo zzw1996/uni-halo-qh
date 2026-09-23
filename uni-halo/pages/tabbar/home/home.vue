@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<tm-menubars iconColor="white" color="white" :flat="true" :showback="false">
 			<view slot="left" @click="fnOnLogoToPage" class="header-avatar ml-24">
 				<image v-if="wxUserInfo && wxUserInfo.avatarUrl" class="logo round-24" :src="calcHeaderAvatar"
@@ -25,81 +25,49 @@
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 		</view>
 		<block v-else>
-			<view v-if="bannerConfig.enabled" class="bg-white pb-24">
-				<view class="banner bg-white ml-24 mr-24 mt-12 round-3" v-if="bannerList.length !== 0">
-					<e-swiper :height="bannerConfig.height" :dotPosition="bannerConfig.dotPosition" :autoplay="true"
-						:useDot="bannerConfig.showIndicator" :showTitle="bannerConfig.showTitle"
-						:type="bannerConfig.type" :list="bannerList" @on-click="fnOnBannerClick" />
-				</view>
+			<view class="banner ml-24 mr-24 mt-12 mb-24 round-6 card-shadow" v-if="bannerConfig.enabled && bannerList.length">
+				<e-swiper :list="bannerList" :autoplay="true" :interval="bannerConfig.interval"
+					:duration="bannerConfig.duration" :fit="bannerConfig.fit"
+					:fallback-height="bannerConfig.fallbackHeight" :show-dots="calcBannerShowDots"
+					:dot-position="calcBannerDotPosition" @on-click="fnOnBannerClick" />
 			</view>
 
-			<!-- 每日一句 + 倒数日（原「热榜」块已随榜单页上线移除） -->
-			<view class="daily-block ml-24 mr-24 mt-16 mb-16 bg-white round-3">
-				<view class="daily-quote uh-py-12">
-					<view class="daily-quote-head flex flex-between">
-						<text class="page-item_title text-weight-b">每日一句</text>
-						<view class="daily-quote-head-right">
-							<text class="daily-toolbox-link" @click="fnToToolbox">工具箱</text>
-							<text class="daily-quote-date">{{ todayQuoteDate }}</text>
+			<!--
+				视频号入口（原「每日一句」区块）
+				卡片内容全部来自后台「视频号」配置；没开启或没填视频号 ID 时整块不渲染——
+				点不动的卡片比没有卡片更糟。跳转与降级见 utils/channels.js。
+			-->
+			<view class="channels-card ml-24 mr-24 mt-16 mb-16 round-6 card-shadow" v-if="channelsConfig"
+				hover-class="channels-card--pressed" :hover-stay-time="60" @click="fnOpenChannels">
+				<view class="channels-main flex items-center">
+					<view class="channels-avatar">
+						<image v-if="channelsAvatar" class="channels-avatar_img" :src="channelsAvatar" mode="aspectFill"></image>
+						<text v-else class="channels-avatar_text">{{ channelsAvatarText }}</text>
+						<view class="channels-avatar_play">
+							<text class="channels-avatar_triangle"></text>
 						</view>
 					</view>
-					<text class="daily-quote-text">{{ todayQuote.text }}</text>
-					<view class="daily-quote-foot flex flex-between">
-						<text class="daily-quote-author">—— {{ todayQuote.author }}</text>
-						<view class="daily-quote-actions">
-							<text class="daily-quote-copy" @click="fnCopyTodayQuote">复制</text>
-							<text class="daily-quote-share" @click="fnShareDailyQuote">分享</text>
+					<view class="channels-meta flex-1">
+						<view class="channels-meta_head flex items-center">
+							<text class="channels-name">{{ channelsConfig.nickname }}</text>
+							<text class="channels-badge">视频号</text>
 						</view>
+						<text v-if="channelsConfig.desc" class="channels-desc">{{ channelsConfig.desc }}</text>
+					</view>
+					<view class="channels-enter flex items-center">
+						<text class="channels-enter_text">{{ channelsButtonText }}</text>
+						<text class="channels-enter_arrow">›</text>
 					</view>
 				</view>
-				<!-- <view class="daily-countdown">
-					<view class="countdown-head flex flex-between">
-						<text class="page-item_title text-weight-b">倒数日</text>
-						<view class="countdown-add-btn" @click="fnToggleCountdownForm">
-							<text>{{ countdownShowForm ? '收起' : '＋ 新增' }}</text>
-						</view>
-					</view>
-					<view v-if="countdownShowForm" class="countdown-form">
-						<input class="countdown-input" v-model="countdownForm.name" placeholder="名称，如：恋爱纪念日" maxlength="20" />
-						<picker mode="date" :value="countdownForm.date" @change="fnOnCountdownDateChange">
-							<view class="countdown-input countdown-date">{{ countdownForm.date || '选择日期' }}</view>
-						</picker>
-						<view class="countdown-add-btn countdown-add-btn-solid" @click="fnAddCountdown">
-							<text>添加</text>
-						</view>
-					</view>
-					<view v-if="countdownList.length" class="countdown-list">
-						<view v-for="(item, index) in countdownList" :key="index" class="countdown-item flex flex-between">
-							<view class="countdown-main">
-								<text class="countdown-name">{{ item.name }}</text>
-								<text class="countdown-date-text">{{ item.date }}</text>
-							</view>
-							<text class="countdown-days" :class="{ 'is-today': item.days === 0 }">
-								{{ item.days === 0 ? '就是今天！' : (item.days > 0 ? `还有 ${item.days} 天` : `已过 ${-item.days} 天`) }}
-							</text>
-							<text class="countdown-del" @click="fnRemoveCountdown(index)">删除</text>
-						</view>
-					</view>
-					<view v-else class="countdown-empty">还没有倒数日，点右上角「＋ 新增」添加一个吧</view>
-				</view> -->
-			</view>
-
-			<!-- 每日任务入口 -->
-			<view class="daily-task-block ml-24 mr-24 mt-16 mb-16 bg-white round-3" @click="fnToTaskCenter">
-				<view class="daily-task-main">
-					<text class="page-item_title text-weight-b">每日任务</text>
-					<text class="daily-task-tip">签到 / 浏览 / 点赞 / 投票，完成任务领积分</text>
-				</view>
-				<view class="daily-task-arrow">
-					<text class="daily-task-btn">去完成</text>
-					<text class="daily-task-arrow-icon">›</text>
+				<view class="channels-foot flex items-center">
+					<text class="channels-foot_tip">{{ channelsTip }}</text>
 				</view>
 			</view>
 
 			<!-- 最新文章 -->
 			<view class="flex flex-between mt-24 mb-24 pl-24 pr-24">
 				<view class="page-item_title text-weight-b">最新列表</view>
-				<view class="show-more flex flex-center bg-white round-3" @click="fnToArticlesPage">
+				<view class="show-more flex flex-center bg-white round-6" @click="fnToArticlesPage">
 					<text class="iconfont icon-angle-right text-size-s text-grey-darken-1"></text>
 				</view>
 				<view v-if="false" class="flex flex-center text-size-s text-grey-darken-1" @click="fnToArticlesPage">
@@ -112,11 +80,6 @@
 				不说明白的话，用户会以为站点丢了内容——所以这里既解释「为什么不一样」，
 				也给一个直接去改的口子。
 			-->
-			<view v-if="feedPersonalized" class="feed-hint ml-24 mr-24 mb-16">
-				<text class="feed-hint-text">{{ subscribedHintText }}</text>
-				<text class="feed-hint-action" @click="fnToCategoryTab">去调整</text>
-			</view>
-
 			<!-- 筛选结果为空时说明原因，而不是留一个空首页 -->
 			<view v-if="feedFallback" class="feed-hint ml-24 mr-24 mb-16">
 				<text class="feed-hint-text">{{ feedFallbackText }}</text>
@@ -134,8 +97,9 @@
 					</tm-translate>
 				</view>
 				<view class="load-text mt-12">{{ loadMoreText }}</view>
-				<tm-flotbutton v-if="articleList.length > 10" :width="90" color="light-blue" @click="fnToTopPage"
-					size="s" icon="icon-angle-up"></tm-flotbutton>
+				<!-- offset 里加上底栏高度：原生栏被隐藏后窗口占满全屏，不抬高会被自绘底栏压住 -->
+				<tm-flotbutton v-if="articleList.length > 10" :width="90" color="indigo" @click="fnToTopPage"
+					size="s" :offset="calcFlotOffset" icon="icon-angle-up"></tm-flotbutton>
 			</block>
 		</block>
 
@@ -143,6 +107,8 @@
 		<!-- 弹窗 -->
 		<NotifyDialog v-if="notify.show" :show="notify.show" :title="notify.data.title" :content="notify.data.content"
 			:url="notify.data.url" @on-change="fnOnNotifyChange"></NotifyDialog>
+		<!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏 -->
+		<uh-tabbar current="home"></uh-tabbar>
 	</view>
 </template>
 
@@ -157,7 +123,9 @@
 
 	import eSwiper from '@/components/e-swiper/e-swiper.vue';
 	import NotifyDialog from "@/components/notify-dialog/notify-dialog.vue";
-	import { getTodayQuote } from '@/utils/dailyQuotes.js';
+	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
+	import { openChannelsProfile } from '@/utils/channels.js';
+	import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
 	import qs from 'qs'
 	import {
 		checkHasWxLogin,
@@ -174,19 +142,12 @@
 			tmEmpty,
 			tmGrid,
 			eSwiper,
+			uhTabbar,
 			NotifyDialog
 		},
 			data() {
 				return {
 					loading: 'loading',
-					todayQuote: { text: '', author: '' },
-					todayQuoteDate: '',
-					countdownList: [],
-					countdownShowForm: false,
-					countdownForm: {
-						name: '',
-						date: ''
-					},
 					queryParams: {
 						size: 5,
 					page: 1,
@@ -195,7 +156,6 @@
 				result: {},
 				isLoadMore: false,
 				loadMoreText: '加载中...',
-				bannerCurrent: 0,
 				bannerList: [],
 				noticeList: [],
 				articleList: [],
@@ -205,12 +165,10 @@
 				},
 				wxUserInfo: null,
 				/** 订阅的分类（站点分类的 metadata.name），由分类页设置 */
-				subscription: { postCategories: [] },
+				subscription: { postCategories: [], inheritedCategories: [], effectiveCategories: [] },
 				/** 主列表是否正在按订阅分类筛选 / 是否已回落站内默认列表 */
 				feedPersonalized: false,
 				feedFallback: false,
-				/** 订阅分类的显示名（含中文），用于状态条 */
-				feedCategories: [],
 				/** 多路合并分页：每个分类当前取到第几页 */
 				feedPages: {},
 				/** 已同步过的订阅版本号：分类页改过订阅后会写这个值，切回首页时据此判断要不要重取 */
@@ -218,19 +176,6 @@
 			};
 		},
 		computed: {
-			/** 状态条里的订阅清单：用中文名，主题分类的 key 是英文看不懂 */
-			subscribedLabel() {
-				const labels = (this.feedCategories || []).map((item) => item.label);
-				return labels.length ? labels.join('、') : '';
-			},
-			/** 取不到分类显示名（接口异常）时退化成只说个数，不显示「已订阅：。」这种空话 */
-			subscribedHintText() {
-				if (this.subscribedLabel) {
-					return `已订阅：${this.subscribedLabel}。首页只显示这些分类的文章`;
-				}
-				const count = (this.subscription.postCategories || []).length;
-				return `已订阅 ${count} 个分类，首页只显示这些分类的文章`;
-			},
 			feedFallbackText() {
 				return '你订阅的分类暂时没有内容，已为你展示全站最新';
 			},
@@ -266,16 +211,72 @@
 			calcLinksPluginEnabled() {
 				return !!this.haloConfigs?.pluginIntegrations?.links;
 			},
+			/**
+			 * 轮播图指示器：设置页（我的 → 系统设置）里的「轮播图指示器 / 位置」控制。
+			 * 这两个开关以前是死的——首页只用了自己写死的配置，从没读过 appSettings.banner，
+			 * 用户在设置页来回切却什么都不会变。现在接上，改完回首页即可见效。
+			 */
+			calcBannerShowDots() {
+				return this.globalAppSettings?.banner?.useDot !== false;
+			},
+			/** 悬浮按钮偏移：自绘底栏关闭时与历史一致（默认 16px），开启时抬高一个底栏高度 */
+			calcFlotOffset() {
+				return [16, 16 + tabbarBottomOffsetPx()];
+			},
+			calcBannerDotPosition() {
+				return this.globalAppSettings?.banner?.dotPosition === 'bottom' ? 'bottom' : 'right';
+			},
+			/**
+			 * 首页轮播图配置。
+			 *
+			 * - enabled：总开关，关掉后首页不占位（而不是留一块空白）
+			 * - type：post=取站内文章封面；custom=用下面的 list（需要自定义轮播时改这里）
+			 * - fit：按封面真实宽高自适应高度，关掉则固定用 fallbackHeight
+			 * - max / fetchSize：轮播是推荐位，取 fetchSize 篇里挑前 max 篇有封面的
+			 */
 			bannerConfig() {
 				return {
 					enabled: true,
-					showTitle: true,
-					showIndicator: true,
-					height: '400rpx',
-					dotPosition: 'right',
 					type: 'post',
-					list: []
+					list: [],
+					fit: true,
+					fallbackHeight: '400rpx',
+					interval: 4000,
+					duration: 400,
+					max: 5,
+					fetchSize: 10
 				}
+			},
+			/**
+			 * 视频号入口配置：后台「视频号」里开启且填了视频号 ID 才返回，
+			 * 否则返回 null 让整张卡片不渲染。
+			 */
+			channelsConfig() {
+				const cfg = this.haloConfigs?.channelsConfig;
+				const finderUserName = (cfg?.finderUserName || '').trim();
+				if (cfg?.enabled !== true || !finderUserName) return null;
+				return {
+					...cfg,
+					finderUserName,
+					// 昵称是必填项，但后台没填时卡片不能是空标题
+					nickname: (cfg.nickname || '').trim() || '我的视频号'
+				};
+			},
+			/** 头像地址（Halo 返回的是相对路径，交给 utils 补全域名） */
+			channelsAvatar() {
+				const url = this.channelsConfig?.avatarUrl;
+				return url ? this.$utils.checkImageUrl(url) : '';
+			},
+			/** 没有头像时用名称首字兜底，比放一张灰色占位图好看 */
+			channelsAvatarText() {
+				const name = (this.channelsConfig?.nickname || '视').trim();
+				return name.slice(0, 1);
+			},
+			channelsButtonText() {
+				return (this.channelsConfig?.buttonText || '').trim() || '进入视频号';
+			},
+			channelsTip() {
+				return (this.channelsConfig?.tip || '').trim();
 			}
 		},
 		watch: {
@@ -290,7 +291,7 @@
 		},
 		onLoad() {
 			this.fnSetPageTitle();
-			this.fnInitDaily();
+			this.fnInitNotify();
 		},
 		created() {
 			this.fnSyncWxUser();
@@ -368,15 +369,25 @@
 					const body = res?.data || res || {};
 					const sub = body.subscription || {};
 					const postCategories = Array.isArray(sub.postCategories) ? sub.postCategories : [];
-					this.subscription = { postCategories };
-					// 订阅了分类才影响主列表；一个都没订阅就是站内默认列表
-					this.feedPersonalized = postCategories.length > 0;
+					this.subscription = {
+						postCategories,
+						inheritedCategories: Array.isArray(sub.inheritedCategories)
+							? sub.inheritedCategories : [],
+						// 首页实际筛选用的就是服务端算好的并集（自己优先、最多 8 个）
+						effectiveCategories: Array.isArray(sub.effectiveCategories)
+							? sub.effectiveCategories : postCategories
+					};
+					// 有订阅（自己的或继承来的）才影响主列表；都没有就是站内默认列表
+					this.feedPersonalized = this.subscription.effectiveCategories.length > 0;
 					// 记下「已经按这一版订阅取过数据了」，避免每次切回首页都白取一次
 					this.subscriptionRev = uni.getStorageSync('category.subscription.rev') || '';
-					this.fnLoadFeedCategories();
 				} catch (err) {
 					// 静默：拿不到订阅分类就按站内默认列表展示
-					this.subscription = { postCategories: [] };
+					this.subscription = {
+						postCategories: [],
+						inheritedCategories: [],
+						effectiveCategories: []
+					};
 					this.feedPersonalized = false;
 				}
 			},
@@ -388,7 +399,9 @@
 			 * 不需要另建一套内容接口。</p>
 			 */
 			async fnGetPersonalArticleList() {
-				const categories = this.subscription.postCategories || [];
+				// 用服务端算好的并集：自己订阅的（≤5）+ 从邀请人继承的（≤3）
+				const categories = this.subscription.effectiveCategories
+					|| this.subscription.postCategories || [];
 				if (!categories.length) {
 					this.fnFallbackToLatest();
 					return;
@@ -479,11 +492,6 @@
 				this.fnGetArticleList();
 			},
 
-			/** 去分类页改订阅（分类页是 tabbar 页，只能用 switchTab） */
-			fnToCategoryTab() {
-				uni.switchTab({ url: '/pages/tabbar/category/category' });
-			},
-
 			/**
 			 * 切回首页时按版本号判断订阅是否变过，变过才重取。
 			 *
@@ -515,44 +523,13 @@
 				this.fnGetArticleList();
 			},
 
-			/**
-			 * 取订阅分类的中文名，用于状态条。
-			 *
-			 * <p>自动创建的主题分类其 name 是英文 key（{@code ai-ml}），
-			 * 直接显示给用户看不懂，所以要拿站点分类的显示名来映射。</p>
-			 */
-			async fnLoadFeedCategories() {
-				const followed = this.subscription.postCategories || [];
-				if (!checkHasWxLogin() || !followed.length) {
-					this.feedCategories = [];
-					return;
-				}
-				try {
-					const res = await this.$httpApi.v2.getCategoryList({
-						size: 100,
-						page: 1,
-						fieldSelector: ['spec.hideFromList=false']
-					});
-					const items = Array.isArray(res?.items) ? res.items : [];
-					const labels = {};
-					items.forEach((item) => {
-						const name = item.metadata?.name;
-						if (name) {
-							labels[name] = item.spec?.displayName || name;
-						}
-					});
-					this.feedCategories = followed.map((name) => ({
-						name,
-						label: labels[name] || name
-					}));
-				} catch (err) {
-					// 拿不到显示名就退回英文 key：状态条仍然可用，只是不够好看
-					this.feedCategories = followed.map((name) => ({ name, label: name }));
-				}
-			},
-
 			// 获取轮播图
 			fnGetBanner() {
+				if (!this.bannerConfig.enabled) {
+					this.bannerList = [];
+					return;
+				}
+
 				if (this.calcAuditModeEnabled) {
 					this.bannerList = this.mockJson.home.bannerList.map((item) => {
 						return {
@@ -569,12 +546,9 @@
 							content: "",
 							url: ""
 						}
-					});
+					}).slice(0, this.bannerConfig.max);
 					return;
 				}
-
-
-				if (!this.bannerConfig.enabled) return;
 
 				if (this.bannerConfig.type === 'custom') {
 					this.bannerList = this.bannerConfig.list.map((item) => {
@@ -592,11 +566,18 @@
 							content: item.content,
 							url: item.url
 						}
-					})
+					}).slice(0, this.bannerConfig.max);
 					return;
 				}
 
-				const paramsStr = qs.stringify(this.queryParams, {
+				// 轮播有自己的取数口径：只看「站内置顶 + 最新」，与主列表的订阅筛选无关。
+				// 也不能和主列表共用 queryParams——那个对象会被上拉分页改掉 page，
+				// 一旦共用，下拉刷新时轮播可能取到的不是第一页。
+				const paramsStr = qs.stringify({
+					size: this.bannerConfig.fetchSize,
+					page: 1,
+					sort: ['spec.pinned,desc', 'spec.publishTime,desc']
+				}, {
 					allowDots: true,
 					encodeValuesOnly: true,
 					skipNulls: true,
@@ -607,7 +588,7 @@
 					url: this.$baseApiUrl + '/apis/api.content.halo.run/v1alpha1/posts?' + paramsStr,
 					method: 'GET',
 					success: (res) => {
-						this.bannerList = res.data.items.map((item, index) => {
+						const items = (res.data?.items || []).map((item) => {
 							return {
 								mp4: '',
 								id: item.metadata.name,
@@ -620,11 +601,20 @@
 								image: this.$utils.checkThumbnailUrl(item.spec.cover),
 								type: "post",
 								content: item.status.excerpt,
-								url: ""
+								url: "",
+								/** 有没有真实封面：没有的话这里会是站点默认缩略图 */
+								hasCover: !!item.spec.cover
 							};
 						});
+						// 有封面的排前面：没封面的会被兜底成同一张默认图，
+						// 首屏最显眼的位置摆 5 张一样的图比少几张更难看
+						const withCover = items.filter((item) => item.hasCover);
+						this.bannerList = (withCover.length ? withCover : items).slice(0, this.bannerConfig.max);
 					},
-					fail: (err) => {}
+					fail: (err) => {
+						// 请求挂了就隐藏轮播，而不是留一块空盒子
+						this.bannerList = [];
+					}
 				})
 
 			},
@@ -689,7 +679,9 @@
 					return;
 				}
 				// 配了「站点分类」关注条件时按它筛选；未配或已退回则走原路径
-				if (this.feedPersonalized && this.subscription.postCategories.length > 0) {
+				// 只看 feedPersonalized：它已经包含「继承来的分类」，
+				// 光比 postCategories 会让「只继承、没自己订」的用户被当成没订阅
+				if (this.feedPersonalized) {
 					this.fnGetPersonalArticleList();
 					return;
 				}
@@ -744,67 +736,14 @@
 					animationType: 'slide-in-right'
 				});
 			},
-			fnInitDaily() {
-				const quote = getTodayQuote();
-				this.todayQuote = quote || { text: '', author: '' };
-				const now = new Date();
-				this.todayQuoteDate = `${now.getMonth() + 1}月${now.getDate()}日`;
-				this.fnInitNotify();
-				this.fnLoadCountdowns();
-			},
 
-			fnToTaskCenter() {
-				uni.navigateTo({ url: '/pagesA/task-center/task-center' });
-			},
-
-			fnLoadCountdowns() {
-				const raw = uni.getStorageSync('toolbox.countdowns');
-				const list = Array.isArray(raw) ? raw : [];
-				this.countdownList = list.map((item) => ({
-					...item,
-					days: this.fnCalcDays(item.date)
-				}));
-			},
-			fnSaveCountdowns() {
-				uni.setStorageSync('toolbox.countdowns', this.countdownList.map((item) => ({
-					name: item.name,
-					date: item.date
-				})));
-			},
-			fnCalcDays(dateStr) {
-				if (!dateStr) return 0;
-				const target = new Date(dateStr);
-				if (isNaN(target.getTime())) return 0;
-				target.setHours(0, 0, 0, 0);
-				const now = new Date();
-				now.setHours(0, 0, 0, 0);
-				return Math.round((target.getTime() - now.getTime()) / 86400000);
-			},
-			fnOnCountdownDateChange(e) {
-				this.countdownForm.date = e.detail.value;
-			},
-			fnToggleCountdownForm() {
-				this.countdownShowForm = !this.countdownShowForm;
-			},
-			fnAddCountdown() {
-				const name = (this.countdownForm.name || '').trim();
-				if (!name || !this.countdownForm.date) {
-					uni.showToast({ title: '请填写名称和日期', icon: 'none' });
-					return;
+			/** 进入视频号：小程序端跳视频号主页，其他端降级为复制 ID + 微信内搜索 */
+			async fnOpenChannels() {
+				if (!this.channelsConfig) return;
+				const res = await openChannelsProfile(this.channelsConfig);
+				if (!res.ok && res.reason) {
+					uni.$tm.toast(res.reason);
 				}
-				this.countdownList.unshift({
-					name,
-					date: this.countdownForm.date,
-					days: this.fnCalcDays(this.countdownForm.date)
-				});
-				this.fnSaveCountdowns();
-				this.countdownForm = { name: '', date: '' };
-				this.countdownShowForm = false;
-				uni.showToast({ title: '已添加', icon: 'success' });
-			},
-			fnRemoveCountdown(index) {
-				this.countdownList.splice(index, 1);
-				this.fnSaveCountdowns();
 			},
 
 			/**
@@ -824,22 +763,6 @@
 				};
 				this.notify.show = true;
 				uni.setStorageSync(key, today);
-			},
-
-			fnCopyTodayQuote() {
-				const text = this.todayQuote.text
-					? `每日一句：${this.todayQuote.text}${this.todayQuote.author ? ` —— ${this.todayQuote.author}` : ''}`
-					: '';
-				if (!text) return;
-				uni.setClipboardData({
-					data: text,
-					success: () => uni.showToast({ title: '已复制', icon: 'none' })
-				});
-			},
-
-			fnShareDailyQuote() {
-				this.fnCopyTodayQuote();
-				uni.showToast({ title: '已复制，快去分享给朋友吧', icon: 'none' });
 			},
 
 			// 快捷导航页面跳转
@@ -883,12 +806,6 @@
 					url: '/pages/tabbar/about/about'
 				})
 			},
-			fnToToolbox() {
-				uni.navigateTo({
-					url: '/pagesA/toolbox/toolbox',
-					animationType: 'slide-in-right'
-				});
-			},
 		}
 	};
 </script>
@@ -913,8 +830,8 @@
 		}
 
 		.logo--guest {
-			background: #f0f2f5;
-			border: 1rpx solid #e4e7ed;
+			background: $uh-fill;
+			border: 1rpx solid $uh-line;
 		}
 
 		::v-deep {
@@ -929,7 +846,7 @@
 	}
 
 	.search-input {
-		background-color: #f5f5f5;
+		background-color: $uh-fill;
 		align-items: center;
 		/* #ifdef MP-WEIXIN */
 		margin-right: 24rpx;
@@ -944,7 +861,7 @@
 		width: 42rpx;
 		height: 42rpx;
 		box-sizing: border-box;
-		box-shadow: 0rpx 0rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 	}
 
 	.banner {
@@ -957,7 +874,7 @@
 
 		// box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
 		.name {
-			color: var(--main-text-color);
+			color: #1f1f1f;
 		}
 	}
 
@@ -967,7 +884,7 @@
 			padding-left: 24rpx;
 			font-size: 32rpx;
 			z-index: 1;
-			color: var(--main-text-color);
+			color: #1f1f1f;
 
 			&:before {
 				content: '';
@@ -976,7 +893,7 @@
 				top: 8rpx;
 				width: 8rpx;
 				height: 30rpx;
-				background-color: rgba(33, 150, 243, 1);
+				background-color: $uh-accent;
 				border-radius: 6rpx;
 				z-index: 0;
 			}
@@ -1000,228 +917,179 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 14rpx 20rpx;
-		border-radius: 12rpx;
-		background: #eef1fb;
+		border-radius: $uh-radius-md;
+		background: $uh-accent-weak;
 	}
 
 	.feed-hint-text {
 		flex: 1;
 		font-size: 21rpx;
-		color: #5b6ee8;
+		color: $uh-accent;
 	}
 
-	.feed-hint-action {
-		flex-shrink: 0;
-		margin-left: 16rpx;
-		font-size: 21rpx;
-		color: #667eea;
-	}
-
-	.daily-block {
+	/* ===== 视频号入口卡片 =====
+	   整页唯一一块渐变卡：视频号是「站外内容」的入口，用品牌色块比白卡更容易被看见。
+	   文字一律白色——皮肤生成器不会把 color 上的 #ffffff 重染色，
+	   所以深色皮肤下依然是「白字 + 品牌色底」，不会出现白字压白底。 */
+	.channels-card {
+		position: relative;
 		overflow: hidden;
-	}
+		background-image: $uh-grad-accent;
 
-	.daily-task-block {
-		display: flex;
-		align-items: center;
-		padding: 20rpx 24rpx;
-		background-color: #fff;
-	}
-
-	.daily-task-main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.daily-task-tip {
-		display: block;
-		margin-top: 6rpx;
-		padding-left: 24rpx;
-		font-size: 22rpx;
-		color: #909399;
-	}
-
-	.daily-task-arrow {
-		display: flex;
-		align-items: center;
-		gap: 4rpx;
-		margin-left: 16rpx;
-	}
-
-	.daily-task-btn {
-		font-size: 22rpx;
-		padding: 8rpx 18rpx;
-		border-radius: 999rpx;
-		background: #f0f8ff;
-		color: #03a9f4;
-	}
-
-	.daily-task-arrow-icon {
-		font-size: 30rpx;
-		color: #03a9f4;
-		opacity: 0.6;
-	}
-
-	.daily-countdown {
-		padding: 20rpx 24rpx;
-	}
-
-	.countdown-head {
-		align-items: center;
-	}
-
-	.countdown-add-btn {
-		padding: 8rpx 20rpx;
-		border-radius: 999rpx;
-		background: #f0f8ff;
-		font-size: 24rpx;
-		color: #03a9f4;
-
-		&.countdown-add-btn-solid {
-			background: #03a9f4;
-			color: #fff;
+		/* 右上角一枚半透明大圆：给纯渐变加层次，避免一整块死板的直筒渐变 */
+		&:before {
+			content: '';
+			position: absolute;
+			top: -90rpx;
+			right: -70rpx;
+			width: 240rpx;
+			height: 240rpx;
+			border-radius: 50%;
+			background-color: rgba(255, 255, 255, 0.12);
 		}
 	}
 
-	.countdown-form {
+	/* 点击反馈：卡片整体是热区，按下时压一点透明度比换色更稳 */
+	.channels-card--pressed {
+		opacity: 0.92;
+	}
+
+	.channels-main {
+		position: relative;
+		padding: 24rpx;
+	}
+
+	.channels-avatar {
+		position: relative;
+		flex-shrink: 0;
+		width: 96rpx;
+		height: 96rpx;
+	}
+
+	.channels-avatar_img {
+		display: block;
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 28rpx;
+		border: 2rpx solid rgba(255, 255, 255, 0.7);
+		box-sizing: border-box;
+	}
+
+	.channels-avatar_text {
 		display: flex;
 		align-items: center;
-		gap: 12rpx;
-		margin-top: 16rpx;
+		justify-content: center;
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 28rpx;
+		border: 2rpx solid rgba(255, 255, 255, 0.7);
+		box-sizing: border-box;
+		background-color: rgba(255, 255, 255, 0.22);
+		font-size: 40rpx;
+		font-weight: 600;
+		color: #ffffff;
 	}
 
-	.countdown-input {
-		flex: 1;
-		min-width: 0;
-		height: 68rpx;
-		line-height: 68rpx;
-		padding: 0 16rpx;
-		background: #f5f6fa;
-		border-radius: 10rpx;
-		font-size: 24rpx;
-		color: #303133;
-	}
-
-	.countdown-date {
-		text-align: center;
-	}
-
-	.countdown-list {
-		margin-top: 8rpx;
-	}
-
-	.countdown-item {
+	/* 头像右下角的播放角标：一眼看出这是视频入口 */
+	.channels-avatar_play {
+		position: absolute;
+		right: -8rpx;
+		bottom: -8rpx;
+		display: flex;
 		align-items: center;
-		padding: 14rpx 0;
-		border-bottom: 1rpx solid #f5f6fa;
+		justify-content: center;
+		width: 38rpx;
+		height: 38rpx;
+		border-radius: 50%;
+		background-color: #ffffff;
 	}
 
-	.countdown-main {
-		flex: 1;
+	.channels-avatar_triangle {
+		width: 0;
+		height: 0;
+		margin-left: 4rpx;
+		border-top: 8rpx solid transparent;
+		border-bottom: 8rpx solid transparent;
+		border-left: 13rpx solid $uh-accent;
+	}
+
+	.channels-meta {
+		min-width: 0;
+		padding: 0 16rpx 0 20rpx;
+	}
+
+	.channels-meta_head {
 		min-width: 0;
 	}
 
-	.countdown-name {
-		display: block;
-		font-size: 26rpx;
-		color: #303133;
+	.channels-name {
+		font-size: 30rpx;
+		font-weight: 600;
+		color: #ffffff;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.countdown-date-text {
-		display: block;
-		margin-top: 2rpx;
+	.channels-badge {
+		flex-shrink: 0;
+		margin-left: 12rpx;
+		padding: 2rpx 14rpx;
+		border-radius: $uh-radius-pill;
+		background-color: rgba(255, 255, 255, 0.22);
 		font-size: 20rpx;
-		color: #c0c4cc;
+		color: #ffffff;
 	}
 
-	.countdown-days {
+	.channels-desc {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: rgba(255, 255, 255, 0.82);
+		/* 简介最多两行：后台可能写很长，不能让它把卡片撑高 */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
+	}
+
+	.channels-enter {
 		flex-shrink: 0;
-		margin: 0 16rpx;
-		font-size: 26rpx;
+		padding: 12rpx 20rpx;
+		border-radius: $uh-radius-pill;
+		background-color: #ffffff;
+	}
+
+	.channels-enter_text {
+		font-size: 24rpx;
 		font-weight: 600;
-		color: #ff9800;
-
-		&.is-today {
-			color: #e53935;
-		}
+		color: $uh-accent;
 	}
 
-	.countdown-del {
-		flex-shrink: 0;
-		font-size: 22rpx;
-		color: #909399;
-	}
-
-	.countdown-empty {
-		padding: 16rpx 0 4rpx;
-		font-size: 22rpx;
-		color: #c0c4cc;
-	}
-
-	.daily-quote {
-		padding: 20rpx 24rpx;
-		border-bottom: 1rpx solid #f0f0f0;
-	}
-
-	.daily-quote-head {
-		align-items: center;
-	}
-
-	.daily-quote-date {
-		font-size: 22rpx;
-		color: #909399;
-	}
-
-	.daily-quote-head-right {
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-	}
-
-	.daily-toolbox-link {
-		padding: 4rpx 16rpx;
-		border-radius: 999rpx;
-		background: #f0f8ff;
-		font-size: 22rpx;
-		color: #03a9f4;
-	}
-
-	.daily-quote-text {
-		display: block;
-		margin-top: 12rpx;
+	.channels-enter_arrow {
+		margin-left: 4rpx;
 		font-size: 28rpx;
-		line-height: 1.6;
-		color: #303133;
+		line-height: 1;
+		color: $uh-accent;
 	}
 
-	.daily-quote-foot {
-		align-items: center;
-		margin-top: 12rpx;
+	.channels-foot {
+		position: relative;
+		padding: 14rpx 24rpx;
+		background-color: rgba(255, 255, 255, 0.14);
 	}
 
-	.daily-quote-author {
-		font-size: 22rpx;
-		color: #909399;
+	.channels-foot_tip {
+		flex: 1;
+		min-width: 0;
+		font-size: 21rpx;
+		color: rgba(255, 255, 255, 0.85);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.daily-quote-actions {
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-	}
-
-	.daily-quote-actions text {
-		padding: 4rpx 16rpx;
-		border-radius: 999rpx;
-		background: #f0f8ff;
-		font-size: 22rpx;
-		color: #03a9f4;
-	}
-
-	.nav-box {		background-color: #ffff;
+	.nav-box {		background-color: $uh-card;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}

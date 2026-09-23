@@ -6,7 +6,7 @@
 		</view>
 		<view class="right">
 			<view class="title">
-				<text class="is-top bg-gradient-blue-accent" v-if="article.spec.pinned">置顶</text>
+				<text class="is-top" v-if="article.spec.pinned">置顶</text>
 				<text class="title-text text-overflow">{{ article.spec.title }}</text>
 			</view>
 			<view class="content text-overflow-2">{{ article.status.excerpt }}</view>
@@ -71,10 +71,10 @@
 		display: flex;
 		box-sizing: border-box;
 		margin: 0 24rpx;
-		padding:22rpx 24rpx;
-		border-radius: 12rpx;
-		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		padding: 24rpx;
+		border-radius: $uh-radius-lg;
+		background-color: $uh-card;
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 
@@ -94,7 +94,7 @@
 					.thumbnail {
 
 						::v-deep uni-image {
-							border-radius: 6rpx 6rpx 0 0 !important;
+							border-radius: $uh-radius-sm !important;
 						}
 					}
 				}
@@ -187,7 +187,7 @@
 
 				.thumbnail {
 					::v-deep uni-image {
-						border-radius: 6rpx 6rpx 0 0 !important;
+						border-radius: $uh-radius-sm !important;
 					}
 				}
 			}
@@ -283,7 +283,7 @@
 			.thumbnail {
 				width: 100%;
 				height: 100%;
-				border-radius: 12rpx;
+				border-radius: $uh-radius-sm;
 			}
 		}
 
@@ -299,31 +299,32 @@
 				display: flex;
 				align-items: center;
 				font-size: 30rpx;
-				color: var(--main-text-color);
+				font-weight: 600;
+				color: $uh-ink-1;
 
 				.is-top {
 					height: 40rpx;
 					padding: 0 12rpx;
 					margin-right: 10rpx;
 					line-height: 40rpx;
-					font-size: 24rpx;
+					font-size: 22rpx;
 					white-space: nowrap;
 					vertical-align: 4rpx;
 					color: #fff;
-					// background-image: -webkit-linear-gradient(0deg, #3ca5f6 0, #a86af9 100%);
-					border-radius: 6rpx 12rpx;
+					background-image: $uh-grad-accent;
+					border-radius: 8rpx;
 					box-shadow: none !important;
 				}
 
 				&-text {
-					color: #303133;
+					color: $uh-ink-1;
 				}
 			}
 
 			.content {
 				display: -webkit-box;
 				font-size: 26rpx;
-				color: #909399;
+				color: $uh-ink-3;
 				height: 80rpx;
 				margin-top: 14rpx;
 				line-height: 42rpx;
@@ -334,7 +335,7 @@
 				font-size: 24rpx;
 				justify-content: space-between;
 				align-items: center;
-				color: #909399;
+				color: $uh-ink-3;
 				margin-top: 18rpx;
 
 				.create-time {

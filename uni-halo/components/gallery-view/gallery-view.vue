@@ -1,25 +1,32 @@
 <template>
-	<view class="app-page" :class="[uniHaloPluginPageClass]">
+	<view class="gallery-view" :class="uniHaloPluginPageClass">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
-			<!-- 顶部切换 -->
-			<view class="e-fixed" v-if="category.list.length > 0">
-				<tm-tabs color="light-blue" :shadow="0" v-model="category.activeIndex" range-key="displayName"
+			<!--
+				顶部分类切换：只有一个分类（通常只有「全部」）时不显示——
+				一条只有单项的分类栏既没用又占掉首屏一条空间。
+			-->
+			<view class="cate-bar e-fixed" v-if="calcShowCategoryBar">
+				<tm-tabs color="indigo" :shadow="0" v-model="category.activeIndex" range-key="displayName"
 					:list="category.list" align="left" @change="fnOnCategoryChange($event, false)"></tm-tabs>
 			</view>
-			<!-- 占位区域 -->
-			<view v-if="category.list.length > 0" style="width: 100vw;height: 90rpx;"></view>
-			<!-- 加载区域 -->
-			<view v-if="loading == 'loading'" class="loading-wrap">
-				<tm-skeleton model="card"></tm-skeleton>
-				<tm-skeleton model="card"></tm-skeleton>
-				<tm-skeleton model="card"></tm-skeleton>
-				<tm-skeleton model="card"></tm-skeleton>
+			<!-- 占位区域：避免固定分类栏盖住第一行图片 -->
+			<view v-if="calcShowCategoryBar" class="cate-bar-holder"></view>
+			<!--
+				加载骨架：按瀑布流的双列排，和最终布局一致，切换时不跳动。
+			-->
+			<view v-if="loading == 'loading'" class="sk-waterfall">
+				<view class="sk-waterfall_col">
+					<view v-for="i in 3" :key="'l' + i" class="sk-waterfall_card" :style="{ height: i % 2 ? '360rpx' : '260rpx' }"></view>
+				</view>
+				<view class="sk-waterfall_col">
+					<view v-for="i in 3" :key="'r' + i" class="sk-waterfall_card" :style="{ height: i % 2 ? '260rpx' : '340rpx' }"></view>
+				</view>
 			</view>
 			<view v-else-if="loading == 'error'" class="flex flex-col flex-center" style="width:100%;height:60vh;">
 				<tm-empty icon="icon-wind-cry" label="阿偶，获取数据失败了~">
-					<tm-button theme="light-blue" size="m" :shadow="0" @click="fnGetData(true)">刷新试试</tm-button>
+					<tm-button theme="indigo" size="m" :shadow="0" @click="fnGetData(true)">刷新试试</tm-button>
 				</tm-empty>
 			</view>
 			<!-- 内容区域 -->
@@ -30,32 +37,18 @@
 						<tm-empty icon="icon-shiliangzhinengduixiang-" label="博主还没有分享图片~"></tm-empty>
 					</view>
 					<block v-else>
-						<block v-if="galleryConfig.useWaterfall">
-							<!--瀑布流-->
-							<tm-flowLayout-custom ref="wafll" style="width: 100%;"
-								@click="fnOnFlowClick"></tm-flowLayout-custom>
-						</block>
-						<!--   列表   -->
-						<block v-else>
-							<tm-translate v-for="(item, index) in dataList" :key="index"
-								style="box-sizing: border-box;padding: 6rpx;width: 50%;height: 250rpx;"
-								animation-name="fadeUp" :wait="calcAniWait(index)">
-								<view style="border-radius: 12rpx;overflow: hidden;width: 100%;height: 250rpx;">
-									<image style="width: 100%;height: 100%;" mode="aspectFill" :src="item.spec.url"
-										@click="fnPreview(item)" />
-								</view>
-							</tm-translate>
-						</block>
-
+						<!--瀑布流（两列，卡片由组件内部渲染）-->
+						<tm-flowLayout-custom ref="wafll" style="width: 100%;"
+							@click="fnOnFlowClick"></tm-flowLayout-custom>
 						<view class="load-text">{{ loadMoreText }}</view>
 					</block>
 				</k-touch-listen>
 			</view>
 
-			<view v-if="!calcAuditModeEnabled" class="flot-buttons">
-				<tm-button v-if="loading == 'error'" @click="fnGetCategory" size="m" :fab="true" theme="light-blue"
+			<view v-if="!calcAuditModeEnabled" class="flot-buttons" :style="calcFlotButtonsStyle">
+				<tm-button v-if="loading == 'error'" @click="fnGetCategory" size="m" :fab="true" theme="indigo"
 					icon="icon-sync-alt"></tm-button>
-				<tm-button @click="fnToTopPage" size="m" :fab="true" theme="light-blue"
+				<tm-button @click="fnToTopPage" size="m" :fab="true" theme="indigo"
 					icon="icon-angle-up"></tm-button>
 			</view>
 		</template>
@@ -63,13 +56,8 @@
 </template>
 
 <script>
-	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
-	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
-	import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
-	import tmTags from '@/tm-vuetify/components/tm-tags/tm-tags.vue';
+	import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
-	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
-	import tmImages from '@/tm-vuetify/components/tm-images/tm-images.vue';
 	import tmFlowLayoutCustom from '@/tm-vuetify/components/tm-flowLayout-custom/tm-flowLayout-custom.vue';
 	import tmTabs from '@/tm-vuetify/components/tm-tabs/tm-tabs.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
@@ -77,18 +65,13 @@
 	import pluginAvailable from "@/common/mixins/pluginAvailable.js"
 	import PluginUnavailable from '@/components/plugin-unavailable/plugin-unavailable.vue'
 	export default {
+		name: 'gallery-view',
 		options: {
 			multipleSlots: true
 		},
 		mixins: [pluginAvailable],
 		components: {
-			tmSkeleton,
-			tmTranslate,
-			tmFlotbutton,
-			tmTags,
 			tmEmpty,
-			tmIcons,
-			tmImages,
 			tmFlowLayoutCustom,
 			tmTabs,
 			tmButton,
@@ -116,12 +99,20 @@
 			};
 		},
 		computed: {
+			/** 悬浮按钮抬高量：自绘底栏开启时窗口占满全屏，不抬高会被底栏压住 */
+			calcFlotButtonsStyle() {
+				const offset = tabbarBottomOffsetPx();
+				return offset ? `bottom: calc(100rpx + ${offset}px)` : '';
+			},
 			/** 图库页布局固定值（原后台「页面配置 - 图库配置」已移除） */
 			galleryConfig() {
 				return {
-					pageTitle: '图库',
-					useWaterfall: true
+					pageTitle: '图库'
 				};
+			},
+			/** 分类多于一个才显示顶部切换栏（只有一个「全部」时没必要占一条） */
+			calcShowCategoryBar() {
+				return this.category.list.length > 1;
 			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;
@@ -142,47 +133,79 @@
 				},
 				deep: true,
 				immediate: true
+			},
+			/** 宿主页转发来的下拉刷新 / 触底加载信号（递增计数，只能靠属性传） */
+			pullDownTick(val) {
+				if (val > 0) this.viewOnPullDownRefresh();
+			},
+			reachBottomTick(val) {
+				if (val > 0) this.viewOnReachBottom();
 			}
 		},
-		async onLoad() {
+		props: {
+			/**
+			 * 宿主页（瞬间页）的下拉刷新 / 触底加载信号。
+			 *
+			 * <p>小程序端不能用 `$refs` 调子组件方法（编译后 ref 是包装对象，方法取不到）；
+			 * 也不该用 `uni.$emit`——全局事件是常驻监听，组件销毁后监听器可能仍在，
+			 * 会报「Cannot read properties of undefined (reading 'apply')」。
+			 * 用递增的计数属性最稳：宿主页 +1，这里 watch 到变化就执行。</p>
+			 */
+			pullDownTick: {
+				type: Number,
+				default: 0
+			},
+			reachBottomTick: {
+				type: Number,
+				default: 0
+			}
+		},
+		async mounted() {
 			// 检查插件
 			this.setPluginId(this.NeedPluginIds.PluginPhotos)
 			this.setPluginError("阿偶，检测到当前插件没有安装或者启用，无法使用图库功能哦，请联系管理员")
 			await this.checkPluginAvailable()
 		},
-		onPullDownRefresh() {
-			if (!this.uniHaloPluginAvailable) {
-				uni.hideLoading();
-				uni.stopPullDownRefresh();
-				return
-			}
-			this.dataList = []
-			this.isLoadMore = false;
-			this.queryParams.page = 1;
-			this.fnGetData(true);
-		},
-		onReachBottom(e) {
-			if (!this.uniHaloPluginAvailable) return;
-			if (this.calcAuditModeEnabled) {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-				return;
-			}
-
-			if (this.hasNext) {
-				this.queryParams.page += 1;
-				this.isLoadMore = true;
-				this.fnGetData(false);
-			} else {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-			}
-		},
 		methods: {
+			/**
+			 * 由宿主页（瞬间页）转发进来的下拉刷新。
+			 *
+			 * 必须放在 methods 里——早前从页面钩子 `onPullDownRefresh` 改名后留在了顶层选项上，
+			 * 结果 this.viewOnPullDownRefresh 根本不存在，watch 一触发就报 is not a function。
+			 */
+			viewOnPullDownRefresh() {
+				if (!this.uniHaloPluginAvailable) {
+					uni.hideLoading();
+					uni.stopPullDownRefresh();
+					return
+				}
+				this.dataList = []
+				this.isLoadMore = false;
+				this.queryParams.page = 1;
+				this.fnGetData(true);
+			},
+			/** 由宿主页转发进来的触底加载 */
+			viewOnReachBottom(e) {
+				if (!this.uniHaloPluginAvailable) return;
+				if (this.calcAuditModeEnabled) {
+					uni.showToast({
+						icon: 'none',
+						title: '没有更多数据了'
+					});
+					return;
+				}
+
+				if (this.hasNext) {
+					this.queryParams.page += 1;
+					this.isLoadMore = true;
+					this.fnGetData(false);
+				} else {
+					uni.showToast({
+						icon: 'none',
+						title: '没有更多数据了'
+					});
+				}
+			},
 			fnGetDataByCategory(index) {
 				this.fnResetSetAniWaitIndex();
 				this.queryParams.group = this.category.list[index].name;
@@ -248,16 +271,14 @@
 
 					this.loading = 'success';
 
-					if (this.galleryConfig.useWaterfall) {
-						this.$nextTick(() => {
-							if (isClearWaterfall) {
-								this.$refs.wafll.clear()
-							}
-							setTimeout(() => {
-								this.$refs.wafll.pushData(this.dataList)
-							}, 50)
-						})
-					}
+					this.$nextTick(() => {
+						if (isClearWaterfall) {
+							this.$refs.wafll.clear()
+						}
+						setTimeout(() => {
+							this.$refs.wafll.pushData(this.dataList)
+						}, 50)
+					})
 					this.loadMoreText = '呜呜，没有更多数据啦~';
 					uni.hideLoading();
 					uni.stopPullDownRefresh();
@@ -285,14 +306,12 @@
 							} else {
 								this.dataList = _list;
 							}
-							if (this.galleryConfig.useWaterfall) {
-								this.$nextTick(() => {
-									if (isClearWaterfall) {
-										this.$refs.wafll.clear()
-									}
-									this.$refs.wafll.pushData(_list)
-								})
-							}
+							this.$nextTick(() => {
+								if (isClearWaterfall) {
+									this.$refs.wafll.clear()
+								}
+								this.$refs.wafll.pushData(_list)
+							})
 						}
 						this.loadMoreText = res.hasNext ? '上拉加载更多' : '呜呜，没有更多数据啦~';
 					})
@@ -346,13 +365,13 @@
 </script>
 
 <style lang="scss" scoped>
-	.app-page {
+	.gallery-view {
 		width: 100vw;
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
 		padding-bottom: 24rpx;
-		background-color: #fafafa;
+		background-color: $uh-bg;
 	}
 
 	.content {
@@ -379,9 +398,46 @@
 		gap: 12rpx 0;
 	}
 
-	.loading-wrap {
+	/* 顶部分类栏：铺一层纸面并加细分割线，避免和下面的图片糊在一起 */
+	.cate-bar {
+		background-color: $uh-card;
+		border-bottom: 1rpx solid $uh-line;
+	}
+
+	.cate-bar-holder {
+		width: 100vw;
+		height: 90rpx;
+	}
+
+	/* 加载骨架：双列，和瀑布流布局一致 */
+	.sk-waterfall {
+		display: flex;
+		justify-content: space-between;
 		box-sizing: border-box;
-		padding: 24rpx;
+		padding: 24rpx 24rpx 0;
+	}
+
+	.sk-waterfall_col {
+		width: 48.6%;
+	}
+
+	.sk-waterfall_card {
+		width: 100%;
+		margin-bottom: 20rpx;
+		border-radius: $uh-radius-md;
+		background-color: $uh-fill;
+		animation: skWaterfallPulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes skWaterfallPulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+
+		50% {
+			opacity: 0.55;
+		}
 	}
 
 	.load-text {
@@ -391,6 +447,7 @@
 
 	.flot-buttons {
 		position: fixed;
+		/* 自绘底栏开启时窗口占满全屏，靠内联样式再顶起一个底栏高度（见模板 calcFlotButtonsStyle） */
 		bottom: 100rpx;
 		right: 32rpx;
 		flex-direction: column;

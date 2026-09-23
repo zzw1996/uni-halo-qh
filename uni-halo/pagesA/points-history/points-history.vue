@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -40,7 +40,7 @@
 				</view>
 				<view class="load-text">{{ loadMoreText }}</view>
 			</block>
-			<tm-flotbutton @click="fnToTopPage" color="light-blue" size="m" icon="icon-angle-up"></tm-flotbutton>
+			<tm-flotbutton @click="fnToTopPage" color="indigo" size="m" icon="icon-angle-up"></tm-flotbutton>
 		</block>
 	</view>
 </template>
@@ -160,7 +160,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding-bottom: 40rpx;
 	}
 
@@ -172,7 +172,7 @@
 		margin: 24rpx 28rpx 16rpx;
 		padding: 32rpx 28rpx;
 		border-radius: 20rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		color: #fff;
 	}
 
@@ -216,7 +216,7 @@
 		margin: 0 28rpx 16rpx;
 		padding: 28rpx;
 		border-radius: 16rpx;
-		background: #fff;
+		background: $uh-card;
 	}
 
 	.history-main {
@@ -229,14 +229,14 @@
 		display: block;
 		font-size: 30rpx;
 		font-weight: 600;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.history-desc {
 		display: block;
 		margin-top: 8rpx;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -246,7 +246,7 @@
 		display: block;
 		margin-top: 10rpx;
 		font-size: 22rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.history-side {
@@ -260,11 +260,11 @@
 		font-weight: 700;
 
 		&.is-plus {
-			color: #ff9800;
+			color: $uh-warning;
 		}
 
 		&.is-minus {
-			color: #e53935;
+			color: $uh-danger;
 		}
 	}
 
@@ -272,7 +272,7 @@
 		display: block;
 		margin-top: 8rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.empty {
@@ -283,6 +283,6 @@
 		padding: 24rpx 0 40rpx;
 		text-align: center;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 </style>

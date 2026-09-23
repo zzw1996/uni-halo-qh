@@ -1,232 +1,19 @@
 /**
- * 瞬间发布权限：结合 basicConfig.tokenConfig.personalToken 与 wxAppConfig
- * 仅 personalToken 对应博主、且与微信小程序配置一致的登录用户可发表瞬间
+ * 瞬间相关的展示辅助。
+ *
+ * 【重要变更】这里原来是一整套「客户端权限判定」：
+ * 读配置里的 personalToken → 调 Halo 接口拿令牌对应博主 → 比对 openid → 决定能否发布。
+ * 令牌不再下发到客户端后，这套判定必须作废：
+ * - 能不能发、发出来是直发还是待审，一律由服务端 `/userPublish/status` 与 `/userPublish/moment` 决定；
+ * - 「是不是自己发的」只用于界面提示（删除按钮等），**不作为权限依据**——
+ *   删除权限由服务端校验（作者本人或博主/管理员），前端判错了也不会造成越权。
  */
-
-import { getPersonalToken } from '@/utils/token.js';
-import { checkHasWxLogin } from '@/utils/auth.js';
-
-const OPENID_ANNOTATION = 'unihalo.openid';
 
 function trimText(value) {
-	return (value || '').trim();
+	return (value || '').toString().trim();
 }
 
-function escapeHtml(text) {
-	return String(text)
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}
-
-/** 将纯文本转为瞬间插件可渲染的 HTML */
-export function plainTextToMomentHtml(text) {
-	const trimmed = trimText(text);
-	if (!trimmed) {
-		return '';
-	}
-	return trimmed
-		.split(/\r?\n/)
-		.map((line) => `<p>${escapeHtml(line)}</p>`)
-		.join('');
-}
-
-function getConfiguredPersonalToken(configs) {
-	return trimText(configs?.basicConfig?.tokenConfig?.personalToken || getPersonalToken());
-}
-
-/** 从 wxAppConfig / appConfig 解析小程序 AppId（与插件后端 merge 逻辑一致） */
-export function resolveConfiguredWxAppId(configs) {
-	const wxAppConfig = configs?.wxAppConfig || {};
-	const appInfo = configs?.appConfig?.appInfo || {};
-	return trimText(wxAppConfig.appId || appInfo.appId);
-}
-
-/** 是否已配置 personalToken 且微信小程序登录已开启 */
-export function isMomentPublishFeatureConfigured(configs) {
-	const personalToken = getConfiguredPersonalToken(configs);
-	if (!personalToken) {
-		return false;
-	}
-	return configs?.wxAppConfig?.loginEnabled !== false;
-}
-
-/** 当前运行小程序 AppId 是否与后台配置一致 */
-export function isSameWxAppConfigured(configs = {}) {
-	const wxAppConfig = configs?.wxAppConfig || {};
-	const appInfo = configs?.appConfig?.appInfo || {};
-	const candidates = [wxAppConfig.appId, appInfo.appId]
-		.map(trimText)
-		.filter(Boolean);
-	if (candidates.length === 0) {
-		return true;
-	}
-	// #ifdef MP-WEIXIN
-	try {
-		const runtimeAppId = trimText(uni.getAccountInfoSync()?.miniProgram?.appId);
-		return !!runtimeAppId && candidates.includes(runtimeAppId);
-	} catch (e) {
-		return false;
-	}
-	// #endif
-	// #ifndef MP-WEIXIN
-	return false;
-	// #endif
-}
-
-function normalizeHaloUser(raw) {
-	if (!raw) {
-		return null;
-	}
-	if (raw.metadata || raw.spec) {
-		return raw;
-	}
-	if (raw.user) {
-		return raw.user;
-	}
-	return raw;
-}
-
-function extractTokenOwnerOpenid(tokenUser) {
-	const user = normalizeHaloUser(tokenUser);
-	return trimText(user?.metadata?.annotations?.[OPENID_ANNOTATION]);
-}
-
-function extractTokenOwnerName(tokenUser) {
-	const user = normalizeHaloUser(tokenUser);
-	return trimText(user?.metadata?.name || user?.name);
-}
-
-/** 当前微信用户是否为 personalToken 对应博主 */
-export function isWxUserMatchingTokenOwner(wxUserInfo, tokenUser, wxAppConfig = {}) {
-	if (!wxUserInfo?.openid || !tokenUser) {
-		return false;
-	}
-
-	const configuredOwnerOpenid = trimText(wxAppConfig.ownerOpenid);
-	if (configuredOwnerOpenid && wxUserInfo.openid === configuredOwnerOpenid) {
-		return true;
-	}
-
-	const ownerOpenid = extractTokenOwnerOpenid(tokenUser);
-	if (ownerOpenid && ownerOpenid === wxUserInfo.openid) {
-		return true;
-	}
-
-	const ownerName = extractTokenOwnerName(tokenUser);
-	const haloUserName = trimText(wxUserInfo.haloUserName);
-	if (ownerName && haloUserName && ownerName === haloUserName) {
-		return true;
-	}
-
-	return false;
-}
-
-async function fetchTokenOwnerUser(httpApi) {
-	return httpApi.getPersonalTokenUser();
-}
-
-async function fetchWxBoundHaloUser(httpApi, haloUserName) {
-	const name = trimText(haloUserName);
-	if (!name) {
-		return null;
-	}
-	try {
-		return await httpApi.getHaloUserByName(name);
-	} catch (err) {
-		console.warn('[momentPublish] 获取 Halo 用户失败:', err);
-		return null;
-	}
-}
-
-async function resolveOwnerNameForUser(httpApi, wxUserInfo, tokenUser) {
-	const haloUserName = trimText(wxUserInfo?.haloUserName);
-	if (haloUserName) {
-		return haloUserName;
-	}
-	if (tokenUser) {
-		const ownerName = extractTokenOwnerName(tokenUser);
-		if (ownerName) {
-			return ownerName;
-		}
-	}
-	try {
-		const user = await fetchTokenOwnerUser(httpApi);
-		return extractTokenOwnerName(user);
-	} catch (err) {
-		console.warn('[momentPublish] 解析博主用户名失败:', err);
-		return '';
-	}
-}
-
-async function buildAllowedPermission(httpApi, wxUserInfo, tokenUser) {
-	return {
-		allowed: true,
-		reason: 'ok',
-		ownerName: await resolveOwnerNameForUser(httpApi, wxUserInfo, tokenUser)
-	};
-}
-
-/**
- * 解析当前用户是否可显示/使用发表瞬间
- * @returns {Promise<{ allowed: boolean, reason: string, ownerName: string }>}
- */
-export async function resolveMomentPublishPermission(httpApi, configs, wxUserInfo) {
-	if (!isMomentPublishFeatureConfigured(configs)) {
-		return { allowed: false, reason: 'not_configured', ownerName: '' };
-	}
-
-	if (!isSameWxAppConfigured(configs)) {
-		return { allowed: false, reason: 'app_mismatch', ownerName: '' };
-	}
-
-	if (!checkHasWxLogin() || !wxUserInfo?.openid) {
-		return { allowed: false, reason: 'not_logged_in', ownerName: '' };
-	}
-
-	const wxAppConfig = configs?.wxAppConfig || {};
-	const configuredOwnerOpenid = trimText(wxAppConfig.ownerOpenid);
-	if (configuredOwnerOpenid && wxUserInfo.openid === configuredOwnerOpenid) {
-		return buildAllowedPermission(httpApi, wxUserInfo, null);
-	}
-
-	let tokenUser = null;
-	try {
-		tokenUser = await fetchTokenOwnerUser(httpApi);
-		if (isWxUserMatchingTokenOwner(wxUserInfo, tokenUser, wxAppConfig)) {
-			return buildAllowedPermission(httpApi, wxUserInfo, tokenUser);
-		}
-	} catch (err) {
-		console.warn('[momentPublish] 获取 personalToken 用户失败，尝试 Halo 绑定信息校验:', err);
-	}
-
-	const haloUserName = trimText(wxUserInfo.haloUserName);
-	if (haloUserName) {
-		const boundUser = await fetchWxBoundHaloUser(httpApi, haloUserName);
-		if (boundUser) {
-			const boundOpenid = extractTokenOwnerOpenid(boundUser);
-			if (boundOpenid && boundOpenid === wxUserInfo.openid) {
-				return buildAllowedPermission(httpApi, wxUserInfo, tokenUser);
-			}
-		}
-		if (tokenUser) {
-			const ownerName = extractTokenOwnerName(tokenUser);
-			if (ownerName && ownerName === haloUserName) {
-				return buildAllowedPermission(httpApi, wxUserInfo, tokenUser);
-			}
-		}
-	}
-
-	return { allowed: false, reason: 'not_owner', ownerName: '' };
-}
-
-export function canShowMomentPublish(permission) {
-	return permission?.allowed === true;
-}
-
-/** 是否为当前博主自己发布的瞬间 */
+/** 是否为当前用户自己发布的瞬间（仅用于界面展示，不代表有权删除） */
 export function isOwnMoment(moment, ownerName) {
 	const owner = trimText(ownerName);
 	if (!owner) {
@@ -237,45 +24,21 @@ export function isOwnMoment(moment, ownerName) {
 }
 
 /**
- * 构建瞬间插件创建接口所需的 Moment 资源体
- * POST /apis/moment.halo.run/v1alpha1/moments
+ * 界面上是否展示「删除」按钮的提示值。
+ *
+ * <p>真正的删除权限在服务端：博主/管理员可删任意瞬间，普通用户只能删自己的。
+ * 这里只避免给用户看到一个必然失败的按钮。</p>
  */
-export function buildMomentCreatePayload({ rawText = '', imageUrls = [], ownerName = '' } = {}) {
-	const owner = trimText(ownerName);
-	if (!owner) {
-		throw new Error('缺少瞬间所属用户');
-	}
-	const text = trimText(rawText);
-	const html = plainTextToMomentHtml(text);
-	const medium = (imageUrls || [])
-		.map((url) => trimText(url))
-		.filter(Boolean)
-		.map((url) => ({
-			type: 'PHOTO',
-			url
-		}));
-	return {
-		apiVersion: 'moment.halo.run/v1alpha1',
-		kind: 'Moment',
-		metadata: {
-			generateName: 'moment-'
-		},
-		spec: {
-			content: {
-				raw: html || text,
-				html,
-				medium
-			},
-			owner,
-			releaseTime: new Date().toISOString(),
-			approved: true,
-			visible: 'PUBLIC'
-		}
-	};
+export function canDeleteMoment(moment, { ownerName = '', privileged = false } = {}) {
+	return privileged || isOwnMoment(moment, ownerName);
 }
 
 /**
- * 规范化瞬间列表项，兼容 content.medium / content.html 缺失的情况
+ * 瞬间列表/详情的数据整形（展示用）。
+ *
+ * <p>把服务端返回的 Moment 资源整理成页面直接可渲染的结构：补全 content.medium、
+ * 注入展示用户、生成图片/视频/音频分组，并顺手把媒体地址换成缩略图。
+ * 与权限无关，纯展示层职责——所以即使权限判定已移到服务端，这个函数仍然要保留。</p>
  */
 export function normalizeMomentListItem(item, {
 	displayUser,
@@ -317,3 +80,9 @@ export function normalizeMomentListItem(item, {
 	item.audios = medium.filter((media) => media.type === 'AUDIO');
 	return item;
 }
+
+export default {
+	isOwnMoment,
+	canDeleteMoment,
+	normalizeMomentListItem
+};

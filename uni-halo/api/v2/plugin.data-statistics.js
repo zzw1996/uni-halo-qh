@@ -2,9 +2,6 @@
  * Halo 数据看板插件
  * @link https://www.halo.run/store/apps/app-rtnbbgfk
  */
-import {
-	getPersonalToken
-} from '@/utils/token.js'
 import HttpHandler from '@/common/http/request.js'
 import qs from 'qs'
 

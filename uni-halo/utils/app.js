@@ -17,6 +17,23 @@ export const _DefaultAppSettings = {
 		useDot: true,
 		dotPosition: 'right'
 	},
+	/**
+	 * 底部导航的用户级偏好（「我的 → 系统设置 → 底部导航」）。
+	 *
+	 * useCustom=false 时完全跟随站长在插件后台配的那份；
+	 * 打开后 show 里的开关生效，但总数仍被限制在 3~5 项（固定项首页/我的不可取消），
+	 * 收敛规则见 utils/tabbar.js 的 normalizeKeys。
+	 */
+	tabbar: {
+		useCustom: false,
+		show: {
+			category: true,
+			moments: true,
+			rank: true,
+			gallery: false,
+			store: false
+		}
+	},
 	// 文章卡片
 	articleCard: {
 		showCover: true, // 是否显示文章封面

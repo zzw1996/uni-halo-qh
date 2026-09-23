@@ -2,7 +2,7 @@
 	<view v-if="visible" class="wx-login-mask" @click="fnClose">
 		<view class="wx-login-dialog" @click.stop="">
 			<view class="wx-login-close" @click="fnClose">
-				<tm-icons name="icon-times" :size="28" color="#909399"></tm-icons>
+				<tm-icons name="icon-times" :size="28" color="#9a9a94"></tm-icons>
 			</view>
 
 			<text class="wx-login-title">{{ dialogTitle }}</text>
@@ -15,7 +15,7 @@
 			</view>
 
 			<view v-else-if="state === 'loading'" class="wx-login-body wx-login-loading">
-				<tm-loadding color="light-blue" :size="48"></tm-loadding>
+				<tm-loadding color="indigo" :size="48"></tm-loadding>
 				<text class="wx-login-status">{{ loadingText }}</text>
 				<text class="wx-login-hint">{{ loadingDesc }}</text>
 			</view>
@@ -33,7 +33,7 @@
 							mode="aspectFill"
 						></image>
 						<view v-else class="wx-avatar-placeholder">
-							<tm-icons name="icon-user" :size="44" color="#c0c4cc"></tm-icons>
+							<tm-icons name="icon-user" :size="44" color="#c6c6c0"></tm-icons>
 							<text class="wx-avatar-hint">点击选择头像</text>
 						</view>
 					</button>
@@ -108,7 +108,7 @@
 			<view class="wx-login-actions">
 				<tm-button
 					block
-					theme="bg-gradient-light-blue-accent"
+					theme="bg-gradient-indigo-accent"
 					:shadow="4"
 					@click="fnConfirmLogin"
 				>
@@ -132,7 +132,7 @@
 			<view class="wx-login-actions">
 				<tm-button
 					block
-					theme="bg-gradient-light-blue-accent"
+					theme="bg-gradient-indigo-accent"
 					:shadow="4"
 					@click="fnConfirmHaloBind"
 				>
@@ -551,10 +551,10 @@ export default {
 	position: relative;
 	width: 100%;
 	max-width: 620rpx;
-	background: #fff;
+	background: $uh-card;
 	border-radius: 24rpx;
 	padding: 48rpx 40rpx 40rpx;
-	box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
+	box-shadow: $uh-shadow-md;
 	box-sizing: border-box;
 }
 
@@ -588,7 +588,7 @@ export default {
 	display: block;
 	text-align: center;
 	font-size: 26rpx;
-	color: #909399;
+	color: $uh-ink-3;
 	line-height: 1.6;
 	margin-bottom: 24rpx;
 }
@@ -597,7 +597,7 @@ export default {
 	display: block;
 	text-align: center;
 	font-size: 24rpx;
-	color: #c0c4cc;
+	color: $uh-ink-4;
 	margin-top: 16rpx;
 }
 
@@ -612,7 +612,7 @@ export default {
 	text-align: center;
 	font-size: 30rpx;
 	font-weight: 600;
-	color: #303133;
+	color: $uh-ink-1;
 	margin-top: 24rpx;
 }
 
@@ -682,12 +682,12 @@ export default {
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	background: #f5f6fa;
+	background: $uh-fill;
 }
 
 .wx-avatar-hint {
 	font-size: 20rpx;
-	color: #909399;
+	color: $uh-ink-3;
 	margin-top: 8rpx;
 }
 
@@ -697,14 +697,14 @@ export default {
 	align-items: center;
 	width: 100%;
 	padding: 16rpx 0;
-	border-bottom: 1rpx solid #f0f0f0;
+	border-bottom: 1rpx solid $uh-line;
 }
 
 .wx-nickname-label,
 .wx-form-label {
 	width: 100rpx;
 	font-size: 28rpx;
-	color: #303133;
+	color: $uh-ink-1;
 	flex-shrink: 0;
 }
 
@@ -712,7 +712,7 @@ export default {
 .wx-form-input {
 	flex: 1;
 	font-size: 28rpx;
-	color: #303133;
+	color: $uh-ink-1;
 	text-align: right;
 }
 
@@ -762,10 +762,10 @@ export default {
 	display: flex;
 	flex-direction: column;
 	gap: 16rpx;
-	background: #fff;
+	background: $uh-card;
 	border-radius: 24rpx;
 	padding: 24rpx 40rpx;
-	box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
+	box-shadow: $uh-shadow-md;
 }
 
 .wx-login-cancel-btn {

@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<!-- 一级切换：文章榜 / 用户榜 / 动态 -->
 		<view v-if="boardTabs.length > 1" class="board-tabs">
 			<view
@@ -204,11 +204,14 @@
 			@success="fnOnLoginSuccess"
 			@close="fnOnLoginClose"
 		></wx-login-dialog>
+		<!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏 -->
+		<uh-tabbar current="rank"></uh-tabbar>
 	</view>
 </template>
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
@@ -233,7 +236,8 @@
 			tmTranslate,
 			tmEmpty,
 			tmButton,
-			wxLoginDialog
+			wxLoginDialog,
+			uhTabbar
 		},
 		data() {
 			return {
@@ -750,12 +754,12 @@
 	.board-tab {
 		padding: 10rpx 32rpx;
 		border-radius: 999rpx;
-		background: #fff;
+		background: $uh-card;
 		font-size: 26rpx;
-		color: #909399;
+		color: $uh-ink-3;
 
 		&.is-active {
-			background: #03a9f4;
+			background: $uh-accent;
 			color: #fff;
 			font-weight: 600;
 		}
@@ -776,7 +780,7 @@
 
 	.rank-head-tip {
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.sort-switch {
@@ -787,13 +791,13 @@
 	.sort-item {
 		padding: 6rpx 20rpx;
 		border-radius: 999rpx;
-		background: #fff;
+		background: $uh-card;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 
 		&.is-active {
 			background: #e1f5fe;
-			color: #03a9f4;
+			color: $uh-accent;
 			font-weight: 600;
 		}
 	}
@@ -801,8 +805,8 @@
 	.rank-list {
 		margin: 0 24rpx;
 		border-radius: 12rpx;
-		background: #fff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		background: $uh-card;
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 	}
 
@@ -825,10 +829,10 @@
 		width: 40rpx;
 		font-size: 26rpx;
 		font-weight: 700;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 
 		&.is-top {
-			color: #ff9800;
+			color: $uh-warning;
 		}
 	}
 
@@ -852,7 +856,7 @@
 		flex: 1;
 		min-width: 0;
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		line-height: 1.4;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -865,7 +869,7 @@
 		flex-shrink: 0;
 		margin-left: 20rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.sort-switch--board {
@@ -921,7 +925,7 @@
 		max-width: 260rpx;
 		font-size: 28rpx;
 		font-weight: 600;
-		color: #303133;
+		color: $uh-ink-1;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -930,13 +934,13 @@
 	.wall-action {
 		margin-left: 10rpx;
 		font-size: 26rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.wall-title {
 		margin-top: 6rpx;
 		font-size: 26rpx;
-		color: #03a9f4;
+		color: $uh-accent;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -945,7 +949,7 @@
 	.wall-excerpt {
 		margin-top: 6rpx;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		overflow: hidden;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
@@ -956,7 +960,7 @@
 		flex-shrink: 0;
 		margin-left: 16rpx;
 		font-size: 22rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.user-main {
@@ -968,7 +972,7 @@
 
 	.user-name {
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -977,7 +981,7 @@
 	.user-level {
 		margin-top: 6rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.rank-thin-tip {
@@ -994,10 +998,10 @@
 		margin: 16rpx 24rpx 0;
 		padding: 20rpx 24rpx;
 		border-radius: 12rpx;
-		background: #fff;
+		background: $uh-card;
 		font-size: 26rpx;
-		color: #03a9f4;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		color: $uh-accent;
+		box-shadow: $uh-shadow-sm;
 
 		&:active {
 			background: #fafbfc;
@@ -1012,15 +1016,15 @@
 	.my-rank-arrow {
 		margin-left: 12rpx;
 		font-size: 28rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.rule-card {
 		margin: 24rpx;
 		padding: 24rpx;
 		border-radius: 12rpx;
-		background: #fff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		background: $uh-card;
+		box-shadow: $uh-shadow-sm;
 	}
 
 	.rule-head {
@@ -1030,7 +1034,7 @@
 
 	.rule-tip {
 		font-size: 22rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.rule-item {
@@ -1045,13 +1049,13 @@
 
 	.rule-label {
 		font-size: 26rpx;
-		color: #606266;
+		color: $uh-ink-2;
 	}
 
 	.rule-value {
 		font-size: 26rpx;
 		font-weight: 600;
-		color: #03a9f4;
+		color: $uh-accent;
 	}
 
 	.rule-reward {
@@ -1083,7 +1087,7 @@
 		gap: 6rpx;
 		background: #e1f5fe;
 		font-size: 26rpx;
-		color: #03a9f4;
+		color: $uh-accent;
 		font-weight: 600;
 	}
 

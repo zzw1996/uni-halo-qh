@@ -1,113 +1,46 @@
 <template>
-	<!-- 轮播图 -->
-	<view class="Swiper-mfw-index-box">
-		<view class="Swiper-mfw-index Swiper-box" :class="[dotPosition]">
-			<swiper class="Swiper-mfw" :style="{ height: height }" :circular="true" :indicator-dots="false"
-				:autoplay="autoplay" :interval="3000" :duration="1000" :current="currentIndex"
-				:disable-touch="disable_touch" @change="change">
-				<!-- 只需要前5条数据 -->
-				<block v-for="(item, index) in list" :key="index">
-					<swiper-item class="swiper-mfw-item" v-if="index <= 4">
-						<!-- /*
-					 1. 这里不需要用api控制暂停视频
-					 2. 因为video标签上加了v-if="current==index"
-					 3. 当current == index时才会创建视频组件
-					 4. 否current != index则就销毁视频
-					 */ -->
-						<!-- 如果有视频，则显示视频-->
-						<template v-if="item.mp4 && current == index">
-							<video class="ImageVideo" :id="'ImageVideo' + index" :ref="'ImageVideo' + index"
-								:src="item.mp4" :loop="true" :muted="false" :autoplay="current == index ? true : false"
-								:controls="false" :show-fullscreen-btn="false" :show-play-btn="false"
-								:enable-progress-gesture="false" :play-strategy="0"
-								:poster="item.image || item.src"></video>
-						</template>
-						<!-- 否则显示图片 -->
-						<image v-else :src="item.image || item.src" class="Image" mode="aspectFill"
-							@click.stop="$emit('on-click', item)"></image>
-					</swiper-item>
-				</block>
-			</swiper>
-			<!-- 指示器 [Top] -->
-			<view v-if="useTop" class="Swiper-indicator-box indicator-Top-box">
-				<!-- Top顶部 [今日首推-盒子] -->
-				<view class="Top-date-hot">
-					<view class="left-date-ri">
-						<text class="date-ri-text text">{{ date.month }}</text>
-					</view>
-					<view class="conter-date-nianyue">
-						<view class="left-width-bgcolor"></view>
-						<view class="right-date-nianyue">
-							<text class="Top-yue-usa text">{{ date.monthEn }}</text>
-							<text class="Bottom-nian text">{{ date.year }}</text>
-						</view>
-					</view>
-					<view class="right-hot-ttf">
-						<text class="text hot-text text-overflow-2">{{ title }}</text>
-					</view>
-				</view>
-			</view>
+	<!--
+		首页轮播图。
+		只保留「封面 + 底部渐变蒙层（标题/时间 + 圆点）」两层：
+		旧版还在左上角叠了「今日首推」日期盒、右侧叠了一列缩略图条、底部再叠一条 8.5% 黑底标题条，
+		加起来的装饰盖掉了封面近三成面积；而且日期盒里的标题位父页面从来没传过值，那块一直是空的。
 
-			<!-- 指示器 标题区域 -->
-			<view v-if="useTitle" class="Swiper-indicator-Top" :class="{ 'no-dot': !useDot }">
-				<block v-for="(item, index) in list" :key="index">
-					<view v-if="currentIndex == index" class="Top-item" :class="current == index ? 'current' : 'no'">
-						<!-- 如果存在视频，则显示“视频预览”提示 -->
-						<view v-if="item.mp4" class="Top-ImageVideo">
-							<!-- icon图标 -->
-							<view class="Icons">
-								<!-- 播放按钮图标 -->
-								<text class="iconfont icon-caret-right"></text>
-							</view>
-							<text class="text ImageVideo-text app-ttf">视频预览</text>
-						</view>
-						<!-- 标题 -->
-						<view class="Top-Title">
-							<text class="text title-text text-overflow-2">{{ item.title }}</text>
-						</view>
-						<!-- 用户信息 -->
-						<view v-if="false" class="Bottom-UserInfo">
-							<!-- 头像 -->
-							<view class="UserImage-box">
-								<image :src="item.avatar" class="Image" mode="aspectFill"></image>
-							</view>
-							<!-- 用户名 -->
-							<view class="textbox UserName-box">
-								<text class="text UserInfo">{{ item.nickname }}</text>
-							</view>
-							<view v-if="item.createTime" class="jiange-box"><text class="text jiange-text"></text>
-							</view>
-							<view v-if="item.createTime" class="textbox UserGPS-box">
-								<text class="text UserInfo">发布于 {{ item.createTime }}</text>
-							</view>
-							<view v-if="item.address" class="jiange-box"><text class="text jiange-text">·</text></view>
-							<view v-if="item.address" class="textbox UserGPS-box">
-								<text class="text UserInfo">{{ item.address }}</text>
-							</view>
-						</view>
-					</view>
-				</block>
+		跳转由父页面处理（@on-click），本组件不碰业务。
+	-->
+	<view class="uh-banner">
+		<swiper class="uh-banner_swiper" :style="{ height: boxHeight }" :circular="hasMultiple"
+			:autoplay="calcAutoplay" :interval="interval" :duration="duration" :current="currentIndex"
+			@change="fnOnChange">
+			<swiper-item v-for="(item, index) in slides" :key="item.id || index" class="uh-banner_item"
+				@click="fnOnItemTap(item)">
+				<!--
+					视频封面：只在当前项创建 video（切走即销毁），否则多个视频同时解码会卡首页。
+				-->
+				<video v-if="item.mp4 && currentIndex === index" class="uh-banner_media" :src="item.mp4" :loop="true"
+					:autoplay="true" :controls="false" :show-fullscreen-btn="false" :show-play-btn="false"
+					:enable-progress-gesture="false" :play-strategy="0" :poster="item.image || item.src"></video>
+				<image v-else class="uh-banner_media" :src="item.image || item.src" mode="aspectFill"
+					@load="fnOnMediaLoad($event, index)"></image>
+			</swiper-item>
+		</swiper>
+		<!--
+			底部渐变蒙层：只为标题白字铺垫可读性，本身不接手势（WebView 渲染器下 pointer-events 生效，
+			滑动可以穿透到 swiper）。万一某个环境不支持，它同时挂了点击，至少不会变成死区。
+		-->
+		<view v-if="showOverlay" class="uh-banner_scrim" @click="fnOnItemTap(calcCurrentItem)"></view>
+		<!--
+			文字条：只有这一条会挡住滑动（约 70rpx），点标题同样能进文章。
+		-->
+		<view v-if="showOverlay" class="uh-banner_bar" :class="calcBarClass" @click="fnOnItemTap(calcCurrentItem)">
+			<view v-if="showTitle && calcCurrentTitle" class="uh-banner_caption">
+				<text class="uh-banner_title">{{ calcCurrentTitle }}</text>
+				<text v-if="calcCurrentMeta" class="uh-banner_meta">{{ calcCurrentMeta }}</text>
 			</view>
-			<!-- 指示器 [左边图片列表+右边按钮] -->
-			<view v-if="useDot" class="Swiper-indicator-Bottom">
-				<!-- 左边 -->
-				<view class="Bottom-left-Imagelist">
-					<block v-for="(item, index) in list" :key="index">
-						<view class="Bottom-item" v-if="Number(index) <= 4"
-							:class="currentIndex == index ? 'current' : 'no'" @click="SwiperIndTap(index)">
-							<image :src="item.image || item.src" class="Image" mode="aspectFill"></image>
-						</view>
-					</block>
-				</view>
-				<!-- 右边 -->
-				<view v-if="false" class="Bottom-right-lili-btn">
-					<view class="Bottom-item is-more">
-						<view class="more" @click.stop="$emit('on-more')">
-							MORE
-							<text class="iconfont icon-caret-right"></text>
-						</view>
-						<text class="left text indicator-text">更多推荐</text>
-					</view>
+			<view v-if="showDots && hasMultiple" class="uh-banner_dots">
+				<!-- 外面这层只负责把可点区域撑大：圆点本身只有 10rpx，直接点很难点中 -->
+				<view v-for="(item, index) in slides" :key="index" class="uh-banner_dot-hit"
+					@click.stop="fnToIndex(index)">
+					<view class="uh-banner_dot" :class="{ 'is-active': currentIndex === index }"></view>
 				</view>
 			</view>
 		</view>
@@ -118,98 +51,167 @@
 	export default {
 		name: 'e-swiper',
 		props: {
-			title: {
-				type: String,
-				default: ''
-			},
-			height: {
-				type: String,
-				default: '450rpx'
-			},
-			dotPosition: {
-				type: String,
-				default: 'bottom'
-			},
-			useTop: {
-				type: Boolean,
-				default: true
-			},
-			useDot: {
-				type: Boolean,
-				default: true
-			},
-			useTitle: {
-				type: Boolean,
-				default: true
-			},
-			useUser: {
-				type: Boolean,
-				default: true
-			},
-			// 轮播图 数据列表
+			/** 轮播数据：[{ id, title, image/src, mp4, nickname, createTime }] */
 			list: {
 				type: Array,
 				default: () => []
 			},
-			// 当前选中的项(指示器坐标位置)
+			/** 是否自动轮播（只有一张时不轮播：没有可切的目标） */
+			autoplay: {
+				type: Boolean,
+				default: true
+			},
+			/** 自动切换间隔 / 切换动画时长（毫秒） */
+			interval: {
+				type: Number,
+				default: 4000
+			},
+			duration: {
+				type: Number,
+				default: 400
+			},
+			/** 当前项（受控） */
 			current: {
 				type: Number,
 				default: 0
 			},
-			// 是否自动轮播
-			autoplay: {
+			/**
+			 * 按封面真实宽高自适应高度。
+			 * 打开后 4:3 封面不会再被 16:9 的固定高度切掉上下两头。
+			 */
+			fit: {
 				type: Boolean,
-				default: false
+				default: true
+			},
+			/** fit 生效前（或关闭 fit 时）的高度 */
+			fallbackHeight: {
+				type: String,
+				default: '400rpx'
+			},
+			/** 自适应高度的上下限（rpx）：太矮压不住字，太高把首屏顶下去 */
+			minHeight: {
+				type: Number,
+				default: 340
+			},
+			maxHeight: {
+				type: Number,
+				default: 520
+			},
+			showTitle: {
+				type: Boolean,
+				default: true
+			},
+			showDots: {
+				type: Boolean,
+				default: true
+			},
+			/** 指示器位置：right=压在文字条右侧（一行）；bottom=文字条下方居中（两行） */
+			dotPosition: {
+				type: String,
+				default: 'right'
 			}
 		},
 		data() {
 			return {
-				// 是否禁止用户 touch 操作
 				currentIndex: 0,
-				disable_touch: false, //touch 用户划动引起swiper变化。
-				date: {
-					year: '-',
-					monthEn: '-',
-					month: '-'
-				}
+				boxHeight: this.fallbackHeight,
+				/** 一批数据只按第一张封面算一次高度，避免每张图加载都重排 */
+				fitted: false
 			};
+		},
+		computed: {
+			/** 最多 5 张：轮播是推荐位，再多用户也翻不完，白拉长首屏 */
+			slides() {
+				return this.list.slice(0, 5);
+			},
+			hasMultiple() {
+				return this.slides.length > 1;
+			},
+			calcAutoplay() {
+				return this.autoplay && this.hasMultiple;
+			},
+			calcCurrentItem() {
+				return this.slides[this.currentIndex] || {};
+			},
+			calcCurrentTitle() {
+				return this.calcCurrentItem.title || '';
+			},
+			calcCurrentMeta() {
+				// 自定义轮播没有作者/时间，这里会得到空串，模板据此隐藏整行
+				return [this.calcCurrentItem.nickname, this.calcCurrentItem.createTime]
+					.filter(Boolean)
+					.join(' · ');
+			},
+			showOverlay() {
+				const hasTitle = this.showTitle && this.slides.some((item) => item.title);
+				return hasTitle || (this.showDots && this.hasMultiple);
+			},
+			calcBarClass() {
+				return this.dotPosition === 'bottom' ? 'is-dots-bottom' : 'is-dots-right';
+			}
+		},
+		watch: {
+			list() {
+				// 换数据要按新封面重新量高度，否则会沿用上一批的比例
+				this.fitted = false;
+				this.boxHeight = this.fallbackHeight;
+				this.currentIndex = 0;
+			},
+			current(val) {
+				this.currentIndex = val;
+			}
 		},
 		created() {
 			this.currentIndex = this.current;
-			const date = new Date();
-			//将月份名称存储在数组中
-			const monthArray = new Array('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
-				'Dec');
-
-			this.date.year = date.getFullYear();
-			let month = date.getMonth() + 1;
-			this.date.month = month < 10 ? '0' + month : month;
-			this.date.monthEn = monthArray[date.getMonth()].toUpperCase();
 		},
 		methods: {
-			// current 改变时会触发 change 事件，event.detail = {current: current, source: source}
-			change(e) {
-				let {
-					current,
-					source
-				} = e.detail;
-				//只有页面自动切换，手动切换时才轮播，其他不允许
-				if (source === 'autoplay' || source === 'touch') {
-					let event = {
-						current: current
-					};
-					this.currentIndex = current;
-					this.$emit('change', event);
+			fnOnChange(e) {
+				const current = e?.detail?.current;
+				// 不按 source 过滤：H5 端 change 的 source 可能为空，
+				// 旧实现只认 autoplay/touch，结果 H5 上标题与指示器永远停在第一张
+				if (typeof current !== 'number' || current === this.currentIndex) return;
+				this.currentIndex = current;
+				this.$emit('change', { current });
+			},
+			fnToIndex(index) {
+				if (index === this.currentIndex) return;
+				this.currentIndex = index;
+				this.$emit('change', { current: index });
+			},
+			fnOnItemTap(item) {
+				if (!item) return;
+				this.$emit('on-click', item);
+			},
+			fnOnMediaLoad(e, index) {
+				if (!this.fit || this.fitted || index !== 0) return;
+				const width = e?.detail?.width;
+				const height = e?.detail?.height;
+				if (!width || !height) return;
+				this.fitted = true;
+				this.fnFitHeight(height / width);
+			},
+			/** 高度 = 卡宽 × 封面高宽比，再卡在上下限之间 */
+			fnFitHeight(ratio) {
+				const info = uni.getSystemInfoSync();
+				const windowWidth = info?.windowWidth || 375;
+				try {
+					uni.createSelectorQuery()
+						.in(this)
+						.select('.uh-banner_swiper')
+						.boundingClientRect((rect) => {
+							// 量不到就按首页两侧各 24rpx 边距估算
+							const boxWidth = rect?.width || windowWidth * 702 / 750;
+							this.boxHeight = this.fnToRpx(boxWidth * ratio, windowWidth);
+						})
+						.exec();
+				} catch (err) {
+					// 低版本环境不支持选择器查询时退回估算，宁可高度差几像素也不能白屏
+					this.boxHeight = this.fnToRpx(windowWidth * 702 / 750 * ratio, windowWidth);
 				}
 			},
-			// 手动点击了指示器[小图模式]
-			SwiperIndTap(e) {
-				let index = e;
-				let event = {
-					current: index
-				};
-				this.currentIndex = index;
-				this.$emit('change', event);
+			fnToRpx(px, windowWidth) {
+				const rpx = px * 750 / windowWidth;
+				return Math.round(Math.min(Math.max(rpx, this.minHeight), this.maxHeight)) + 'rpx';
 			}
 		}
 	};

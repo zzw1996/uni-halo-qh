@@ -1,8 +1,8 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading === 'error'" class="load-error flex flex-center flex-col">
 			<tm-empty icon="icon-wind-cry" :label="loadErrorMsg || '文章加载失败'"></tm-empty>
-			<tm-button class="mt-24" size="m" theme="light-blue" @click="fnGetData">重新加载</tm-button>
+			<tm-button class="mt-24" size="m" theme="indigo" @click="fnGetData">重新加载</tm-button>
 		</view>
 		<!--
 			付费文章未解锁：后端 ContentTicketFilter 已拦截正文，
@@ -27,7 +27,7 @@
 				<tm-button
 					v-if="calcLockCanUnlock"
 					size="m"
-					theme="bg-gradient-light-blue-accent"
+					theme="bg-gradient-indigo-accent"
 					:loading="unlocking"
 					@click="fnUnlockContent"
 				>{{ unlocking ? '解锁中...' : '使用阅读券解锁' }}</tm-button>
@@ -177,7 +177,7 @@
 							:lines="3"
 							:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
 							:button-text="`${getRestrictReadTypeName(result)}`"
-							button-color="#1890ff"
+							button-color="#2F54EB"
 							skeleton-color="#f0f0f0"
 							skeleton-highlight="#e0e0e0"
 							animation-duration="2"
@@ -315,7 +315,7 @@
 				</view>
 			</view>
 			<!-- 返回顶部 -->
-			<tm-flotbutton :width="90" :offset="[16, 80]" icon="icon-angle-up" color="bg-gradient-light-blue-accent" @click="fnToTopPage()"></tm-flotbutton>
+			<tm-flotbutton :width="90" :offset="[16, 80]" icon="icon-angle-up" color="bg-gradient-indigo-accent" @click="fnToTopPage()"></tm-flotbutton>
 			<tm-flotbutton
 				:key="'flot-actions-' + (isUpvoted ? 1 : 0)"
 				:width="90"
@@ -344,7 +344,7 @@
 						</view>
 						<view v-else-if="commentDetail.loading === 'error'" class="error">
 							<tm-empty icon="icon-wind-cry" label="加载失败">
-								<tm-button theme="bg-gradient-light-blue-accent" size="m" @click="fnGetChildComments()">刷新试试</tm-button>
+								<tm-button theme="bg-gradient-indigo-accent" size="m" @click="fnGetChildComments()">刷新试试</tm-button>
 							</tm-empty>
 						</view>
 					</view>
@@ -386,7 +386,7 @@
 						:src="poster.url"
 					></image>
 					<view class="poster-save ma-24 mt-0 pt-20 flex flex-center">
-						<tm-button theme="bg-gradient-light-blue-accent" size="m" @click="fnSavePoster()">保存到相册</tm-button>
+						<tm-button theme="bg-gradient-indigo-accent" size="m" @click="fnSavePoster()">保存到相册</tm-button>
 						<tm-button v-if="false" theme="bg-gradient-orange-accent" size="m" @click="fnShareTo()">分享给好友</tm-button>
 						<tm-button theme="bg-gradient-blue-grey-accent" size="m" @click="fnOnPosterClose()">关 闭</tm-button>
 					</view>
@@ -666,6 +666,10 @@ export default {
 		}
 	},
 	onLoad(e) {
+		// 从分享卡片/扫码进来时先收下邀请码。
+		// 以前这里只解析 name，文章分享带出来的 inviteCode 到这一页就被丢掉了——
+		// 结果「分享文章」这条最容易传播的路径对裂变毫无贡献。
+		this.fnCaptureInvite(e);
 		const name = (e?.name || '').trim();
 		if (!name) {
 			this.loading = 'error';
@@ -1202,6 +1206,37 @@ export default {
 			});
 		},
 		/** 预取当前用户邀请码，供分享卡片携带（未登录/未开启时静默） */
+		/**
+		 * 收下分享带进来的邀请码，并尝试静默登录完成邀请结算。
+		 *
+		 * <p>邀请关系与奖励是在「新用户首次登录」时由服务端结算的，所以一进页面就要把码
+		 * 写进待消费存储，不能等用户自己去找登录入口；登录失败也不影响看文章。</p>
+		 */
+		fnCaptureInvite(options) {
+			const query = options || {};
+			let code = query.inviteCode || '';
+			if (!code && query.scene) {
+				const scene = String(query.scene);
+				if (scene.startsWith('inv:')) {
+					code = scene.substring(4);
+				}
+			}
+			code = String(code || '').trim();
+			if (!code) {
+				return;
+			}
+			try {
+				uni.setStorageSync('invite.pending', decodeURIComponent(code));
+			} catch (err) {
+				// 忽略存储异常
+			}
+			if (checkHasWxLogin()) {
+				return;
+			}
+			tryAutoWxLogin(this.$httpApi).catch(() => {
+				// 静默：未登录也能读文章
+			});
+		},
 		async fnPrefetchInviteCode() {
 			if (!checkHasWxLogin()) return;
 			try {
@@ -1908,7 +1943,7 @@ export default {
 	display: flex;
 	flex-direction: column;
 	box-sizing: border-box;
-	background-color: #fafafd;
+	background-color: $uh-bg;
 	padding-bottom: 24rpx;
 }
 
@@ -1932,7 +1967,7 @@ export default {
 .loading-wrap {
 	padding: 0 24rpx;
 	height: inherit;
-	background-color: #fff;
+	background-color: $uh-card;
 }
 
 .head {
@@ -1940,16 +1975,21 @@ export default {
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	padding: 36rpx 24rpx;
-	background-color: #ffffff;
-	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.03);
-	// box-shadow: 0rpx 6rpx 30rpx rgba(182, 223, 255, 0.3);
-	border-radius: 12rpx;
+	padding: 40rpx 32rpx;
+	background-color: $uh-card;
+	box-shadow: $uh-shadow-sm;
+	border-radius: $uh-radius-lg;
 
+	/* 杂志编辑风：衬线大标题，左对齐（B 方向只在文章详情落地） */
 	.title {
-		font-size: 36rpx;
-		font-weight: 600;
-		text-align: center;
+		width: 100%;
+		font-family: $uh-font-serif;
+		font-size: 44rpx;
+		font-weight: 700;
+		line-height: 1.5;
+		letter-spacing: 1rpx;
+		text-align: left;
+		color: $uh-ink-1;
 	}
 
 	.detail {
@@ -1958,9 +1998,9 @@ export default {
 		font-size: 26rpx;
 
 		.author {
-			text-align: center;
+			text-align: left;
 			font-size: 24rpx;
-			color: #666;
+			color: $uh-ink-3;
 
 			&-name {
 			}
@@ -1978,7 +2018,7 @@ export default {
 			&-img {
 				width: 100%;
 				height: 100%;
-				border-radius: 12rpx;
+				border-radius: $uh-radius-md;
 			}
 		}
 
@@ -1988,18 +2028,18 @@ export default {
 			justify-content: space-between;
 
 			&.no-thumbnail {
-				border-top: 2rpx solid #f2f2f2;
+				border-top: 2rpx solid $uh-line;
 				padding-top: 12rpx;
 
 				.count-item {
 					position: relative;
-					color: #666;
+					color: $uh-ink-3;
 
 					&::after {
 						content: '';
 						position: absolute;
 						right: 0;
-						background-color: #eee;
+						background-color: $uh-line;
 						width: 2rpx;
 						height: 32rpx;
 					}
@@ -2017,10 +2057,10 @@ export default {
 				display: flex;
 				align-items: flex-end;
 				justify-content: center;
-				color: #666;
+				color: $uh-ink-3;
 
 				&.is-upvoted {
-					color: #e53935;
+					color: $uh-danger;
 
 					.value {
 						font-weight: 600;
@@ -2078,50 +2118,52 @@ export default {
 	align-items: center;
 	justify-content: space-between;
 	padding: 18rpx 20rpx;
-	border-radius: 12rpx;
-	background: #f2f4fa;
+	border-radius: $uh-radius-md;
+	background: $uh-accent-weak;
 }
 
 .locked-exchange-text {
 	flex: 1;
 	margin-right: 16rpx;
 	font-size: 22rpx;
-	color: #7b81a0;
+	color: $uh-ink-2;
 }
 
 .locked-exchange-warn {
-	color: #d1851a;
+	color: $uh-warning;
 }
 
 .content-locked {
-	background-color: #ffffff;
-	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.03);
+	background-color: $uh-card;
+	box-shadow: $uh-shadow-sm;
 
 	.locked-title {
-		font-size: 36rpx;
-		font-weight: 600;
+		font-family: $uh-font-serif;
+		font-size: 40rpx;
+		font-weight: 700;
 		line-height: 1.5;
 		text-align: center;
+		color: $uh-ink-1;
 	}
 
 	.locked-cover {
 		width: 100%;
 		height: 280rpx;
-		border-radius: 12rpx;
+		border-radius: $uh-radius-md;
 	}
 
 	.locked-excerpt {
 		font-size: 28rpx;
 		line-height: 1.8;
-		color: #555;
+		color: $uh-ink-2;
 	}
 
 	.locked-tip {
 		padding: 20rpx 24rpx;
-		background-color: #fff7e6;
-		border-radius: 8rpx;
+		background-color: $uh-warning-weak;
+		border-radius: $uh-radius-sm;
 		font-size: 26rpx;
-		color: #b26a00;
+		color: $uh-warning;
 		text-align: center;
 	}
 
@@ -2130,7 +2172,7 @@ export default {
 		justify-content: space-between;
 		padding: 0 24rpx;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.locked-actions {
@@ -2141,11 +2183,9 @@ export default {
 .category {
 	margin: 0 24rpx;
 	padding: 24rpx;
-	background-color: #ffffff;
-	border-radius: 12rpx;
-	// box-shadow: 0rpx 0rpx 24rpx rgba(182, 223, 255, 0.3);
-	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.03);
-	// border: 2rpx solid #f8f8f8;
+	background-color: $uh-card;
+	border-radius: $uh-radius-lg;
+	box-shadow: $uh-shadow-sm;
 	font-size: 28rpx;
 
 	&-type {
@@ -2153,14 +2193,14 @@ export default {
 	}
 
 	&-tag {
-		background-color: #5bb8fa;
+		background-color: $uh-accent;
 		color: #fff;
 		padding: 6rpx 12rpx;
-		border-radius: 6rpx;
+		border-radius: 8rpx;
 		font-size: 24rpx;
 
 		&.is-empty {
-			background-color: #607d8b;
+			background-color: $uh-ink-3;
 		}
 	}
 }
@@ -2178,7 +2218,7 @@ export default {
 .ad-wrap,
 .copyright-wrap,
 .comment-wrap {
-	box-shadow: 0rpx 0rpx 24rpx rgba(0, 0, 0, 0.03);
+	box-shadow: $uh-shadow-sm;
 }
 
 .vote-wrap {
@@ -2188,22 +2228,22 @@ export default {
 .vote-opra {
 	font-size: 24rpx;
 	font-weight: normal;
-	color: #999;
+	color: $uh-ink-3;
 }
 
 .vote-tip {
 	margin-top: 12rpx;
 	padding: 50rpx 24rpx;
-	background: #f1f5f9;
-	color: #666;
+	background: $uh-fill;
+	color: $uh-ink-2;
 	font-size: 24rpx;
-	border-radius: 12rpx;
+	border-radius: $uh-radius-md;
 	text-align: center;
 }
 
 .markdown-wrap {
 	overflow: hidden;
-	border-radius: 12rpx;
+	border-radius: $uh-radius-lg;
 }
 
 .browse-points-float {
@@ -2262,7 +2302,7 @@ export default {
 .browse-points-float__caption {
 	margin-top: 4rpx;
 	font-size: 20rpx;
-	color: #909399;
+	color: $uh-ink-3;
 	line-height: 1;
 }
 
@@ -2296,13 +2336,13 @@ export default {
 		top: 8rpx;
 		width: 8rpx;
 		height: 26rpx;
-		background-color: rgb(3, 174, 252);
+		background-color: $uh-accent;
 		border-radius: 6rpx;
 	}
 }
 
 .poup-head {
-	border-bottom: 2rpx solid #f5f5f5;
+	border-bottom: 2rpx solid $uh-line;
 }
 
 .poup-body {
@@ -2346,7 +2386,7 @@ export default {
 
 .poster-save {
 	box-sizing: border-box;
-	border-top: 2rpx dashed #eee;
+	border-top: 2rpx dashed $uh-line;
 }
 
 .original-url {

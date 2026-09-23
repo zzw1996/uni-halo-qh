@@ -1,0 +1,67 @@
+/**
+ * 自绘底部导航样式
+ *
+ * 尺寸与微信原生底栏对齐（内容区 50px = 100rpx，图标 24px，文字 10px），
+ * 这样从原生栏切到自绘栏时页面不会突然跳一下。
+ *
+ * 配色走 $uh-* 设计 Token：皮肤生成器（tools/gen-skins.cjs）会把取值换成各皮肤的值，
+ * 但 PNG 图标本身不会变色（选中态仍是靛青）——要跟皮肤变色得换成 iconfont，暂未做。
+ * 注意：改完本文件需要重新编译并重跑生成器，皮肤才会跟着变。
+ */
+
+/* 占位：把页面内容顶起来，避免最后一屏被 fixed 底栏压住。
+   高度 = 内容区 + iPhone 底部安全区，与下面 .uh-tabbar 的总高一致。 */
+.uh-tabbar_holder {
+	width: 100%;
+	height: 100rpx;
+	padding-bottom: env(safe-area-inset-bottom);
+}
+
+.uh-tabbar {
+	width: 100%;
+	background-color: $uh-card;
+	border-top: 1rpx solid $uh-line;
+
+	&.is-fixed {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 1000;
+	}
+}
+
+.uh-tabbar_inner {
+	display: flex;
+	align-items: center;
+	height: 100rpx;
+}
+
+.uh-tabbar_safe {
+	width: 100%;
+	height: env(safe-area-inset-bottom);
+}
+
+.uh-tabbar_item {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6rpx;
+}
+
+.uh-tabbar_icon {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+.uh-tabbar_label {
+	font-size: 20rpx;
+	line-height: 1;
+	color: $uh-ink-3;
+
+	.is-active & {
+		color: $uh-accent;
+	}
+}

@@ -1,0 +1,36 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-user-publish
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 投稿"
+    rbac.authorization.halo.run/display-name: "投稿接口（UniHalo）"
+rules:
+  # 用户投稿相关接口（积分兑换发文章/瞬间）：
+  # 身份校验靠请求头 Wechat-Session-Id（openid），Halo 侧必须是匿名可访问，
+  # 否则会被安全层 302 到 /login——小程序端就表现为「接口被拦截」。
+  #
+  # 与 points 模板同一处理方式：resource 的推导粒度随 Halo 版本不同，
+  # 把「去掉插件名」与「带插件名」两种形态、常见深度都列出来。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/userPublish"
+      - "plugins/userPublish/*"
+      - "plugins/plugin-uni-halo/userPublish"
+      - "plugins/plugin-uni-halo/userPublish/*"
+      - "plugins/userPublish/status"
+      - "plugins/userPublish/article"
+      - "plugins/userPublish/moment"
+      - "plugins/userPublish/moments"
+      - "plugins/userPublish/image"
+      - "plugins/userPublish/vote"
+      - "plugins/plugin-uni-halo/userPublish/status"
+      - "plugins/plugin-uni-halo/userPublish/article"
+      - "plugins/plugin-uni-halo/userPublish/moment"
+      - "plugins/plugin-uni-halo/userPublish/moments"
+      - "plugins/plugin-uni-halo/userPublish/image"
+      - "plugins/plugin-uni-halo/userPublish/vote"
+    verbs: [ "get", "list", "create", "delete" ]

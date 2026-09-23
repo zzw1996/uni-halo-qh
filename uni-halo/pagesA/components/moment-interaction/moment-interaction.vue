@@ -1,5 +1,5 @@
 <template>
-	<view class="moment-interaction">
+	<view :class="skinClass" class="moment-interaction">
 		<view class="moment-interaction__footer">
 			<text class="moment-interaction__time">{{ releaseTimeText }}</text>
 			<view class="moment-interaction__actions">

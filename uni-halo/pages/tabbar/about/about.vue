@@ -1,5 +1,5 @@
 <template>
-	<view class="profile-page">
+	<view :class="skinClass" class="profile-page">
 		<!-- ========== 1. 渐变头部 ========== -->
 		<view class="profile-header">
 			<view class="header-bg"></view>
@@ -17,7 +17,7 @@
 				<view class="user-card" @click="fnHandleUserCard">
 					<view class="uc-avatar" :class="[{ online: isLoggedIn }, calcAvatarFrameClass]">
 						<image v-if="isLoggedIn && calcUserAvatar" :src="calcUserAvatar" mode="aspectFill"></image>
-						<tm-icons v-else name="icon-user" :size="52" color="#c0c4cc"></tm-icons>
+						<tm-icons v-else name="icon-user" :size="52" color="#c6c6c0"></tm-icons>
 						<view v-if="isLoggedIn" class="online-dot"></view>
 					</view>
 					<view class="uc-info">
@@ -25,7 +25,7 @@
 						<text v-if="isLoggedIn && calcLevelText" class="uc-level">{{ calcLevelText }}</text>
 						<text class="uc-desc">{{ isLoggedIn ? '点击编辑资料' : '登录后享受更多功能' }}</text>
 					</view>
-					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#c0c4cc"></tm-icons>
+					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#c6c6c0"></tm-icons>
 				</view>
 
 				<!-- 快捷入口 -->
@@ -34,7 +34,7 @@
 						<view class="ql-icon ql-icon--crown">👑</view>
 						<view class="ql-main">
 							<text class="ql-title">我的身份</text>
-							<text class="ql-sub">等级 · 称号 · 装扮</text>
+							<text class="ql-sub">等级 · 称号</text>
 						</view>
 						<text class="ql-arrow">›</text>
 					</view>
@@ -61,7 +61,7 @@
 						<!-- 权益直购入口已提到头部胶囊，此处只保留积分明细 -->
 						<view class="points-card-link" @click="fnToPointsHistory">
 							<text>明细</text>
-							<tm-icons name="icon-angle-right" :size="20" color="#909399"></tm-icons>
+							<tm-icons name="icon-angle-right" :size="20" color="#9a9a94"></tm-icons>
 						</view>
 					</view>
 				</view>
@@ -176,7 +176,7 @@
 				<view class="profile-page-header">
 					<text class="profile-page-title">编辑资料</text>
 					<view class="profile-page-close" @click="fnCloseProfileDialog">
-						<tm-icons name="icon-times" :size="28" color="#909399"></tm-icons>
+						<tm-icons name="icon-times" :size="28" color="#9a9a94"></tm-icons>
 					</view>
 				</view>
 
@@ -240,7 +240,7 @@
 					<tm-button
 						v-if="calcNeedsHaloBind"
 						block
-						theme="bg-gradient-light-blue-accent"
+						theme="bg-gradient-indigo-accent"
 						:shadow="4"
 						@click="fnOpenHaloBindDialog"
 					>关联 Halo 账号</tm-button>
@@ -256,7 +256,7 @@
 					>解绑 Halo 账号</tm-button>
 					<tm-button
 						block
-						theme="bg-gradient-light-blue-accent"
+						theme="bg-gradient-indigo-accent"
 						:shadow="4"
 						:loading="profileSaving"
 						:disabled="!calcProfileModifyState.ok"
@@ -277,10 +277,13 @@
 		<points-toast></points-toast>
 		<!-- 开盒动画（与「积分兑换」页共用同一组件，交互完全一致） -->
 		<lucky-box :show.sync="luckyBoxShow" @drawn="fnOnLuckyDrawn"></lucky-box>
+		<!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏 -->
+		<uh-tabbar current="about"></uh-tabbar>
 	</view>
 </template>
 
 <script>
+	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import {
 		checkHasAdminLogin,
 		checkHasWxLogin,
@@ -288,8 +291,8 @@
 		clearWxLoginInfo,
 	} from '@/utils/auth.js';
 	import { getProfileModifyState, performSaveWxProfile } from '@/utils/wxLogin.js';
-	import { resolveMomentPublishPermission, canShowMomentPublish } from '@/utils/momentPublish.js';
 	import { shouldPromptHaloBind, shouldShowHaloBindBoundInfo, isHaloBindFeatureEnabled, performUnbindHaloAccount } from '@/utils/haloUser.js';
+	import { fetchUserPublishStatus } from '@/utils/userPublish.js';
 	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay, emitPointsUpdated } from '@/utils/points.js';
 	import { applyThemeSkin, clearThemeSkin } from '@/utils/themeSkin.js';
 import { avatarFrameClass } from '@/utils/outfitSkin.js';
@@ -318,6 +321,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			wxLoginDialog,
 			PointsToast,
 			LuckyBox,
+			uhTabbar,
 		},
 			data() {
 			const sys = uni.getSystemInfoSync();
@@ -353,8 +357,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					navList: [],
 					levelStatus: null,
 					outfitStatus: null,
-					/** 「我的瞬间」入口是否展示：仅博主本人，判定口径与瞬间页一致 */
-					canShowMyMoments: false,
 				};
 		},
 		computed: {
@@ -491,9 +493,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					|| this.signInLoading
 					|| this.pointsApiReady !== true;
 			},
+			/** 「投稿文章」入口是否显示：站长开启 + 达标（未达标时不显示，避免点了才被拦） */
+			calcCanPublishArticle() {
+				const status = this.publishStatus;
+				return !!(status && status.enabled && status.visible && status.canPublishArticle);
+			},
 			calcSignInButtonTheme() {
 				if (this.calcSignedToday || this.pointsApiReady !== true) return 'grey';
-				return 'bg-gradient-light-blue-accent';
+				return 'bg-gradient-indigo-accent';
 			},
 			calcSignInButtonShadow() {
 				return this.calcSignInButtonTheme === 'grey' ? 0 : 2;
@@ -600,8 +607,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnRefreshPointsData();
 			// 盲盒配置属站点公开信息（未登录也能取），与登录态无关，启动时即拉
 			this.fnLoadLucky();
-			uni.$on('wx_login_status_changed', this.fnCheckLoginStatus);
-			uni.$on('points_updated', this.fnOnPointsUpdated);
+			uni.$on('wx_login_status_changed', this.fnOnLoginStatusChanged);
+			uni.$on('points_updated', this.fnOnPointsUpdatedAndPublish);
 			uni.$on('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onShow() {
@@ -609,6 +616,9 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnCheckLoginStatus();
 			this.fnProbePayEnabled();
 			this.fnRefreshIdentity();
+			// 投稿入口的显示条件（开关/门槛/角色）都在服务端，进页面取一次最新结论；
+			// 积分变动后也要重取，否则「刚赚够积分但仍看不到入口」
+			this.fnRefreshPublishStatus();
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
@@ -616,8 +626,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnLoadLuckyClaims();
 		},
 		onUnload() {
-			uni.$off('wx_login_status_changed', this.fnCheckLoginStatus);
-			uni.$off('points_updated', this.fnOnPointsUpdated);
+			uni.$off('wx_login_status_changed', this.fnOnLoginStatusChanged);
+			uni.$off('points_updated', this.fnOnPointsUpdatedAndPublish);
 			uni.$off('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onPullDownRefresh() {
@@ -628,6 +638,27 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		methods: {
 			fnToSettings() {
 				uni.navigateTo({ url: '/pagesA/setting/setting' });
+			},
+
+			/** 积分变动后除了刷新余额，也要重判投稿入口（门槛是按余额算的） */
+			fnOnPointsUpdatedAndPublish(payload) {
+				this.fnOnPointsUpdated(payload);
+				this.fnRefreshPublishStatus();
+			},
+
+			/** 登录态变化：重新判定投稿入口（退出登录后入口应消失） */
+			fnOnLoginStatusChanged(info) {
+				this.fnCheckLoginStatus(info);
+				this.fnRefreshPublishStatus();
+			},
+
+			/** 拉取投稿状态；未登录或接口不可用时置空（入口不显示，不打扰用户） */
+			async fnRefreshPublishStatus() {
+				if (!this.isLoggedIn) {
+					this.publishStatus = null;
+					return;
+				}
+				this.publishStatus = await fetchUserPublishStatus(this.$httpApi.v2);
 			},
 
 			fnEnsureLogin() {
@@ -689,31 +720,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					this.luckyBoxShow = false;
 					this.myClaims = [];
 				}
-				// 登录态变化会影响博主判定，此处一并刷新「我的瞬间」入口
-				this.fnRefreshMomentPermission();
 			},
 
-			/**
-			 * 「我的瞬间」入口仅博主可见：发表瞬间的权限判定与瞬间页共用同一套逻辑
-			 * （ownerOpenid / personalToken 对应用户 / 绑定 Halo 账号三种匹配）。
-			 */
-			async fnRefreshMomentPermission() {
-				if (!this.isLoggedIn || this.calcAuditModeEnabled) {
-					this.canShowMyMoments = false;
-					return;
-				}
-				try {
-					const permission = await resolveMomentPublishPermission(
-						this.$httpApi.v2,
-						this.haloConfigs,
-						this.wxUserInfo || getWxLoginInfo()
-					);
-					this.canShowMyMoments = canShowMomentPublish(permission);
-				} catch (err) {
-					console.warn('[about] 判定瞬间发表权限失败:', err);
-					this.canShowMyMoments = false;
-				}
-			},
 
 			fnSyncPointsApiStateFromCache() {
 				const ready = isPointsApiReady();
@@ -976,7 +984,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				this.isLoggedIn = true;
 				this.profileDialogShow = false;
 				this.fnRefreshPointsData();
-				this.fnRefreshMomentPermission();
 			},
 
 			fnOpenHaloBindDialog() {
@@ -1111,16 +1118,16 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					// 数据看板始终显示（页面内部有插件未安装提示）
 					show: true
 				}, {
-					key: 'my-moments',
-					title: '我的瞬间',
-					icon: 'haloicon-wenzhang1',
-					iconColor: 'blue',
-					// 瞬间页已从 tabBar 摘除，博主在此进入发表/管理
-					path: '/pages/tabbar/moments/moments',
+					key: 'article-publish',
+					title: '投稿文章',
+					icon: 'icon-edit',
+					iconColor: 'green',
+					path: '/pagesA/article-publish/article-publish',
 					isAdmin: false,
 					type: 'page',
 					requireLogin: true,
-					show: this.canShowMyMoments
+					// 站长未开投稿 / 积分未达门槛时不显示入口（判定在服务端）
+					show: this.calcCanPublishArticle
 				}, {
 					key: 'archives',
 					title: this.calcAuditModeEnabled ? '内容归档' : '文章归档',
@@ -1210,6 +1217,21 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				const { type, path, isAdmin, openType, requireLogin } = data;
 				if (openType) return;
 				if (requireLogin && !this.fnEnsureLogin()) return;
+				if (type === 'tabbar') {
+					// tabBar 页面必须用 switchTab：navigateTo 会直接失败
+					if (!path) {
+						uni.showToast({ title: '页面地址无效', icon: 'none' });
+						return;
+					}
+					uni.switchTab({
+						url: path,
+						fail: (err) => {
+							console.error('[about] tab 跳转失败', path, err);
+						}
+					});
+					return;
+				}
+
 				if (type === 'page') {
 					if (!path) {
 						uni.showToast({ title: '页面地址无效', icon: 'none' });
@@ -1223,7 +1245,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#03a9f4'
+							confirmColor: '#2F54EB'
 						})
 						.then(() => { uni.navigateTo({ url: '/pagesB/login/login' }); })
 						.catch(() => {});
@@ -1248,7 +1270,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#03a9f4'
+							confirmColor: '#2F54EB'
 						}).then(() => {
 							uni.clearStorageSync();
 							this.fnCheckLoginStatus();
@@ -1271,11 +1293,11 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 </script>
 
 <style scoped lang="scss">
-	$bg: #f5f6fa;
-	$card: #fff;
-	$text1: #1a1a2e;
-	$text2: #303133;
-	$text3: #909399;
+	$bg: $uh-bg;
+	$card: $uh-card;
+	$text1: $uh-ink-1;
+	$text2: $uh-ink-1;
+	$text3: $uh-ink-3;
 
 	.profile-page {
 		min-height: 100vh;
@@ -1296,7 +1318,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+		background-image: $uh-grad-accent;
 		border-radius: 0 0 40rpx 40rpx;
 
 		&::after {
@@ -1340,7 +1362,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		padding: 28rpx;
 		background: $card;
 		border-radius: 20rpx;
-		box-shadow: 0 4rpx 24rpx rgba(102, 126, 234, 0.15);
+		box-shadow: 0 4rpx 24rpx rgba(47, 84, 235, 0.15);
 	}
 
 	.uc-avatar {
@@ -1357,7 +1379,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		overflow: hidden;
 
 		&.online {
-			border-color: #667eea;
+			border-color: $uh-accent;
 		}
 
 		&.frame-gold {
@@ -1414,8 +1436,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		display: inline-block;
 		font-size: 20rpx;
 		font-weight: 600;
-		color: #667eea;
-		background: rgba(102, 126, 234, 0.1);
+		color: $uh-accent;
+		background: rgba(47, 84, 235, 0.1);
 		border-radius: 999rpx;
 		padding: 2rpx 14rpx;
 		margin-top: 8rpx;
@@ -1475,14 +1497,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		display: block;
 		font-size: 26rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.ql-sub {
 		display: block;
 		margin-top: 2rpx;
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -1491,7 +1513,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 	.ql-arrow {
 		font-size: 30rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 		margin-left: 4rpx;
 		flex-shrink: 0;
 	}
@@ -1500,7 +1522,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	.section-card {
 		margin: 16rpx 28rpx;
 		background: $card;
-		border-radius: 20rpx;
+		border-radius: $uh-radius-lg;
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 	}
 
@@ -1546,8 +1569,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		}
 
 		&.service-icon--light-blue {
-			background: #e5f4ff;
-			color: #2aa2e0;
+			background: $uh-accent-weak;
+			color: $uh-accent;
 		}
 
 		&.service-icon--green {
@@ -1614,7 +1637,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	.points-card-balance {
 		font-size: 40rpx;
 		font-weight: 700;
-		color: #ff9800;
+		color: $uh-warning;
 	}
 
 	.points-card-links {
@@ -1693,7 +1716,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		font-size: 22rpx;
 		font-weight: 600;
 		color: #ffffff;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		border-radius: 999rpx;
 		padding: 8rpx 24rpx;
 		line-height: 1;
@@ -1850,7 +1873,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		margin-right: 8rpx;
 		padding: 0 10rpx;
 		border-radius: 999rpx;
-		background: #e53935;
+		background: $uh-danger;
 		color: #fff;
 		font-size: 20rpx;
 	}
@@ -1869,7 +1892,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		justify-content: space-between;
 		margin-top: 14rpx;
 		padding-top: 12rpx;
-		border-top: 1rpx dashed #f0f0f0;
+		border-top: 1rpx dashed $uh-line;
 	}
 
 	.points-week-item {
@@ -1888,7 +1911,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 		.points-week-label {
 			font-size: 20rpx;
-			color: #c0c4cc;
+			color: $uh-ink-4;
 		}
 
 		&.is-signed .points-week-dot {
@@ -1896,7 +1919,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		}
 
 		&.is-signed .points-week-label {
-			color: #ff9800;
+			color: $uh-warning;
 		}
 
 		&.is-today .points-week-dot {
@@ -1973,7 +1996,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 	.profile-page-sheet {
 		width: 100%;
-		background: #fff;
+		background: $uh-card;
 		border-radius: 32rpx 32rpx 0 0;
 		padding: 32rpx 40rpx calc(40rpx + env(safe-area-inset-bottom));
 		box-sizing: border-box;
@@ -2006,14 +2029,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	.profile-modify-tip {
 		text-align: center;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		padding: 16rpx 24rpx;
 		margin-bottom: 24rpx;
 		border-radius: 12rpx;
 		background: #f5f7fa;
 
 		&.is-disabled {
-			color: #e53935;
+			color: $uh-danger;
 			background: #ffebee;
 		}
 	}
@@ -2047,7 +2070,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	.profile-avatar-tip {
 		margin-top: 12rpx;
 		font-size: 24rpx;
-		color: #667eea;
+		color: $uh-accent;
 	}
 
 	.profile-page-actions {
@@ -2077,7 +2100,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		width: 128rpx;
 		height: 128rpx;
 		border-radius: 50%;
-		background: #f5f6fa;
+		background: $uh-fill;
 
 		// 头像框（与个人中心右上角、评论列表同一套色值）
 		&.frame-gold {
@@ -2087,7 +2110,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 		&.frame-rainbow {
 			border: 6rpx solid transparent;
-			background: linear-gradient(#f5f6fa, #f5f6fa) padding-box,
+			background: linear-gradient($uh-fill, $uh-fill) padding-box,
 				linear-gradient(135deg, #f79ea3, #9b8cff, #79d6f2) border-box;
 			box-shadow: 0 0 18rpx rgba(155, 140, 255, 0.4);
 		}
@@ -2108,25 +2131,25 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		display: flex;
 		align-items: center;
 		padding: 24rpx 0;
-		border-bottom: 1rpx solid #f0f0f0;
+		border-bottom: 1rpx solid $uh-line;
 		margin-bottom: 8rpx;
 	}
 
 	.profile-nickname-label {
 		width: 120rpx;
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		flex-shrink: 0;
 	}
 
 	.profile-nickname-input {
 		flex: 1;
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		text-align: right;
 
 		&[disabled] {
-			color: #c0c4cc;
+			color: $uh-ink-4;
 		}
 	}
 	.copyright {
@@ -2156,10 +2179,10 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		position: relative;
 		width: 100%;
 		max-width: 620rpx;
-		background: #fff;
+		background: $uh-card;
 		border-radius: 24rpx;
 		padding: 48rpx 40rpx 40rpx;
-		box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
+		box-shadow: $uh-shadow-md;
 		box-sizing: border-box;
 	}
 
@@ -2175,7 +2198,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		height: 112rpx;
 		margin: 0 auto 24rpx;
 		border-radius: 50%;
-		background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(240, 147, 251, 0.15));
+		background-image: $uh-grad-accent;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -2206,7 +2229,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		display: block;
 		text-align: center;
 		font-size: 24rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 		line-height: 1.6;
 		margin-top: 16rpx;
 	}

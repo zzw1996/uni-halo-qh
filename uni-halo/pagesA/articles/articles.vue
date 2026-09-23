@@ -1,14 +1,14 @@
 <template>
-	<view class="app-page" :class="[uniHaloPluginPageClass]">
+	<view class="app-page" :class="[skinClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
 
 			<!-- 顶部切换 -->
 			<view class="e-fixed shadow-1">
-				<tm-search v-model="queryParams.keyword" :round="24" :shadow="0" color="light-blue"
-					insert-color="light-blue" :clear="true" @input="fnOnSearch" @confirm="fnOnSearch"></tm-search>
-				<tm-tabs v-if="false" color="light-blue" :shadow="0" v-model="tab.activeIndex" :list="tab.list"
+				<tm-search v-model="queryParams.keyword" :round="24" :shadow="0" color="indigo"
+					insert-color="indigo" :clear="true" @input="fnOnSearch" @confirm="fnOnSearch"></tm-search>
+				<tm-tabs v-if="false" color="indigo" :shadow="0" v-model="tab.activeIndex" :list="tab.list"
 					align="center" @change="fnOnTabChange"></tm-tabs>
 			</view>
 			<!-- 占位区域 -->
@@ -38,11 +38,11 @@
 						<view class="article-card" @click="fnToDetail(item)">
 							<view class="mb-12 flex flex-start">
 								<view class="flex-shrink ml--12">
-									<tm-tags v-if="isArticle(item)" color="blue" size="n" model="text">文章</tm-tags>
+									<tm-tags v-if="isArticle(item)" color="indigo" size="n" model="text">文章</tm-tags>
 									<tm-tags v-else color="green" size="n" model="text">瞬间</tm-tags>
 								</view>
 								<text class="ml-2 text-overflow text-size-n text-weight-b"
-									style="color: #333;">{{ item.title }}</text>
+									style="color: #1f1f1f;">{{ item.title }}</text>
 							</view>
 							<mp-html class="evan-markdown" lazy-load :domain="markdownConfig.domain"
 								:loading-img="markdownConfig.loadingGif" :scroll-table="true" :selectable="true"
@@ -53,13 +53,13 @@
 								<text style="font-size: 24rpx;color:#888">
 									最近更新时间：{{ {d: item.updateTimestamp, f: 'yyyy年MM月dd日 HH点mm分ss秒'} | formatTime }}
 								</text>
-								<!-- <tm-tags v-if="isArticle(item)" color="blue" size="n" model="text">文章</tm-tags>
+								<!-- <tm-tags v-if="isArticle(item)" color="indigo" size="n" model="text">文章</tm-tags>
 							<tm-tags v-else color="green" size="n" model="text">瞬间</tm-tags> -->
 							</view>
 						</view>
 					</tm-translate>
 
-					<tm-flotbutton @click="fnToTopPage" size="m" color="light-blue"
+					<tm-flotbutton @click="fnToTopPage" size="m" color="indigo"
 						icon="icon-angle-up"></tm-flotbutton>
 
 				</block>
@@ -215,7 +215,7 @@
 		display: flex;
 		flex-direction: column;
 		padding-bottom: 24rpx;
-		background-color: #fafafd;
+		background-color: $uh-bg;
 
 		&.is-balck {
 			background-color: #212121;
@@ -238,7 +238,7 @@
 		padding: 24rpx;
 		border-radius: 12rpx;
 		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}

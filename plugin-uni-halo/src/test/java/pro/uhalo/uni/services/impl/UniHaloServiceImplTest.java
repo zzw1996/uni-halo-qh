@@ -174,4 +174,187 @@ class UniHaloServiceImplTest {
         StepVerifier.create(uniHaloService.getAppConfigsByGroupName("payConfig"))
             .verifyComplete();
     }
+
+    // ===== 底部导航（tabbarConfig）归一化 =====
+    //
+    // 微信原生底栏最多声明 5 项、少于 4 项又会退化成不像底栏的样子，而候选有 7 项
+    // （首页/分类/瞬间/榜单/图库/小店/我的），所以「4~5 项」这条必须在下发配置时兜住：
+    // 插件没有保存钩子，表单里也做不了跨字段校验。
+
+    /** 造一份底部导航配置：不传的开关按「关」处理，方便每个用例只开需要的项 */
+    private static ObjectNode tabbarConfigNode(boolean enabled, String... onSwitches) {
+        var node = MAPPER.createObjectNode();
+        node.put("enabled", enabled);
+        var on = java.util.Set.of(onSwitches);
+        for (var field : new String[] {"showCategory", "showMoments", "showRank", "showGallery", "showStore"}) {
+            node.put(field, on.contains(field));
+        }
+        node.putObject("store").put("appId", "wx-store-app-id");
+        return node;
+    }
+
+    private static java.util.List<String> itemKeys(com.fasterxml.jackson.databind.JsonNode tabbar) {
+        var keys = new java.util.ArrayList<String>();
+        tabbar.get("items").forEach(item -> keys.add(item.get("key").asText()));
+        return keys;
+    }
+
+    @Test
+    void tabbarShouldStayUntouchedWhenDisabled() {
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(false, "showCategory"));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var tabbar = result.get("tabbarConfig");
+                // 没开启时小程序端不接管底栏，不该下发 items
+                assertThat(tabbar.has("items")).isFalse();
+                assertThat(tabbar.get("enabled").asBoolean()).isFalse();
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void tabbarShouldTrimToFiveInFixedOrder() {
+        // 5 个可选项全开 = 7 项，要裁到 5：先丢小店、再丢图库
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(true, "showCategory", "showMoments", "showRank",
+            "showGallery", "showStore"));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var items = result.get("tabbarConfig").get("items");
+                assertThat(itemKeys(result.get("tabbarConfig")))
+                    .containsExactly("home", "category", "moments", "rank", "about");
+                // 首页固定开头且是原生 tab 页
+                assertThat(items.get(0).get("nativeTab").asBoolean()).isTrue();
+                assertThat(items.get(0).get("path").asText()).isEqualTo("/pages/tabbar/home/home");
+                // 图标路径由服务端拼好，前端不用猜
+                assertThat(items.get(1).get("icon").asText()).isEqualTo("/static/tabbar/select_category.png");
+                assertThat(items.get(1).get("activeIcon").asText())
+                    .isEqualTo("/static/tabbar/select_category_active.png");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void tabbarShouldFillUpToThreeWhenAllOptionalOff() {
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(true));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> assertThat(itemKeys(result.get("tabbarConfig")))
+                .containsExactly("home", "category", "about"))
+            .verifyComplete();
+    }
+
+    @Test
+    void tabbarShouldKeepOrderWhenOnlyStoreIsOn() {
+        // 只开小店：首页 + 小店 + 我的正好 3 项，已达下限，不再补
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(true, "showStore"));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var items = result.get("tabbarConfig").get("items");
+                assertThat(itemKeys(result.get("tabbarConfig")))
+                    .containsExactly("home", "store", "about");
+                // 小店挂在瞬间页上（原生页），靠 mode 切视图，因此能走 switchTab
+                assertThat(items.get(1).get("nativeTab").asBoolean()).isTrue();
+                assertThat(items.get(1).get("path").asText()).isEqualTo("/pages/tabbar/moments/moments");
+                assertThat(items.get(1).get("mode").asText()).isEqualTo("store");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void tabbarShouldHostGalleryOnMomentsPage() {
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(true, "showGallery", "showRank"));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var tabbar = result.get("tabbarConfig");
+                var items = tabbar.get("items");
+                assertThat(itemKeys(tabbar)).containsExactly("home", "rank", "gallery", "about");
+                // 图库挂在瞬间页上（原生页），靠 mode 区分视图
+                assertThat(items.get(2).get("nativeTab").asBoolean()).isTrue();
+                assertThat(items.get(2).get("path").asText()).isEqualTo("/pages/tabbar/moments/moments");
+                assertThat(items.get(2).get("mode").asText()).isEqualTo("gallery");
+                // 小店字段原样保留，供小店页判断开通状态
+                assertThat(tabbar.get("store").get("appId").asText()).isEqualTo("wx-store-app-id");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void tabbarShouldNotMutateSourceConfig() {
+        var original = tabbarConfigNode(true, "showStore");
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", original);
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> assertThat(result.get("tabbarConfig").has("items")).isTrue())
+            .verifyComplete();
+
+        assertThat(original.has("items")).isFalse();
+    }
+
+    @Test
+    void getByGroupNameShouldNormalizeTabbar() {
+        when(settingFetcher.get("tabbarConfig")).thenReturn(Mono.just(tabbarConfigNode(true, "showRank")));
+
+        StepVerifier.create(uniHaloService.getAppConfigsByGroupName("tabbarConfig"))
+            .assertNext(node -> assertThat(itemKeys(node)).containsExactly("home", "rank", "about"))
+            .verifyComplete();
+    }
+
+    // ===== 候选清单（小程序端「系统设置」里用户自己勾选时用）=====
+    //
+    // items[] 是站长那份「归一化后的默认显示」；candidates[] 必须是全量 7 项，
+    // 否则用户勾不出被站长关掉的那些（比如图库、小店）。
+
+    @Test
+    void tabbarCandidatesShouldCoverAllSevenInOrder() {
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("tabbarConfig", tabbarConfigNode(true, "showCategory", "showRank"));
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var tabbar = result.get("tabbarConfig");
+                var keys = new java.util.ArrayList<String>();
+                tabbar.get("candidates").forEach(item -> keys.add(item.get("key").asText()));
+                assertThat(keys).containsExactly("home", "category", "moments", "rank", "gallery", "store", "about");
+
+                var byKey = new java.util.HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+                tabbar.get("candidates").forEach(item -> byKey.put(item.get("key").asText(), item));
+
+                // 固定项：locked=true，前端不给开关
+                assertThat(byKey.get("home").get("locked").asBoolean()).isTrue();
+                assertThat(byKey.get("about").get("locked").asBoolean()).isTrue();
+                // 可选项：locked=false，并带上站长开关的原始值（用于「恢复站长默认」）
+                assertThat(byKey.get("category").get("locked").asBoolean()).isFalse();
+                assertThat(byKey.get("category").get("adminOn").asBoolean()).isTrue();
+                assertThat(byKey.get("moments").get("adminOn").asBoolean()).isFalse();
+                assertThat(byKey.get("gallery").get("adminOn").asBoolean()).isFalse();
+                // 被裁掉/被关掉的项也必须出现在候选里，且带着可用的图标路径
+                assertThat(byKey.get("store").get("path").asText()).isEqualTo("/pages/tabbar/moments/moments");
+                assertThat(byKey.get("store").get("mode").asText()).isEqualTo("store");
+                assertThat(byKey.get("store").get("nativeTab").asBoolean()).isTrue();
+                // 普通页面不带 mode
+                assertThat(byKey.get("category").has("mode")).isFalse();
+                assertThat(byKey.get("gallery").get("icon").asText())
+                    .isEqualTo("/static/tabbar/select_picture.png");
+                assertThat(byKey.get("store").get("activeIcon").asText())
+                    .isEqualTo("/static/tabbar/select_shop_active.png");
+            })
+            .verifyComplete();
+    }
 }

@@ -12,14 +12,16 @@
 /* @import "./theme/brown.css"; */
 @import "./theme/cyan.css";
 @import "./theme/green.css";
-/* @import "./theme/indigo.css"; */
+/**品牌靛青：全站强调色统一用 indigo（见 uni.scss 的 $uh-accent）**/
+@import "./theme/indigo.css";
 /* @import "./theme/lime.css"; */
 @import "./theme/orange.css";
 /* @import "./theme/pink.css"; */
 /* @import "./theme/purple.css"; */
 @import "./theme/red.css";
 /**组件库，必要的主题，不可删除**/
-/* @import "./theme/teal.css"; */
+/**青瓷皮肤用 teal 作为框架主题色（见 utils/skin.js 的 SKINS.mint.tmColor）**/
+@import "./theme/teal.css";
 @import "./theme/yellow.css";
 @import "./theme/blue-grey.css";
 @import "./theme/deep-orange.css";

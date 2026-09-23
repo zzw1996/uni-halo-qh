@@ -31,6 +31,21 @@ public class DigestSubscriptionDTO {
     /** 关注的站点分类（作用于首页主列表与分类页） */
     private List<String> postCategories;
 
+    /** 从邀请人继承来的站点分类（只读展示用，用户不能直接改，只能退订） */
+    private List<String> inheritedCategories;
+
+    /** 邀请人 openid；为空表示当前没有继承项 */
+    private String inheritedFrom;
+
+    /**
+     * 首页<b>实际生效</b>的分类：自己订阅的（最多 5 个）在前，继承来的（最多 3 个）在后，
+     * 去重后总共最多 8 个。
+     *
+     * <p>由服务端算好下发，前端直接拿去筛选即可——并集、去重、上限、优先级这四件事
+     * 只在一个地方定义，避免各端各算一套后不一致。</p>
+     */
+    private List<String> effectiveCategories;
+
     /** 最近一次修改时间（yyyy-MM-dd HH:mm），未订阅为 null */
     private String updatedAt;
 

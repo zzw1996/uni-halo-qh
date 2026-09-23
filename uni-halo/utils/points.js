@@ -41,6 +41,11 @@ export const POINTS_ACTION_LABELS = {
 	exchange_content_ticket: '积分兑换·阅读券',
 	exchange_dashboard: '积分兑换·数据看板',
 	unlock_content: '解锁付费文章',
+	publish_article: '投稿文章',
+	publish_moment: '发布瞬间',
+	publish_refund: '投稿失败退还',
+	invite: '邀请奖励',
+	invitee_invite: '受邀奖励',
 	rank_reward: '榜单奖励',
 	admin_adjust: '系统调整'
 };

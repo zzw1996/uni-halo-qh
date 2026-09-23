@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
 			<tm-skeleton model="card"></tm-skeleton>
@@ -15,7 +15,7 @@
 						<view style="font-size: 30rpx;font-weight: bold;color: #333333;">
 							{{ moment.spec.user.displayName }}
 						</view>
-						<view style="margin-top: 6rpx;font-size: 24rpx;color: #666;">
+						<view style="margin-top: 6rpx;font-size: 24rpx;color: #5c5c5c;">
 							{{ {d: moment.spec.releaseTime, f: 'yyyy年MM月dd日 星期w'} | formatTime }}
 						</view>
 					</view>
@@ -82,7 +82,7 @@
 			</view>
 
 			<!-- 返回顶部 -->
-			<tm-flotbutton :width="90" :offset="[16, 80]" icon="icon-angle-up" color="bg-gradient-light-blue-accent"
+			<tm-flotbutton :width="90" :offset="[16, 80]" icon="icon-angle-up" color="bg-gradient-indigo-accent"
 				@click="fnToTopPage()"></tm-flotbutton>
 		</block>
 	</view>
@@ -184,7 +184,7 @@
 			fnGetData() {
 				this.loading = 'loading';
 				this.$httpApi.v2
-					.getMomentByName(this.queryParams.name)
+					.getUserMoment(this.queryParams.name)
 					.then(res => {
 						console.log('获取详情', res);
 						const displayUser = {
@@ -268,14 +268,14 @@
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;
-		background-color: #fafafd;
+		background-color: $uh-bg;
 		padding-bottom: 24rpx;
 	}
 
 	.loading-wrap {
 		padding: 0 24rpx;
 		height: inherit;
-		background-color: #fff;
+		background-color: $uh-card;
 	}
 
 	.moment-card {
@@ -291,7 +291,7 @@
 		box-sizing: border-box;
 		border-radius: 12rpx;
 		background-color: #ffff;
-		box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 		overflow: hidden;
 		padding: 24rpx;
 
@@ -307,7 +307,7 @@
 				width: 6rpx;
 				height: 24rpx;
 				border-radius: 24rpx;
-				background: #2196F3;
+				background: $uh-accent;
 				position: absolute;
 				left: 0;
 				top: 6rpx;

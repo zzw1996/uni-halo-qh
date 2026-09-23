@@ -6,7 +6,7 @@
 				<view>{{ dataRangeYears }}</view>
 			</view>
 			<view class="controls">
-				<tm-stepper v-model="currentYear" :width="220" :height="48" :min="0" :max="2099" :shadow="0" :round="2" color="light-blue" @change="changeYear"></tm-stepper>
+				<tm-stepper v-model="currentYear" :width="220" :height="48" :min="0" :max="2099" :shadow="0" :round="2" color="indigo" @change="changeYear"></tm-stepper>
 			</view>
 		</view>
 
@@ -326,9 +326,9 @@ export default {
 .contribution-heatmap {
 	box-sizing: border-box;
 	width: 100%;
-	background-color: #fff;
+	background-color: $uh-card;
 	border-radius: 12rpx;
-	box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.12), 0 2rpx 4rpx rgba(0, 0, 0, 0.24);
+	box-shadow: $uh-shadow-md;
 }
 
 .header {

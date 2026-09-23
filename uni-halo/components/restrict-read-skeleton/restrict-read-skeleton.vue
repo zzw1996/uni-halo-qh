@@ -133,14 +133,14 @@ export default {
   position: relative;
   width: 100%;
   min-height: 200rpx;
-  background-color: #ffffff;
+  background-color: $uh-card;
   border-radius: 16rpx;
   overflow: hidden;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.05);
+  box-shadow: $uh-shadow-sm;
   transition: all 0.3s ease;
 
   &:hover {
-    box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
+    box-shadow: $uh-shadow-sm;
   }
 }
 
@@ -200,7 +200,7 @@ export default {
   height: 80rpx;
   line-height: 80rpx;
   font-size: 28rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+  box-shadow: $uh-shadow-md;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
@@ -228,7 +228,7 @@ export default {
 
 .button-hover {
   transform: translateY(-4rpx); // 简化hover状态的transform
-  box-shadow: 0 8rpx 16rpx rgba(0, 0, 0, 0.15);
+  box-shadow: $uh-shadow-md;
 }
 
 /* 骨架屏动画 */

@@ -82,7 +82,7 @@
 		padding: 36rpx 48rpx;
 		border-radius: 24rpx;
 		background: rgba(26, 26, 46, 0.88);
-		box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.18);
+		box-shadow: $uh-shadow-md;
 		display: flex;
 		flex-direction: column;
 		align-items: center;

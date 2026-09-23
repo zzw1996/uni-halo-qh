@@ -1,343 +1,123 @@
-// 轮播图
+/**
+ * 首页轮播图样式
+ *
+ * 三层就够了：封面、压在封面底部的渐变蒙层（标题/时间 + 圆点指示器）。
+ * 旧版另有「今日首推」日期盒与右侧缩略图条，2026-09-23 随首页瘦身一并去掉——
+ * 它们盖掉封面近三成面积，而日期盒里的标题位一直是空的。
+ *
+ * 用 $uh-* 设计 Token：皮肤生成器（tools/gen-skins.cjs）会把这里的取色换成对应皮肤的值，
+ * 页面改版后记得重新编译并重跑生成器。
+ */
 
-.Swiper-mfw-index-box {
-	display: flex;
-	width: 100%;
-	justify-content: center;
-	align-items: center;
-	view {
-		display: flex;
-	}
-
-	.Swiper-mfw-index {
-		// 轮播图
-		width: 100%;
-		.Swiper-mfw {
-			width: inherit;
-			height: 450rpx;
-			border-radius: 12rpx;
-			.swiper-mfw-item {
-				width: inherit;
-				height: inherit;
-				border-radius: 12rpx;
-				.Image,
-				.ImageVideo {
-					border-radius: 12rpx;
-					width: inherit;
-					height: inherit;
-				}
-			}
-		}
-		// 指示器
-		.Swiper-indicator-box {
-			width: inherit;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-
-			// Top顶部 [今日首推-盒子]
-			.Top-date-hot {
-				width: 100%;
-				box-sizing: border-box;
-				padding: 20rpx 24rpx;
-				display: flex;
-				align-items: center;
-				flex-wrap: nowrap;
-				.left-date-ri {
-					justify-content: center;
-					.date-ri-text {
-						color: #ffffff;
-						font-size: 60rpx;
-						font-weight: 700;
-						margin-top: -4rpx;
-					}
-				}
-				.conter-date-nianyue {
-					margin: 0 14rpx;
-					display: flex;
-					justify-content: center;
-					align-items: center;
-					flex-direction: row;
-					flex-wrap: nowrap;
-					.left-width-bgcolor {
-						width: 8rpx;
-						height: 45rpx;
-						border-radius: 12rpx;
-						background-color: #fafafa;
-						margin-right: 14rpx;
-					}
-					.right-date-nianyue {
-						flex-direction: column;
-						.Top-yue-usa,
-						.Bottom-nian,
-						.text {
-							color: #ffffff;
-							font-size: 24rpx;
-							font-weight: 700;
-							transform: scale(0.95);
-						}
-						.text {
-							margin-top: -4rpx;
-						}
-					}
-				}
-				.right-hot-ttf {
-					display: flex;
-					flex-direction: column;
-					justify-content: center;
-					margin-left: 6rpx;
-					.hot-text {
-						color: #ffffff;
-						font-size: 52rpx;
-						font-weight: 700;
-					}
-				}
-			}
-		}
-		// 指示器 [轮播信息 -> 标题,用户,头像,所在地]
-		.Swiper-indicator-Top {
-			position: absolute;
-			left: 0rpx;
-			bottom: 110rpx;
-			width: 100%;
-			box-sizing: border-box;
-			padding: 20rpx 24rpx;
-			background-color: rgba(0, 0, 0, 0.085);
-			backdrop-filter: blur(3rpx);
-			&.no-dot {
-				bottom: 0;
-			}
-			.Top-item {
-				width: 100%;
-				display: flex;
-				flex-direction: column;
-				// 如果有视频，则显示“视频预览”
-				.Top-ImageVideo {
-					width: 150rpx;
-					box-sizing: border-box;
-					padding: 2rpx 6rpx;
-					margin-bottom: 10rpx;
-					background-color: #f0ad4e;
-					border-radius: 20rpx;
-					flex-direction: row;
-					flex-wrap: nowrap;
-					align-items: center;
-					.Icons {
-						color: #242629;
-						font-size: 26rpx;
-						transform: scale(0.8);
-					}
-
-					.ImageVideo-text {
-						color: #242629;
-						font-size: 24rpx;
-					}
-				}
-
-				// 标题
-				.Top-Title {
-					width: 100%;
-					display: flex;
-					align-items: flex-start;
-					.title-text {
-						width: 100%;
-						color: #ffffff;
-						font-size: 28rpx;
-						font-weight: 700;
-					}
-				}
-				// 用户信息盒子
-				.Bottom-UserInfo {
-					display: flex;
-					flex-direction: row;
-					flex-wrap: nowrap;
-					margin-top: 16rpx;
-					align-items: center;
-					.UserImage-box {
-						width: 40rpx;
-						border-radius: 20rpx;
-						margin-right: 20rpx;
-						.Image {
-							width: 40rpx;
-							height: 40rpx;
-							border-radius: 50%;
-						}
-					}
-					.textbox {
-						flex-direction: row;
-						flex-wrap: nowrap;
-						.wo-text,
-						.UserInfo {
-							font-size: 24rpx;
-						}
-						.wo-text {
-							color: #f1f2f6;
-							margin-right: 8rpx;
-						}
-						.UserInfo {
-							color: #ffffff;
-						}
-					}
-					.jiange-box {
-						margin: 0 8rpx;
-						.jiange-text {
-							color: #f1f2f6;
-						}
-					}
-				}
-			}
-		}
-		// 指示器 [左边图片列表+右边按钮]
-		.Swiper-indicator-Bottom {
-			position: absolute;
-			left: 0;
-			bottom: 0;
-			width: 100%;
-			display: flex;
-			justify-content: space-between;
-			border-radius: 12rpx;
-			flex-direction: row;
-			flex-wrap: nowrap;
-			box-sizing: border-box;
-			padding: 14rpx;
-			background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.4), rgba(101, 101, 101, 0.7));
-			// 左边[图片列表]
-			.Bottom-left-Imagelist {
-				// width: 560rpx;
-				display: flex;
-				flex-direction: row;
-				flex-wrap: nowrap;
-				justify-content: space-between;
-				// 指示图(小图模式)
-				.Bottom-item {
-					width: 98rpx;
-					height: 78rpx;
-					border-radius: 8rpx;
-
-					.Image {
-						width: 98rpx;
-						height: 78rpx;
-						border-radius: 8rpx;
-						box-sizing: border-box;
-					}
-					&.current {
-						.Image {
-							// border: 4rpx solid #ffda02;
-							border: 4rpx solid rgb(110, 186, 247);
-						}
-					}
-				}
-				.Bottom-item + .Bottom-item {
-					margin-left: 10rpx;
-				}
-			}
-			// 右边 [历历在目-按钮]
-			.Bottom-right-lili-btn {
-				width: 145rpx;
-				align-items: center;
-				justify-content: center;
-				border-radius: 10rpx;
-				// background-image: linear-gradient(45deg, rgb(110, 186, 247), rgb(13, 141, 242));
-				.Bottom-item {
-					width: 145rpx;
-					display: flex;
-					flex-direction: column;
-					align-items: center;
-					justify-content: center;
-					color: #fff;
-					.indicator-text {
-						font-size: 24rpx;
-						font-weight: 700;
-					}
-					.more {
-						display: flex;
-						align-items: center;
-						font-weight: bold;
-						font-size: 26rpx;
-						.iconfont {
-							color: #fff;
-							font-size: 24rpx;
-						}
-					}
-					.text {
-						display: flex;
-						flex-direction: column;
-						align-items: center;
-						// font-weight: normal;
-						letter-spacing: 4rpx;
-					}
-				}
-			}
-		}
-	}
-	.Swiper-box {
-		border-radius: 12rpx;
-		overflow: hidden !important;
-		transform: translateY(0) !important;
-		transform: translateX(0) !important;
-		&.right {
-			.indicator-Top-box {
-				position: absolute;
-			}
-			.Swiper-indicator-Top {
-				bottom: 0;
-				.Top-item .Top-Title .title-text {
-					width: 540rpx;
-				}
-			}
-			.Swiper-indicator-Bottom {
-				width: 120rpx;
-				position: absolute;
-				top: 0rpx;
-				left: initial;
-				right: 0rpx;
-				flex-direction: column;
-				background-image: none;
-				background-color: rgba(0, 0, 0, 0.1);
-				// border-radius: 0rpx 12rpx 12rpx 0;
-				border-radius: 12rpx;
-				.Bottom-left-Imagelist {
-					flex-direction: column;
-					align-items: center;
-					.Bottom-item {
-						border-radius: 6rpx;
-					}
-					.Bottom-item + .Bottom-item {
-						margin-left: 0rpx;
-						margin-top: 10rpx;
-					}
-				}
-				.Bottom-right-lili-btn {
-					width: 100rpx;
-					margin-left: -4rpx;
-					.Bottom-item {
-						width: initial;
-						margin-top: 6rpx;
-						align-items: flex-start;
-						justify-content: flex-start;
-
-						.more {
-							font-size: 24rpx;
-						}
-						.text {
-							letter-spacing: 0;
-							font-size: 24rpx;
-							font-weight: normal;
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-.Swiper-mfw {
+.uh-banner {
 	position: relative;
+	width: 100%;
+	/* 封面没加载出来之前先铺一层纸色，避免白底闪一下 */
+	background-color: $uh-fill;
+	border-radius: $uh-radius-md;
+	overflow: hidden;
 }
-.indicator-Top-box {
-	position: absolute;
+
+.uh-banner_swiper {
+	width: 100%;
 }
-.indicator-Btoom-box {
+
+.uh-banner_item {
+	width: 100%;
+	height: 100%;
+}
+
+.uh-banner_media {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+/* 底部渐变蒙层：浅色封面上白字也能读，旧版 8.5% 的纯色底盖不住花哨封面。
+   高度固定，渐变顶端透明，配合文字条正好压住图片下沿。 */
+.uh-banner_scrim {
 	position: absolute;
+	left: 0;
+	right: 0;
 	bottom: 0;
+	height: 240rpx;
+	background-image: linear-gradient(to top, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.32) 55%, rgba(0, 0, 0, 0) 100%);
+	/* 不接手势：滑动能穿透到下面的 swiper，只留底部文字条挡一点 */
+	pointer-events: none;
+}
+
+.uh-banner_bar {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 16rpx;
+	box-sizing: border-box;
+	padding: 0 24rpx 20rpx;
+
+	/* 指示器在下边：文字与圆点分两行，圆点居中 */
+	&.is-dots-bottom {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 8rpx;
+
+		.uh-banner_dots {
+			justify-content: center;
+		}
+	}
+}
+
+.uh-banner_caption {
+	flex: 1;
+	min-width: 0;
+}
+
+.uh-banner_title {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	/* 最多两行：长标题不会把蒙层顶到半个封面 */
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+	font-size: 30rpx;
+	font-weight: 600;
+	line-height: 1.4;
+	color: #ffffff;
+}
+
+.uh-banner_meta {
+	display: block;
+	margin-top: 8rpx;
+	font-size: 22rpx;
+	color: rgba(255, 255, 255, 0.75);
+}
+
+.uh-banner_dots {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 2rpx;
+	padding-bottom: 4rpx;
+}
+
+/* 撑大可点区域用：圆点视觉尺寸不变，手指不用瞄 */
+.uh-banner_dot-hit {
+	display: flex;
+	align-items: center;
+	padding: 12rpx 6rpx;
+}
+
+.uh-banner_dot {
+	width: 10rpx;
+	height: 10rpx;
+	border-radius: $uh-radius-pill;
+	background-color: rgba(255, 255, 255, 0.45);
+	transition: width 0.2s ease, background-color 0.2s ease;
+
+	&.is-active {
+		width: 28rpx;
+		background-color: #ffffff;
+	}
 }

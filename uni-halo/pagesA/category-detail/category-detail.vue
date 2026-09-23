@@ -1,5 +1,5 @@
 <template>
-    <view class="app-page">
+    <view :class="skinClass" class="app-page">
         <view v-if="loading != 'success'" class="loading-wrap">
             <tm-skeleton model="listAvatr"></tm-skeleton>
             <tm-skeleton model="listAvatr"></tm-skeleton>
@@ -22,7 +22,7 @@
                 <view class="load-text">{{ loadMoreText }}</view>
             </block>
 
-            <tm-flotbutton @click="fnToTopPage" color="light-blue" size="m" icon="icon-angle-up"></tm-flotbutton>
+            <tm-flotbutton @click="fnToTopPage" color="indigo" size="m" icon="icon-angle-up"></tm-flotbutton>
         </block>
     </view>
 </template>
@@ -68,16 +68,35 @@ export default {
         this.queryParams.page = 0;
         this.fnGetData();
     },
+    /** 我自己的邀请码；取不到就不带，不影响分享 */
+    fnInviteCode() {
+        try {
+            return uni.getStorageSync('invite.code') || '';
+        } catch (e) {
+            return '';
+        }
+    },
+    /**
+     * 分享分类：带上我的邀请码，别人点进来就能看到我关注的内容。
+     *
+     * 朋友圈分享必须用 query（微信只接受 query），原来写成 path 会丢参数。
+     */
     onShareAppMessage() {
+        const code = this.fnInviteCode();
         return {
             title: this.pageTitle,
             path: `/pagesA/category-detail/category-detail?name=${this.name}&title=${this.pageTitle}`
+                + (code ? `&inviteCode=${encodeURIComponent(code)}` : '')
         }
     },
     onShareTimeline() {
+        const code = this.fnInviteCode();
         return {
             title: this.pageTitle,
-            path: `/pagesA/category-detail/category-detail?name=${this.name}&title=${this.pageTitle}`
+            query: Object.assign(
+                { name: this.name, title: this.pageTitle },
+                code ? { inviteCode: code } : {}
+            )
         }
     },
     onReachBottom(e) {
@@ -149,7 +168,7 @@ export default {
     display: flex;
     flex-direction: column;
     padding: 24rpx 0;
-    background-color: #fafafd;
+    background-color: $uh-bg;
 }
 
 .loading-wrap {

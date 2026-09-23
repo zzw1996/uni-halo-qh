@@ -1,15 +1,23 @@
 // 全局css基础样式
 
+/* 语义卡片：新页面优先用这个类，而不是自己拼 bg-white + 圆角 */
+.uh-card {
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 2rpx 8rpx rgba(31, 31, 31, 0.04);
+}
+
+/* 标准柔和投影（双层），替代旧单层重阴影 */
 .card-shadow {
-	box-shadow: 0rpx 0rpx 24rpx rgba(0, 0, 0, 0.08);
+	box-shadow: 0 2rpx 8rpx rgba(31, 31, 31, 0.04), 0 12rpx 32rpx rgba(31, 31, 31, 0.06);
 }
 .bg-white {
-	background-color: #fff;
+	background-color: #ffffff;
 }
 .load-text {
 	padding: 0 0 20rpx 0;
 	text-align: center;
-	color: #999;
+	color: #9a9a94;
 	font-size: 24rpx;
 }
 .e-fixed {
@@ -43,9 +51,9 @@
 	position: relative;
 	box-sizing: border-box;
 	padding: 24rpx;
-	box-shadow: 0rpx 4rpx 24rpx rgba(0, 0, 0, 0.03);
+	box-shadow: 0 2rpx 8rpx rgba(31, 31, 31, 0.04);
 	background-color: #ffffff;
-	border-radius: 12rpx;
+	border-radius: 24rpx;
 
 	&.is-lr {
 		display: flex;
@@ -134,8 +142,8 @@
 			box-sizing: border-box;
 			border-radius: 6rpx;
 			padding: 4rpx 10rpx;
-			border: 2rpx solid #03a9f4;
-			color: #03a9f4;
+			border: 2rpx solid #2f54eb;
+			color: #2f54eb;
 			font-size: 24rpx;
 			transform: scale(0.93);
 			// animation: adLinkAni 0.8s ease-in-out infinite;

@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view class="claim-card">
 			<text class="claim-emoji">{{ emoji }}</text>
 			<text class="claim-title">恭喜中奖「{{ name }}」</text>
@@ -210,7 +210,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -244,7 +244,7 @@
 	}
 
 	.form-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 20rpx;
 		padding: 28rpx;
 	}
@@ -260,27 +260,27 @@
 	.form-label {
 		display: block;
 		font-size: 24rpx;
-		color: #606266;
+		color: $uh-ink-2;
 		margin-bottom: 10rpx;
 	}
 
 	.form-input {
 		height: 76rpx;
-		background: #f5f6fa;
+		background: $uh-fill;
 		border-radius: 12rpx;
 		padding: 0 20rpx;
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.form-textarea {
 		width: 100%;
 		height: 160rpx;
-		background: #f5f6fa;
+		background: $uh-fill;
 		border-radius: 12rpx;
 		padding: 16rpx 20rpx;
 		font-size: 28rpx;
-		color: #303133;
+		color: $uh-ink-1;
 		box-sizing: border-box;
 	}
 
@@ -304,7 +304,7 @@
 
 	/* ===== 发放进度 ===== */
 	.progress-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 20rpx;
 		padding: 28rpx;
 	}
@@ -314,7 +314,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 18rpx 0;
-		border-bottom: 2rpx solid #f5f6fa;
+		border-bottom: 2rpx solid $uh-fill;
 
 		&:first-child {
 			padding-top: 0;
@@ -327,12 +327,12 @@
 
 	.progress-label {
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.progress-value {
 		font-size: 26rpx;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.progress-ok {

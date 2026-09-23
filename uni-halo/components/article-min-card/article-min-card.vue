@@ -53,7 +53,7 @@ export default {
     margin: 12rpx 24rpx;
     margin-bottom: 24rpx;
     padding: 16rpx;
-    box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
+    box-shadow: $uh-shadow-sm;
 
     &.lr_image_text {
     }
@@ -178,12 +178,12 @@ export default {
         .title {
             font-size: 28rpx;
             font-weight: 600;
-            color: var(--main-text-color);
+            color: #1f1f1f;
         }
 
         .content {
             font-size: 26rpx;
-            color: #909399;
+            color: $uh-ink-3;
             margin-top: 14rpx;
         }
 
@@ -192,7 +192,7 @@ export default {
             font-size: 24rpx;
             justify-content: space-between;
             align-items: center;
-            color: #909399;
+            color: $uh-ink-3;
             margin-top: 14rpx;
 
             .create-time {

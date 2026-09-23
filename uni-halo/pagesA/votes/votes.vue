@@ -1,13 +1,13 @@
 <template>
-	<view class="app-page" :class="[uniHaloPluginPageClass]">
+	<view class="app-page" :class="[skinClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
 			<!-- 顶部切换 -->
 			<view class="e-fixed filter-box">
-				<tm-search v-model="queryParams.keyword" :round="24" :shadow="0" color="light-blue"
-					insert-color="light-blue" :clear="true" @input="fnOnSearch" @confirm="fnOnSearch"></tm-search>
-				<tm-dropDownMenu :shadow="0" color="light-blue" active-color="light-blue"
+				<tm-search v-model="queryParams.keyword" :round="24" :shadow="0" color="indigo"
+					insert-color="indigo" :clear="true" @input="fnOnSearch" @confirm="fnOnSearch"></tm-search>
+				<tm-dropDownMenu :shadow="0" color="indigo" active-color="indigo"
 					:default-selected="filterOption.selected" :list="filterOption.list"
 					@confirm="fnOnFilterConfirm"></tm-dropDownMenu>
 			</view>
@@ -34,7 +34,7 @@
 						<VoteCard :vote="item" :index="index" @on-click="fnToDetail"></VoteCard>
 					</tm-translate>
 					<view class="load-text">{{ loadMoreText }}</view>
-					<tm-flotbutton @click="fnToTopPage" size="m" color="light-blue"
+					<tm-flotbutton @click="fnToTopPage" size="m" color="indigo"
 						icon="icon-angle-up"></tm-flotbutton>
 
 				</block>
@@ -388,7 +388,7 @@
 		display: flex;
 		flex-direction: column;
 		padding-bottom: 24rpx;
-		background-color: #fafafd;
+		background-color: $uh-bg;
 
 		&.is-balck {
 			background-color: #212121;
@@ -396,7 +396,7 @@
 	}
 
 	.filter-box {
-		box-shadow: 0rpx 0rpx 12rpx rgba(0, 0, 0, 0.035);
+		box-shadow: $uh-shadow-sm;
 	}
 
 	.content {

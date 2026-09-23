@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -218,7 +218,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding-bottom: 40rpx;
 	}
 
@@ -231,7 +231,7 @@
 		margin: 24rpx 28rpx 16rpx;
 		padding: 32rpx 28rpx;
 		border-radius: 20rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		color: #fff;
 	}
 
@@ -265,7 +265,7 @@
 		margin: 0 28rpx 16rpx;
 		padding: 24rpx 28rpx;
 		border-radius: 20rpx;
-		background: #fff;
+		background: $uh-card;
 	}
 
 	.section-head {
@@ -276,20 +276,20 @@
 		display: block;
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.section-sub {
 		display: block;
 		margin-top: 4rpx;
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.empty-tip {
 		padding: 48rpx 0;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		text-align: center;
 	}
 
@@ -312,7 +312,7 @@
 		flex: 1;
 		font-size: 28rpx;
 		font-weight: 600;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.order-amount {
@@ -327,7 +327,7 @@
 		align-items: center;
 		margin-top: 8rpx;
 		font-size: 21rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.order-type {
@@ -367,7 +367,7 @@
 	}
 
 	.order-status--muted {
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.order-item--alert {
@@ -389,9 +389,9 @@
 	.order-action {
 		padding: 4rpx 18rpx;
 		border-radius: 999rpx;
-		border: 1rpx solid #667eea;
+		border: 1rpx solid $uh-accent;
 		font-size: 20rpx;
-		color: #667eea;
+		color: $uh-accent;
 	}
 
 	.load-text {

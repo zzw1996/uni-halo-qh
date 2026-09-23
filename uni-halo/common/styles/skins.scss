@@ -1,0 +1,26 @@
+/**
+ * 皮肤包样式入口
+ *
+ * 具体覆盖规则由 tools/gen-skins.cjs 从编译产物生成（skins.generated.scss），
+ * 这里只放生成器表达不了的少量结构规则。
+ *
+ * 为什么皮肤要靠「根节点类 + 逐条覆盖」而不是 CSS 变量：
+ * 小程序 wxss 对 `page, :root { --x: y }` 这类规则解析不可靠（:root 非法会让整条规则被丢弃），
+ * 变量一旦没定义，所有 var(--x) 都会失效、背景变透明——本项目刚因为这个问题整站塌成白色。
+ * 类选择器 + 编译期字面值没有这个风险。
+ */
+@import './skins.generated.scss';
+
+/* 页面底色：page 选择器无法被皮肤类前缀命中，改由页面根节点承担。
+   根节点普遍是 min-height:100vh，配合 skin.js 里的 setBackgroundColor 覆盖过卷区域。 */
+view.skin-mint {
+	background-color: #eef3f1 !important;
+}
+
+view.skin-sunrise {
+	background-color: #f8f1e7 !important;
+}
+
+view.skin-ink {
+	background-color: #14141a !important;
+}

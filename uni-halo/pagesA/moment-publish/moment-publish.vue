@@ -1,11 +1,11 @@
 <template>
-	<view class="publish-page">
+	<view :class="skinClass" class="publish-page">
 		<view v-if="!permissionChecked" class="loading-wrap flex flex-center">
-			<tm-loadding color="light-blue" :size="48"></tm-loadding>
+			<tm-loadding color="indigo" :size="48"></tm-loadding>
 		</view>
 		<view v-else-if="!canPublish" class="denied-wrap flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="暂无发表权限"></tm-empty>
-			<text class="denied-tip">仅与插件 personalToken 对应的博主微信账号可发表瞬间</text>
+			<text class="denied-tip">{{ deniedReason }}</text>
 			<tm-button class="mt-24" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBack">返回</tm-button>
 		</view>
 		<view v-else class="publish-body">
@@ -45,21 +45,27 @@
 						class="image-add"
 						@click="fnChooseImages"
 					>
-						<tm-icons name="icon-plus" :size="40" color="#c0c4cc"></tm-icons>
+						<tm-icons name="icon-plus" :size="40" color="#c6c6c0"></tm-icons>
 						<text class="image-add-text">{{ imageList.length }}/{{ maxImages }}</text>
 					</view>
 				</view>
 				<text class="image-tip">支持纯文字、纯图片或图文混合，图片最多 {{ maxImages }} 张</text>
 			</view>
+			<text v-if="publishStatus && !publishStatus.privileged" class="cost-tip">
+				本次发布将消耗 {{ publishStatus.momentCost }} 积分（当前 {{ publishStatus.balance }} 积分）
+			</text>
+			<text v-else-if="publishStatus" class="cost-tip">
+				你是站点所有者/管理员，发布不消耗积分
+			</text>
 			<view class="publish-actions">
 				<tm-button
 					block
-					theme="bg-gradient-light-blue-accent"
+					theme="bg-gradient-indigo-accent"
 					:shadow="4"
 					:loading="submitting"
 					:disabled="!canSubmit"
 					@click="fnSubmit"
-				>发表瞬间</tm-button>
+				>{{ submitText }}</tm-button>
 			</view>
 		</view>
 	</view>
@@ -71,12 +77,12 @@
 	import tmLoadding from '@/tm-vuetify/components/tm-loadding/tm-loadding.vue';
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
-	import {
-		buildMomentCreatePayload,
-		canShowMomentPublish,
-		resolveMomentPublishPermission
-	} from '@/utils/momentPublish.js';
 	import { generateUUID } from '@/utils/uuid.js';
+	import {
+		fetchUserPublishStatus,
+		submitUserMoment,
+		uploadUserPublishImage
+	} from '@/utils/userPublish.js';
 
 	const MAX_IMAGES = 9;
 
@@ -92,7 +98,9 @@
 				maxImages: MAX_IMAGES,
 				permissionChecked: false,
 				canPublish: false,
-				ownerName: '',
+				/** 投稿状态（含价格、余额、角色结论、是否特权），全部来自服务端 */
+				publishStatus: null,
+				deniedReason: '暂不能发布瞬间',
 				content: '',
 				imageList: [],
 				submitting: false
@@ -108,6 +116,17 @@
 					policyName: appInfo.policyName || 'default-policy',
 					groupName: appInfo.fileGroupName || ''
 				};
+			},
+			submitText() {
+				const status = this.publishStatus;
+				if (!status) {
+					return '发表瞬间';
+				}
+				// 博主/管理员免费，不显示积分；其他人按直发/待审给出不同措辞
+				const costText = status.privileged ? '' : `（${status.momentCost} 积分）`;
+				return 'draft' === status.momentMode
+					? `提交审核${costText}`
+					: `发布${costText}`;
 			},
 			hasText() {
 				return !!this.content.trim();
@@ -135,42 +154,34 @@
 				if (!checkHasWxLogin()) {
 					this.permissionChecked = true;
 					this.canPublish = false;
+					this.deniedReason = '请先登录后再发布';
 					uni.showToast({ icon: 'none', title: '请先登录' });
 					setTimeout(() => this.fnBack(), 800);
 					return;
 				}
-				const permission = await resolveMomentPublishPermission(
-					this.$httpApi.v2,
-					this.haloConfigs,
-					getWxLoginInfo()
-				);
+				// 能不能发、发出来是直发还是待审，一律以服务端结论为准：
+				// 客户端不再持有个人令牌，也就无法（也不该）自己判定权限
+				const status = await fetchUserPublishStatus(this.$httpApi.v2);
 				this.permissionChecked = true;
-				this.canPublish = canShowMomentPublish(permission);
+				this.publishStatus = status;
+				this.canPublish = !!(status && status.canPublishMoment && status.visible);
 				if (!this.canPublish) {
+					this.deniedReason = (status && status.momentDisabledReason)
+						|| '当前账号暂无发布权限，可在「我的」查看赚积分方式';
 					uni.showToast({ icon: 'none', title: '当前账号无发表权限' });
 					return;
 				}
-				await this.fnResolveOwnerName();
-			},
-			async fnResolveOwnerName() {
-				const wxUser = getWxLoginInfo();
-				const haloUserName = (wxUser?.haloUserName || '').trim();
-				if (haloUserName) {
-					this.ownerName = haloUserName;
-					return;
-				}
-				try {
-					const tokenUser = await this.$httpApi.v2.getPersonalTokenUser();
-					this.ownerName = (tokenUser?.metadata?.name || tokenUser?.name || '').trim();
-				} catch (err) {
-					console.warn('[moment-publish] 获取 owner 失败:', err);
-				}
+				this.maxImages = status.maxMomentImages != null
+					? status.maxMomentImages
+					: MAX_IMAGES;
 			},
 			fnBack() {
 				uni.navigateBack({
 					fail: () => {
-						// 瞬间页已从底部导航移除时，回退到首页
-						uni.switchTab({ url: '/pages/tabbar/home/home' });
+						// 瞬间已是 tabBar 页面：回不到上一页时（如从分享直接进入）回到瞬间 tab
+						// 瞬间页现在还是图库/小店的宿主页：先声明要回到瞬间视图，再切过去
+						setPendingTabbarMode('moments');
+						uni.switchTab({ url: '/pages/tabbar/moments/moments' });
 					}
 				});
 			},
@@ -212,39 +223,6 @@
 					urls: this.imageList.map((item) => item.localPath)
 				});
 			},
-			fnResolveAttachmentUrl(attachment) {
-				const url = attachment?.status?.permalink
-					|| attachment?.spec?.url
-					|| attachment?.url
-					|| '';
-				return this.$utils.checkUrl(url);
-			},
-			async fnUploadImages() {
-				const uploaded = [];
-				for (let i = 0; i < this.imageList.length; i += 1) {
-					uni.showLoading({
-						mask: true,
-						title: `上传图片 ${i + 1}/${this.imageList.length}`
-					});
-					const attachment = await this.$httpApi.v2.uploadAttachment(
-						this.imageList[i].localPath,
-						this.attachmentUploadConfig
-					);
-					const url = this.fnResolveAttachmentUrl(attachment);
-					if (!url) {
-						throw { error: `第 ${i + 1} 张图片上传失败，未获取到链接` };
-					}
-					uploaded.push(url);
-				}
-				return uploaded;
-			},
-			fnBuildMomentPayload(rawText, imageUrls) {
-				return buildMomentCreatePayload({
-					rawText,
-					imageUrls,
-					ownerName: this.ownerName
-				});
-			},
 			async fnSubmit() {
 				if (!this.canSubmit) {
 					return;
@@ -257,22 +235,7 @@
 				this.submitting = true;
 				uni.showLoading({ mask: true, title: '发布中...' });
 				try {
-					if (!this.ownerName) {
-						throw { error: '无法确定博主账号，请稍后重试' };
-					}
-					let imageUrls = [];
-					if (this.hasImages) {
-						imageUrls = await this.fnUploadImages();
-					}
-					const payload = this.fnBuildMomentPayload(raw, imageUrls);
-					await this.$httpApi.v2.createMoment(payload);
-					uni.showToast({ icon: 'success', title: '发表成功' });
-					const app = getApp();
-					if (app?.globalData) {
-						app.globalData.momentListNeedRefresh = true;
-					}
-					uni.$emit('moments_list_should_refresh');
-					setTimeout(() => this.fnBack(), 600);
+					await this.fnSubmitAsUser(raw);
 				} catch (err) {
 					const message = err?.error || err?.detail || err?.message || '发表失败，请稍后重试';
 					uni.showToast({ icon: 'none', title: message });
@@ -303,7 +266,7 @@
 		margin-top: 16rpx;
 		padding: 0 48rpx;
 		font-size: 26rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		text-align: center;
 		line-height: 1.6;
 	}
@@ -313,10 +276,10 @@
 	}
 
 	.publish-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 16rpx;
 		padding: 24rpx;
-		box-shadow: 0 2rpx 24rpx rgba(0, 0, 0, 0.03);
+		box-shadow: $uh-shadow-sm;
 	}
 
 	.publish-input {
@@ -324,14 +287,14 @@
 		min-height: 240rpx;
 		font-size: 30rpx;
 		line-height: 1.7;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.publish-count {
 		margin-top: 12rpx;
 		text-align: right;
 		font-size: 24rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.image-grid {
@@ -376,21 +339,21 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		background: #f7f8fa;
+		background: $uh-fill;
 		border: 2rpx dashed #dcdfe6;
 	}
 
 	.image-add-text {
 		margin-top: 8rpx;
 		font-size: 22rpx;
-		color: #c0c4cc;
+		color: $uh-ink-4;
 	}
 
 	.image-tip {
 		display: block;
 		margin-top: 20rpx;
 		font-size: 24rpx;
-		color: #909399;
+		color: $uh-ink-3;
 		line-height: 1.5;
 	}
 

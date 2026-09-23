@@ -11,6 +11,8 @@
  */
 
 /** 主题皮肤白名单：只有登记在此的主题才允许应用。 */
+import { SKINS, isSkinId, applySkin, restoreSkin, skinState } from '@/utils/skin.js';
+
 export const THEME_SKINS = {
 	// 项目既有主视觉，tabBar 选中色 #03a9f4 与之匹配
 	'light-blue': { label: '晴空蓝', color: '#03A9F4' },
@@ -25,9 +27,9 @@ export const THEME_SKINS = {
 
 /**
  * 未穿戴任何主题时的 tabBar 选中色。
- * 取自 pages.json 的 tabBar.selectedColor，保持升级前后视觉一致。
+ * 取自 pages.json 的 tabBar.selectedColor（品牌靛青），保持升级前后视觉一致。
  */
-const DEFAULT_TABBAR_SELECTED_COLOR = '#03a9f4';
+const DEFAULT_TABBAR_SELECTED_COLOR = '#2f54eb';
 
 /**
  * 旧格式 style（CSS 渐变值）→ 新格式主题名的映射。
@@ -73,16 +75,26 @@ const tabbarSelectedColor = (themeName) => {
 };
 
 /**
- * 应用主题皮肤到全局。
+ * 应用主题装扮到全局。
  *
- * @param {string} themeName 主题名；传空表示未穿戴主题，恢复项目原有配色
- * @returns {string} 实际应用的主题名（空字符串表示未应用任何主题）
+ * 支持两类取值（后端「装扮商店」的 style 字段）：
+ * - 皮肤包 id（paper/mint/sunrise/ink）：页面底、卡片、文字、分割线、强调色一起换，见 utils/skin.js
+ * - 旧的框架主题名（light-blue/primary/orange…）：只换强调色，兼容已购用户
+ *
+ * @param {string} style 装扮的 style 字段
+ * @returns {string} 实际生效的皮肤 id 或主题名（空字符串表示未应用任何主题）
  */
-export const applyThemeSkin = (themeName) => {
-	// 未穿戴 / 无法识别时 target 为空：清空全局色，让组件回落到各自的静态 theme 属性。
-	// 不能在这里兜底成 light-blue —— 那会让所有 fllowTheme=true 的组件（含 red/grey
-	// 等语义色按钮）在用户什么都没买的情况下被染色，升级插件后界面无故变化。
-	const target = normalizeThemeStyle(themeName);
+export const applyThemeSkin = (style) => {
+	const raw = String(style || '').trim();
+
+	// 皮肤包：整站外观一起换
+	if (isSkinId(raw)) {
+		return applySkin(raw);
+	}
+
+	// 非皮肤取值：先恢复默认外观（可能刚从某个皮肤切过来），再只换强调色
+	applySkin('paper');
+	const target = normalizeThemeStyle(raw);
 
 	try {
 		// tm-vuetify 的全局主题色，fllowTheme 默认为 true 的组件会自动跟随；
@@ -113,6 +125,13 @@ export const applyThemeSkin = (themeName) => {
  * 未设置过时保持项目原有配色，不做任何染色。
  */
 export const restoreThemeSkin = () => {
+	// 先恢复皮肤：皮肤 id 存在自己的键里，且皮肤生效时 STORAGE_KEY 存的是它对应的
+	// 框架主题色名（如 teal），那不是合法装扮值，直接走旧逻辑会把皮肤重置掉
+	const skinId = restoreSkin();
+	if (skinId !== 'paper') {
+		return skinId;
+	}
+
 	let stored = '';
 	try {
 		stored = uni.getStorageSync(STORAGE_KEY) || '';
@@ -127,11 +146,13 @@ export const clearThemeSkin = () => applyThemeSkin('');
 
 /**
  * 供装扮列表预览用的色值。
- * 新格式主题名返回其主色；旧格式渐变值仍返回渐变，保证预览不空白。
+ * 皮肤包返回代表色/渐变；新格式主题名返回其主色；旧格式渐变值仍返回渐变，保证预览不空白。
  */
 export const themeSwatchOf = (style) => {
 	const raw = String(style || '').trim();
 	if (!raw) return DEFAULT_TABBAR_SELECTED_COLOR;
+	// 皮肤包：用皮肤自身的代表色/渐变，用户在购买前就能看出和「只换个色」的区别
+	if (isSkinId(raw)) return SKINS[raw].swatch || DEFAULT_TABBAR_SELECTED_COLOR;
 	if (THEME_SKINS[raw]) return THEME_SKINS[raw].color;
 	if (raw.includes(',')) {
 		const [from, to] = raw.split(',');
@@ -142,9 +163,11 @@ export const themeSwatchOf = (style) => {
 
 /** 主题皮肤的展示名，未登记时回退原始值。 */
 export const themeLabelOf = (style) => {
-	const normalized = normalizeThemeStyle(style);
+	const raw = String(style || '').trim();
+	if (isSkinId(raw)) return SKINS[raw].label;
+	const normalized = normalizeThemeStyle(raw);
 	if (normalized && THEME_SKINS[normalized]) return THEME_SKINS[normalized].label;
-	return String(style || '');
+	return raw;
 };
 
 /**
@@ -160,6 +183,8 @@ export const themeLabelOf = (style) => {
 export const isUnregisteredThemeSkin = (style) => {
 	const raw = String(style || '').trim();
 	if (!raw) return true;
+	// 皮肤包 id 是有效配置
+	if (isSkinId(raw)) return false;
 	// 能归一化成合法主题名（含旧渐变值映射成功）即为有效
 	return normalizeThemeStyle(raw) === '';
 };

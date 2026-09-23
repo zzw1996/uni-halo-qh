@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -319,6 +321,169 @@ class DigestSubscriptionServiceTest {
                 assertThat(dto.getSources()).isEmpty();
                 assertThat(dto.isFiltered()).isTrue();
             })
+            .verifyComplete();
+    }
+
+    // ── 分享裂变：继承来的分类与首页并集 ──
+
+    /**
+     * 并集规则：自己订阅的在前（最多 5 个），继承来的在后，去重后总共最多 8 个。
+     *
+     * <p>「自己优先」是刻意的：用户亲手选的分类不该被别人的推荐挤掉，继承只能是「额外看到」。</p>
+     */
+    @Test
+    void effectiveCategoriesShouldPreferOwnAndCapTotal() {
+        var own = List.of("a", "b", "c", "d", "e");
+        var inherited = List.of("x", "y", "z", "w");
+
+        assertThat(DigestSubscriptionService.effectiveOf(own, inherited))
+            .as("自己 5 个占满后，继承项只补到总上限 8")
+            .containsExactly("a", "b", "c", "d", "e", "x", "y", "z");
+        assertThat(DigestSubscriptionService.effectiveOf(List.of("a"), inherited))
+            .containsExactly("a", "x", "y", "z");
+        assertThat(DigestSubscriptionService.effectiveOf(List.of("a", "b"), List.of("b", "c")))
+            .as("继承里已有的不重复加")
+            .containsExactly("a", "b", "c");
+        assertThat(DigestSubscriptionService.effectiveOf(List.of(), List.of()))
+            .isEmpty();
+    }
+
+    /** 新用户还没有订阅记录时也要继承——不能只在已有记录上做，否则对新人永远不生效 */
+    @Test
+    void applyInheritanceShouldCreateRecordForNewUser() {
+        var created = new java.util.concurrent.atomic.AtomicReference<DigestSubscription>();
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.empty());
+        when(client.create(any(DigestSubscription.class))).thenAnswer(inv -> {
+            created.set(inv.getArgument(0));
+            return Mono.just(inv.getArgument(0));
+        });
+
+        StepVerifier.create(service.applyInheritance(OPENID, "openid-inviter",
+                List.of("ai-ml", "security")))
+            .expectNext(true)
+            .verifyComplete();
+
+        assertThat(created.get().getInheritedCategories()).containsExactly("ai-ml", "security");
+        assertThat(created.get().getInheritedFrom()).isEqualTo("openid-inviter");
+        assertThat(created.get().getPostCategories())
+            .as("继承项不占用户自己的 5 个名额")
+            .isEmpty();
+    }
+
+    /** 已有自己订阅的老用户：一个字段都不动（他打开别人的分享不该被改写首页） */
+    @Test
+    void applyInheritanceShouldSkipWhenUserHasOwnSubscription() {
+        var existing = new DigestSubscription();
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("category-a"));
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+
+        StepVerifier.create(service.applyInheritance(OPENID, "openid-inviter", List.of("ai-ml")))
+            .expectNext(false)
+            .verifyComplete();
+
+        assertThat(existing.getInheritedCategories()).isNull();
+        verify(client, never()).update(any());
+        verify(client, never()).create(any());
+    }
+
+    /** 已经继承过就不再叠加：被反复分享不该让订阅越滚越多 */
+    @Test
+    void applyInheritanceShouldNotStack() {
+        var existing = new DigestSubscription();
+        existing.setWxOpenid(OPENID);
+        existing.setInheritedCategories(List.of("ai-ml"));
+        existing.setInheritedFrom("openid-first");
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+
+        StepVerifier.create(service.applyInheritance(OPENID, "openid-second",
+                List.of("security", "tools")))
+            .expectNext(false)
+            .verifyComplete();
+
+        assertThat(existing.getInheritedCategories()).containsExactly("ai-ml");
+        assertThat(existing.getInheritedFrom()).isEqualTo("openid-first");
+    }
+
+    /** 继承项上限 3 个：分享人订了 5 个也只继承前 3 个（首页并集上限 8 的另一半） */
+    @Test
+    void applyInheritanceShouldCapInheritedCategories() {
+        var created = new java.util.concurrent.atomic.AtomicReference<DigestSubscription>();
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.empty());
+        when(client.create(any(DigestSubscription.class))).thenAnswer(inv -> {
+            created.set(inv.getArgument(0));
+            return Mono.just(inv.getArgument(0));
+        });
+
+        StepVerifier.create(service.applyInheritance(OPENID, "openid-inviter",
+                List.of("a", "b", "c", "d", "e")))
+            .expectNext(true)
+            .verifyComplete();
+
+        assertThat(created.get().getInheritedCategories()).containsExactly("a", "b", "c");
+    }
+
+    /** 「也关注这些」：自己没满 5 个就并进自己的订阅（不占继承位） */
+    @Test
+    void acceptRecommendationShouldFillOwnFirst() {
+        var existing = new DigestSubscription();
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("a", "b"));
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+        when(client.update(any(DigestSubscription.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(service.acceptRecommendation(OPENID, "openid-inviter",
+                List.of("x", "y", "z")))
+            .assertNext(dto -> {
+                assertThat(dto.getPostCategories()).containsExactly("a", "b", "x", "y", "z");
+                assertThat(dto.getInheritedCategories()).isEmpty();
+                assertThat(dto.getEffectiveCategories())
+                    .containsExactly("a", "b", "x", "y", "z");
+            })
+            .verifyComplete();
+    }
+
+    /** 自己已经订满 5 个：推荐进继承位、最多 3 个，总数封顶 8 */
+    @Test
+    void acceptRecommendationShouldUseInheritedSlotsWhenOwnIsFull() {
+        var existing = new DigestSubscription();
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("a", "b", "c", "d", "e"));
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+        when(client.update(any(DigestSubscription.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(service.acceptRecommendation(OPENID, "openid-inviter",
+                List.of("x", "y", "z", "w")))
+            .assertNext(dto -> {
+                assertThat(dto.getPostCategories()).containsExactly("a", "b", "c", "d", "e");
+                assertThat(dto.getInheritedCategories()).containsExactly("x", "y", "z");
+                assertThat(dto.getEffectiveCategories()).hasSize(8);
+            })
+            .verifyComplete();
+    }
+
+    /** 已经关注过的分类不会因为「也关注这些」重复写入 */
+    @Test
+    void acceptRecommendationShouldNotDuplicateExisting() {
+        var existing = new DigestSubscription();
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("x"));
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+        when(client.update(any(DigestSubscription.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(service.acceptRecommendation(OPENID, "openid-inviter",
+                List.of("x", "y")))
+            .assertNext(dto -> assertThat(dto.getPostCategories()).containsExactly("x", "y"))
             .verifyComplete();
     }
 }

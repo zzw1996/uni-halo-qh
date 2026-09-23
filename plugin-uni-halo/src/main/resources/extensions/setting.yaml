@@ -606,6 +606,273 @@ spec:
           onValue: true
           offValue: false
           help: 开启后，小程序将展示 Halo 账号关联入口及登录后的绑定引导；关闭后隐藏相关功能
+    - group: channelsConfig
+      label: 视频号
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "开启后，小程序首页会展示一张视频号入口卡片，用户点击直接跳转到你的视频号主页。跳转用微信开放能力 wx.openChannelsUserProfile 实现，需基础库 2.21.2 及以上，且只能在微信小程序内生效；H5 / App 端会自动降级为「复制视频号 ID + 微信内搜索」的引导。"
+        - $formkit: switch
+          name: enabled
+          id: channelsEnabled
+          label: 开启首页视频号入口
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时小程序首页不展示视频号卡片（其余配置保留，重新开启即可复用）。
+        - $formkit: text
+          if: "$get(channelsEnabled).value === true"
+          name: finderUserName
+          label: 视频号 ID（finderUserName）
+          value: ""
+          validation: required
+          help: "形如 sphcqO59YEPCvoe，必须以 sph 开头。获取方式：微信 → 我 → 视频号 → 进入我的视频号 → 右上角「…」→ 点一下视频号名字进入资料页，等 1~2 秒即可看到视频号 ID；或登录「视频号助手」在首页查看。填错会导致点击后无法跳转。"
+        - $formkit: text
+          if: "$get(channelsEnabled).value === true"
+          name: nickname
+          label: 视频号名称
+          value: ""
+          validation: required
+          help: 展示在卡片标题上，一般与视频号昵称保持一致，例如：小莫唐尼
+        - $formkit: textarea
+          if: "$get(channelsEnabled).value === true"
+          name: desc
+          label: 简介
+          value: ""
+          help: 一句话说明视频号里会更新什么内容，建议不超过 30 字，超出会在卡片上截断。
+        - $formkit: attachment
+          if: "$get(channelsEnabled).value === true"
+          name: avatarUrl
+          label: 视频号头像
+          value: ""
+          help: 建议正方形图片（视频号头像 / logo）。留空时卡片用名称首字做兜底头像。
+        - $formkit: text
+          name: buttonText
+          label: 按钮文案
+          value: "进入视频号"
+          help: 卡片按钮上的文字，留空则用「进入视频号」。
+        - $formkit: text
+          name: tip
+          label: 底部提示
+          value: "微信内点开即可观看，关注不迷路"
+          help: 卡片底部的一行小字，留空则不展示。
+    - group: tabbarConfig
+      label: 底部导航（TabBar）
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "小程序底部导航默认是「首页 / 分类 / 瞬间 / 榜单 / 我的」5 项，由微信原生渲染。微信原生底栏不支持运行时增删项，所以开启本组配置后，小程序会隐藏原生底栏并改用自绘底栏，这样就能按开关决定显示哪几项。显示数量限制在 3~5 项（微信原生底栏最多 5 项；最少 3 项是本站口径）：不足 3 项会按「分类 → 瞬间 → 榜单 → 图库 → 小店」补齐，超过 5 项会按相反顺序裁掉。首页与「我的」是固定项，不提供开关。关闭本组开关时行为与现在完全一致，可随时回退。"
+        - $formkit: switch
+          name: enabled
+          id: tabbarEnabled
+          label: 启用可配置底部导航
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭（默认）= 沿用微信原生底栏，本次配置全部不生效。
+        - $formkit: switch
+          if: "$get(tabbarEnabled).value === true"
+          name: showCategory
+          label: 显示「分类」
+          value: true
+          onValue: true
+          offValue: false
+        - $formkit: switch
+          if: "$get(tabbarEnabled).value === true"
+          name: showMoments
+          label: 显示「瞬间」
+          value: true
+          onValue: true
+          offValue: false
+        - $formkit: switch
+          if: "$get(tabbarEnabled).value === true"
+          name: showRank
+          label: 显示「榜单」
+          value: true
+          onValue: true
+          offValue: false
+        - $formkit: switch
+          if: "$get(tabbarEnabled).value === true"
+          name: showGallery
+          label: 显示「图库」
+          value: true
+          onValue: true
+          offValue: false
+          help: 图库页此前没有任何入口，开启后才会出现在底部导航里。
+        - $formkit: switch
+          if: "$get(tabbarEnabled).value === true"
+          name: showStore
+          label: 显示「微信小店」
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后底部出现「小店」入口，点进去是内嵌的微信小店主页（可直接下单）。微信小店未开通时会展示开通指引页，详细配置见下方。
+        - $formkit: group
+          name: store
+          label: 微信小店
+          value:
+            appId: ""
+            name: ""
+            desc: ""
+            coverUrl: ""
+            qrCodeUrl: ""
+            guideUrl: ""
+          help: 用微信官方「店铺卡」组件把微信小店主页嵌进小程序，用户无需跳转即可浏览商品与下单。需要基础库 3.5.5 及以上（低版本微信会降级为引导页），且不支持微信 Windows / Mac 版。
+          children:
+            - $formkit: text
+              name: appId
+              label: 微信小店ID
+              value: ""
+              help: "获取方式：微信小店后台 → 店铺管理 → 基础信息 → 账号信息 → 微信小店ID（形如 wx 开头）。填错或未开通时，小店页会展示开通指引。"
+            - $formkit: text
+              name: name
+              label: 小店名称
+              value: ""
+              help: 底栏文案固定为「小店」，这里填的名称用于小店页标题与降级页展示。
+            - $formkit: textarea
+              name: desc
+              label: 小店简介
+              value: ""
+              help: 降级页（微信版本过低 / 非微信端）展示的一句话说明。
+            - $formkit: attachment
+              name: coverUrl
+              label: 小店封面 / 店铺卡图片
+              value: ""
+              help: 降级页展示，建议正方形或 16:9 图片。
+            - $formkit: attachment
+              name: qrCodeUrl
+              label: 小店二维码 / 小程序码
+              value: ""
+              help: 降级页展示，方便用户扫码进店。
+            - $formkit: text
+              name: guideUrl
+              label: 开通指引链接
+              value: ""
+              help: 可选。填了之后开通指引页会多一个「查看开通指引」按钮并打开该链接（H5 页面），留空则只展示内置的步骤文案。
+    - group: userPublishConfig
+      label: 用户投稿（积分兑换发布）
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 开启用户投稿
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后用户可用积分投稿文章、发布瞬间；关闭时后端一律拒绝（前端入口也随之隐藏）。发布走服务端，扣分与发布在同一请求内完成：先写幂等流水并扣分，发布失败会自动退还积分。
+        - $formkit: switch
+          name: showButton
+          label: 显示发布入口
+          value: true
+          onValue: true
+          offValue: false
+          help: 总开关之外再加一层展示控制：关闭后小程序端不显示任何投稿入口（接口仍可被调用，但受 enabled 与积分门槛约束）。
+        - $formkit: number
+          name: minPointsToShow
+          label: 显示门槛（积分达到该值才显示按钮，0=不限制）
+          value: 0
+          min: 0
+          help: 只影响按钮是否显示，不消耗积分。未达标时小程序会提示「还差 X 积分」。注意门槛与发布价是两个独立概念：门槛决定「能不能看见入口」，发布价决定「发一次扣多少」。
+        - $formkit: number
+          name: articleCost
+          label: 投稿文章消耗积分
+          value: 50
+          min: 0
+        - $formkit: number
+          name: momentCost
+          label: 发布瞬间消耗积分
+          value: 20
+          min: 0
+        - $formkit: select
+          name: defaultRoleMode
+          label: 未登记角色的默认发布方式
+          value: draft
+          options:
+            - value: draft
+              label: 待审（推荐，安全优先）
+            - value: direct
+              label: 直接发布
+            - value: deny
+              label: 不允许发布
+          help: 角色未出现在下方策略表时的兜底。默认「待审」：站长新加的自定义角色不会因为没登记而被当成可信角色直接发布。
+        - $formkit: repeater
+          name: rolePolicies
+          label: 按 Halo 角色控制发布方式
+          value:
+            - role: guest
+              mode: deny
+            - role: contributor
+              mode: draft
+            - role: author
+              mode: direct
+            - role: editor
+              mode: direct
+            - role: admin
+              mode: direct
+            - role: super-role
+              mode: direct
+          help: 命中哪个角色就用哪个角色的方式（一个用户有多个角色时按表内顺序取第一个命中的）。<b>direct=直接发布</b>（文章立即公开、瞬间立即可见）；<b>draft=待审</b>（文章落 Halo 草稿，站长在 Halo 后台「文章→草稿」审后发布；瞬间以 approved=false 提交，站长在瞬间管理里通过后才公开）；<b>deny=不允许</b>。内置角色标识：guest（访客）/ contributor（投稿者）/ author（作者）/ editor（编辑）/ admin（管理员）/ super-role（超级管理员）。默认的「投稿者走待审、其余直接发、访客不允许」即由此表决定，可随时改。
+          children:
+            - $formkit: text
+              name: role
+              label: Halo 角色标识（如 contributor、author；留空则忽略该行）
+              value: ""
+            - $formkit: select
+              name: mode
+              label: 发布方式
+              value: draft
+              options:
+                - value: direct
+                  label: 直接发布
+                - value: draft
+                  label: 待审
+                - value: deny
+                  label: 不允许
+        - $formkit: switch
+          name: requireHaloBind
+          label: 必须关联 Halo 账号才能投稿
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后未关联 Halo 账号的用户也不能发布（没有 Halo 用户就没有作者身份），此项只影响错误提示文案，建议保持开启。
+        - $formkit: switch
+          name: contentSecurityEnabled
+          label: 开启微信内容安全检测
+          value: true
+          onValue: true
+          offValue: false
+          help: 对投稿文本调用微信 msgSecCheck（图片检测未接入）。违规内容直接拒绝发布；检测接口本身不可用（网络/令牌问题）时放行并在日志告警，避免微信侧抖动把发布链路卡死。
+        - $formkit: number
+          name: dailyArticleLimit
+          label: 每人每日投稿文章上限（0=不限）
+          value: 3
+          min: 0
+        - $formkit: number
+          name: dailyMomentLimit
+          label: 每人每日发布瞬间上限（0=不限）
+          value: 5
+          min: 0
+        - $formkit: number
+          name: maxArticleTitleLength
+          label: 文章标题字数上限
+          value: 60
+          min: 1
+        - $formkit: number
+          name: maxArticleContentLength
+          label: 文章正文字数上限
+          value: 5000
+          min: 100
+        - $formkit: number
+          name: maxMomentLength
+          label: 瞬间文字字数上限
+          value: 500
+          min: 1
+        - $formkit: number
+          name: maxMomentImages
+          label: 瞬间图片张数上限
+          value: 9
+          min: 0
     - group: pointsConfig
       label: 积分系统
       formSchema:
@@ -1186,7 +1453,7 @@ spec:
               points: 150
               durationDays: 0
               style: deep-orange
-          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（全局主题皮肤）。style 含义随 type 不同：头像框填样式名（gold/rainbow/silver，需与前端注册表一致）、昵称前缀直接填前缀文本（如 ⭐、👑，建议 2 个字符以内，超长会被前端忽略）、theme 必须填框架登记的主题名（light-blue/primary/blue/cyan/green/orange/deep-orange/blue-grey），不是 CSS 渐变值——填错会导致用户付费后界面无变化（身份中心会显示「未登记」提示）。durationDays 填 0 表示永久；大于 0 为限时，到期后自动失效、需重新购买，身份中心会显示剩余天数。
+          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（全局主题皮肤）。style 含义随 type 不同：头像框填样式名（gold/rainbow/silver，需与前端注册表一致）、昵称前缀直接填前缀文本（如 ⭐、👑，建议 2 个字符以内，超长会被前端忽略）、theme 填<b>皮肤包 id 或框架主题名</b>。<br /><b>皮肤包（推荐）</b>：paper（宣纸白，默认，不改变外观）/ mint（青瓷：冷调页底 + 青绿强调）/ sunrise（晨光：暖调页底 + 琥珀强调）/ ink（墨韵深色：深墨底 + 亮字 + 亮靛青，夜间护眼）。皮肤会同时更换页面底色、卡片、文字层级、分割线、强调色与渐变，是「整体换装」；深色皮肤连导航栏与 tabBar 一起变暗。<br /><b>框架主题名（兼容旧配置）</b>：light-blue/primary/blue/cyan/green/orange/deep-orange/blue-grey，只换强调色，页面底色与卡片不变——已购用户的旧装扮继续有效。填错会导致用户付费后界面无变化（身份中心会显示「未登记」提示）。durationDays 填 0 表示永久；大于 0 为限时，到期后自动失效、需重新购买，身份中心会显示剩余天数。
           children:
             - $formkit: text
               name: key
@@ -1224,8 +1491,9 @@ spec:
               validation: required
             - $formkit: text
               name: style
-              label: 样式值（头像框填 gold/rainbow/silver；昵称前缀填前缀文本；主题填主题名）
+              label: 样式值（头像框 gold/rainbow/silver；昵称前缀填文本；主题填皮肤 id：paper/mint/sunrise/ink）
               value: ""
+              help: 主题装扮填皮肤 id 会整站换装（页底/卡片/文字/分割线/强调色一起变）；也可填旧框架主题名只换强调色，两类取值都兼容。
             - $formkit: number
               name: minSpend
               label: 累计消费门槛（元，0=无门槛）
@@ -1244,11 +1512,18 @@ spec:
           help: 开启后，用户可在「邀请好友」页生成邀请码，好友通过分享首次登录注册即视为邀请成功，邀请人获得奖励积分（同一被邀请人仅一次）。
         - $formkit: number
           name: rewardPoints
-          label: 每邀请 1 人奖励积分
+          label: 每邀请 1 人奖励积分（邀请人）
           value: 30
-          min: 1
+          min: 0
           validation: required
-          help: 被邀请人注册后自动发放到邀请人账户；被邀请人自身仍可领取「新人见面礼」。
+          help: 被邀请人注册后自动发放到邀请人账户；填 0 表示只给被邀请人发。
+        - $formkit: number
+          name: inviteeRewardPoints
+          label: 被邀请人奖励积分
+          value: 30
+          min: 0
+          validation: required
+          help: 新用户通过邀请分享首次登录时，他自己也能拿到的积分（填 0 表示不发）。这一笔与「新人见面礼」相互独立，两者都会发。注意：奖励只挂在「新用户首次注册」这个动作上，不要写成「分享得积分」——微信运营规范禁止诱导分享。
     - group: payConfig
       label: 虚拟支付（权益直购）
       formSchema:

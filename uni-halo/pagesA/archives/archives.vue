@@ -1,8 +1,8 @@
 <template>
-    <view class="app-page">
+    <view :class="skinClass" class="app-page">
 
         <view class="e-fixed">
-            <tm-tabs color="light-blue" v-model="tab.activeIndex" :list="tab.list" align="center"
+            <tm-tabs color="indigo" v-model="tab.activeIndex" :list="tab.list" align="center"
                      @change="fnOnTabChange"></tm-tabs>
         </view>
         <!-- 占位区域 -->
@@ -26,7 +26,7 @@
                     <view class="tm-timeline-item tm-timeline-item--leftDir">
                         <view style="width: 160rpx;">
                             <view :style="{ width: '24rpx', height: '24rpx' }" :class="[black_tmeme ? 'bk' : '']"
-                                  class="flex-center rounded tm-timeline-jidian border-white-a-2 grey-lighten-2 light-blue shadow-primary-4">
+                                  class="flex-center rounded tm-timeline-jidian border-white-a-2 grey-lighten-2 indigo shadow-primary-4">
                             </view>
                             <view :style="{ marginTop: '-24rpx' }"
                                   :class="[index !== dataList.length - 1 ? 'tm-timeline-item-boder' : '', black_tmeme ? 'bk' : '']"
@@ -76,7 +76,7 @@
             </view>
             <view class="load-text mt-12">{{ loadMoreText }}</view>
             <!-- 返回顶部 -->
-            <tm-flotbutton @click="fnToTopPage" size="m" color="bg-gradient-light-blue-accent"
+            <tm-flotbutton @click="fnToTopPage" size="m" color="bg-gradient-indigo-accent"
                            icon="icon-angle-up"></tm-flotbutton>
         </block>
     </view>
@@ -374,7 +374,7 @@ export default {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: #fafafd;
+    background-color: $uh-bg;
 }
 
 .auditModeEnabled {
@@ -396,7 +396,7 @@ export default {
 }
 
 .statistics {
-    background-color: #ffffff;
+    background-color: $uh-card;
 }
 
 .e-timeline {
@@ -471,7 +471,7 @@ export default {
 .post {
     width: 560rpx;
     border-radius: 12rpx;
-    background-color: #fff;
+    background-color: $uh-card;
 
     &.lr_image_text {
     }
@@ -577,7 +577,7 @@ export default {
     flex-grow: 1;
 
     &_title {
-        color: #303133;
+        color: $uh-ink-1;
         font-size: 28rpx;
         font-weight: bold;
     }

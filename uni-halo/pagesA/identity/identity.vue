@@ -1,9 +1,9 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看身份中心"></tm-empty>
-			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
+			<tm-button class="mt-24" theme="bg-gradient-indigo-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
 			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
@@ -311,7 +311,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: linear-gradient(180deg, #eef1fa 0%, #f5f6fa 260rpx);
+		background: linear-gradient(180deg, #eef1fa 0%, $uh-fill 260rpx);
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -338,9 +338,9 @@
 		margin-bottom: 20rpx;
 		padding: 32rpx 28rpx 28rpx;
 		border-radius: 24rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		color: #fff;
-		box-shadow: 0 12rpx 32rpx rgba(102, 126, 234, 0.35);
+		box-shadow: 0 12rpx 32rpx rgba(47, 84, 235, 0.35);
 	}
 
 	.identity-head {
@@ -422,7 +422,7 @@
 		width: 108rpx;
 		height: 108rpx;
 		border-radius: 50%;
-		background: #fff;
+		background: $uh-card;
 		border: 3rpx solid rgba(255, 255, 255, 0.65);
 		display: flex;
 		align-items: center;
@@ -493,7 +493,7 @@
 
 	/* ===== 通用卡片 ===== */
 	.section-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 20rpx;
 		padding: 28rpx;
 		margin-bottom: 20rpx;
@@ -510,12 +510,12 @@
 	.section-title {
 		font-size: 30rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.section-sub {
 		font-size: 20rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	/* ===== 称号墙 ===== */
@@ -531,7 +531,7 @@
 		box-sizing: border-box;
 		padding: 24rpx 12rpx 18rpx;
 		border-radius: 16rpx;
-		background: #f7f8fa;
+		background: $uh-fill;
 		border: 2rpx solid #f0f1f5;
 		text-align: center;
 

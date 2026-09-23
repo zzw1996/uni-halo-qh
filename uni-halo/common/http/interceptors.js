@@ -25,7 +25,7 @@ const showCategoryInputPasswordModal = (response, category) => {
         cancelText: '暂不访问',
         showCancel: true,
         cancelColor: '#999999',
-        confirmColor: '#03a9f4',
+        confirmColor: '#2F54EB',
         success: (res) => {
             if (res.confirm) {
                 // TODO 这里如果没有输入密码点击确认应该阻止窗口关闭，但是没找到方法
@@ -118,7 +118,7 @@ export const setInterceptors = (http) => {
                     cancelText: '否',
                     cancelColor: '#999999',
                     confirmText: '是',
-                    confirmColor: '#03a9f4'
+                    confirmColor: '#2F54EB'
                 }).then(res => {
                     uni.navigateTo({
                         url: '/pagesB/login/login'

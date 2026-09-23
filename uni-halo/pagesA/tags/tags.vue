@@ -1,5 +1,5 @@
 <template>
-    <view>文章标签页面</view>
+    <view :class="skinClass">文章标签页面</view>
 </template>
 
 <script>

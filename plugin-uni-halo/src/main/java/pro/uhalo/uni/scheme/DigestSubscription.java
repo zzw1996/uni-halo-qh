@@ -52,6 +52,18 @@ public class DigestSubscription extends AbstractExtension {
      */
     private List<String> postCategories;
 
+    /**
+     * 从邀请人<b>继承</b>来的站点分类（上限 3）。
+     *
+     * <p>与 {@link #postCategories} 的区别：那个是用户自己选的，这个是「谁邀请了他，
+     * 就用谁订阅的分类作为他首页的起点」。两者在首页取并集（自己优先，总共最多 8 个），
+     * 但分成两个字段存，才能做到「自己订满 5 个也不挤掉继承来的」，也才能单独退订继承项。</p>
+     */
+    private List<String> inheritedCategories;
+
+    /** 邀请人 openid：用于「来自 XX 的推荐」文案与退订；为空表示没有继承项 */
+    private String inheritedFrom;
+
     private Instant createdAt;
 
     private Instant updatedAt;

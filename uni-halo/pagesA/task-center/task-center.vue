@@ -1,9 +1,9 @@
 <template>
-	<view class="app-page">
+	<view :class="skinClass" class="app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看每日任务"></tm-empty>
-			<tm-button class="mt-24" theme="bg-gradient-light-blue-accent" :shadow="4" @click="loginDialogShow = true">
+			<tm-button class="mt-24" theme="bg-gradient-indigo-accent" :shadow="4" @click="loginDialogShow = true">
 				微信登录
 			</tm-button>
 			<tm-button class="mt-16" plan theme="grey" :fllowTheme="false" :shadow="0" @click="fnBackHome">返回首页</tm-button>
@@ -41,14 +41,14 @@
 							<text class="task-title">{{ item.label }}</text>
 							<tm-tags
 								v-if="item.claimed"
-								color="bg-grey"
+								color="grey"
 								:shadow="0"
 								size="s"
 								model="fill"
 							>已领取</tm-tags>
 							<tm-tags
 								v-else-if="item.done"
-								color="bg-gradient-light-blue-accent"
+								color="bg-gradient-indigo-accent"
 								:shadow="0"
 								size="s"
 								model="fill"
@@ -237,7 +237,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
-		background: #f5f6fa;
+		background: $uh-fill;
 		padding: 24rpx 24rpx 48rpx;
 	}
 
@@ -261,7 +261,7 @@
 	.summary-card {
 		padding: 32rpx 28rpx;
 		border-radius: 20rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		color: #fff;
 		margin-bottom: 24rpx;
 	}
@@ -306,7 +306,7 @@
 
 	.tool-card,
 	.task-card {
-		background: #fff;
+		background: $uh-card;
 		border-radius: 16rpx;
 		padding: 28rpx;
 		margin-bottom: 24rpx;
@@ -336,7 +336,7 @@
 	.task-title {
 		font-size: 30rpx;
 		font-weight: 700;
-		color: #303133;
+		color: $uh-ink-1;
 	}
 
 	.task-progress {
@@ -356,14 +356,14 @@
 	.progress-fill {
 		height: 100%;
 		border-radius: 6rpx;
-		background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+		background-image: $uh-grad-accent;
 		transition: width 0.3s ease;
 	}
 
 	.progress-text {
 		margin-left: 12rpx;
 		font-size: 22rpx;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.task-action {
@@ -383,7 +383,7 @@
 		display: block;
 		font-size: 22rpx;
 		line-height: 1.6;
-		color: #909399;
+		color: $uh-ink-3;
 	}
 
 	.footer-tip {
