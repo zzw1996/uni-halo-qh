@@ -22,9 +22,9 @@
 			}
 		},
 		{
-			"path": "pages/tabbar/category/category",
+			"path": "pages/tabbar/discover/discover",
 			"style": {
-				"navigationBarTitleText": "分类",
+				"navigationBarTitleText": "发现",
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
@@ -394,6 +394,19 @@
 							}
 						}
 					}
+				},
+				{
+					"path": "ai-content/ai-content",
+					"style": {
+						"navigationBarTitleText": "AI 定制内容",
+						"enablePullDownRefresh": true,
+						"app-plus": {
+							"pullToRefresh": {
+								"color": "#2F54EB",
+								"style": "circle"
+							}
+						}
+					}
 				}
 			]
 		},
@@ -427,16 +440,16 @@
 		}
 	],
 	"globalStyle": {
-		"navigationBarTextStyle": "black",
+		"navigationBarTextStyle": "@navTxtStyle",
 		"navigationBarTitleText": "uni-halo",
-		"navigationBarBackgroundColor": "#ffffff",
-		"backgroundColor": "#F2F2EC"
+		"navigationBarBackgroundColor": "@navBgColor",
+		"backgroundColor": "@bgColor"
 	},
 	"tabBar": {
-		"backgroundColor": "#ffffff",
-		"borderStyle": "white",
-		"color": "#9A9A94",
-		"selectedColor": "#2F54EB",
+		"backgroundColor": "@tabBgColor",
+		"borderStyle": "@tabBorderStyle",
+		"color": "@tabColor",
+		"selectedColor": "@tabSelectedColor",
 		"list": [{
 				"iconPath": "static/tabbar/select_home.png",
 				"selectedIconPath": "static/tabbar/select_home_active.png",
@@ -446,8 +459,8 @@
 			{
 				"iconPath": "static/tabbar/select_category.png",
 				"selectedIconPath": "static/tabbar/select_category_active.png",
-				"pagePath": "pages/tabbar/category/category",
-				"text": "分类"
+				"pagePath": "pages/tabbar/discover/discover",
+				"text": "发现"
 			},
 			{
 				"iconPath": "static/tabbar/select_gallery.png",

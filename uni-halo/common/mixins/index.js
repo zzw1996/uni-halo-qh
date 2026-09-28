@@ -11,7 +11,7 @@
  */
 
 import { getDefaultAppSettings } from '@/utils/app.js'
-import { SKINS, skinState, skinClassOf, applyNativeChrome } from '@/utils/skin.js'
+import { SKINS, skinState, skinClassOf, effectiveSkinId, syncNativeChrome } from '@/utils/skin.js'
 import { hideNativeTabBar } from '@/utils/tabbar.js'
 
 export default {
@@ -58,7 +58,9 @@ export default {
                  * 子孙元素才会命中规则。做成全局计算属性，各页面只需在根节点写 :class="skinClass"。</p>
                  */
                 skinClass() {
-                    return skinClassOf(skinState.id);
+                    // 用「生效皮肤」而不是用户选的皮肤：外观模式（跟随系统/强制深色）
+                    // 会影响实际配色，根类名必须跟着它走，否则切了模式要等重启才生效
+                    return skinClassOf(effectiveSkinId());
                 },
                 /** 当前皮肤信息（皮肤商店/身份中心展示用） */
                 calcSkin() {
@@ -67,6 +69,16 @@ export default {
             },
             onLoad() {
                 this.fnResetSetAniWaitIndex()
+                /**
+                 * 原生栏同步放在 onLoad 而不是只放 onShow。
+                 *
+                 * <p>导航栏与窗口底色是按页面生效的，页面被创建时会先按 pages.json 里的静态值
+                 * 画一帧；等到 onShow 再改就已经"闪"过去了（深色模式下表现为每次进页面
+                 * 先白一下）。onLoad 比 onShow 早，能把这个窗口压到最短。
+                 * 跟随系统时 pages.json 的 darkmode + theme.json 还会在绘制前就选好颜色，
+                 * 两条路一起兜。</p>
+                 */
+                syncNativeChrome()
             },
             created() {
                 // #ifdef MP-WEIXIN
@@ -80,11 +92,10 @@ export default {
                 this.fnResetSetAniWaitIndex()
                 // 启用自绘底栏时，每次页面显示都压一次原生栏（从别的 tab 切回来时原生栏可能被重新显示）
                 hideNativeTabBar(this.haloConfig)
-                // 导航栏/tabBar 颜色是按页面生效的，带皮肤的站每页都要重新同步一次。
-                // 默认皮肤（paper）下不做任何动作：避免覆盖页面自己设置的导航栏样式。
-                if (skinState.id !== 'paper') {
-                    applyNativeChrome(skinState.id)
-                }
+                // 导航栏/tabBar 颜色是按页面生效的，带皮肤/深色外观的站每页都要重新同步一次
+                //（从别的 tab 切回来时原生栏可能被重置）。默认浅色下不做动作，
+                // 避免覆盖页面自己设置的导航栏样式。
+                syncNativeChrome()
             },
             /**
              * iOS 上首帧（onLoad/onShow 阶段）调 wx.hideTabBar 往往无效——那时视图还没 ready，

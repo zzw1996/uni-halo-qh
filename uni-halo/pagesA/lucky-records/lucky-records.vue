@@ -75,6 +75,7 @@
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import { checkHasWxLogin } from '@/utils/auth.js';
 	import { formatPointsHistoryItem, fetchPointsHistory, normalizePointsApiError } from '@/utils/points.js';
 	import { formatTimeSafe } from '@/utils/time.js';
@@ -83,6 +84,7 @@
 	const LUCKY_DRAW_ACTION = 'lucky_draw';
 
 	export default {
+		mixins: [loadMoreMixin],
 		components: {
 			tmSkeleton
 		},
@@ -118,17 +120,16 @@
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 0;
 			this.fnGetData(true);
 		},
 		onReachBottom() {
-			if (this.hasNext) {
+			this.fnLoadMore(this.hasNext, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnGetData(false);
-			} else {
-				uni.showToast({ icon: 'none', title: '没有更多数据了' });
-			}
+			});
 		},
 		methods: {
 			/** 时间格式化（兼容 ISO 字符串 / 秒级或毫秒级时间戳；异常值显示「—」） */
@@ -166,6 +167,7 @@
 					uni.showToast({ title: normalizePointsApiError(err), icon: 'none' });
 				} finally {
 					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
 				}
 			},
 			/** 中奖礼品列表，失败静默 */

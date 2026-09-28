@@ -839,13 +839,16 @@ export default {
   border-collapse: collapse;
 }
 
+/* 表格行底色必须写成调色板里的完整字面量（#ffffff / #f0f0e9）：
+   皮肤生成器靠"逐条替换已知色值"来换肤，短写 #fff 与 #f6f8fa 不在调色板里，
+   深色皮肤下会留下白底表格行。 */
 /deep/ .md-tr {
-  background-color: #fff;
+  background-color: #ffffff;
   border-top: 1px solid #c6cbd1;
 }
 
 .md-table .md-tr:nth-child(2n) {
-  background-color: #f6f8fa;
+  background-color: #f0f0e9;
 }
 
 /deep/ .md-th,

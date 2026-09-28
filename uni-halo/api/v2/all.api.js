@@ -1524,6 +1524,27 @@ export default {
 	},
 
 	/**
+	 * 文章上下篇（详情页底部按钮）
+	 * GET /posts/neighbors?name=<文章 name>
+	 *
+	 * 相邻关系在服务端按发布时间算：前端只拉一页最新文章是找不到旧文章邻居的。
+	 * 没有对应文章时 prev/next 为 null，页面隐藏对应按钮。
+	 */
+	getPostNeighbors: async (name) => {
+		const postName = (name || '').trim();
+		if (!postName) {
+			return Promise.resolve({ prev: null, next: null });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/posts/neighbors')}?name=${encodeURIComponent(postName)}`,
+			method: 'GET',
+			// 必须带会话头：相邻关系按首页列表口径算（登录且有订阅时只看订阅分类内的文章），
+			// 不带的话插件只能按全站口径给，结果又会和用户看到的列表对不上
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
 	 * 热榜（按浏览量 Top N）
 	 * GET /rank/articles?limit=10
 	 */
@@ -1687,6 +1708,44 @@ export default {
 		return requestContentApi({ apiKey: 'membership', method: 'GET' }, true);
 	},
 
+	// ==================== 应用设置（跟账号走） ====================
+	//
+	// 底栏显示项、外观模式、首页布局这些设置此前只存本机：换设备、清缓存、
+	// 以及「版本更新时清缓存」都会回到默认。这里给它们一份服务端副本。
+	//
+	// 约定：
+	// - 键是扁平点号路径（如 tabbar.show.rank），值只有布尔与枚举字符串；
+	// - 只提交本次改动的键（服务端按字段合并，多端各改各的不会互相覆盖）；
+	// - 服务端只接受白名单内的键，其余在 rejected 里回报（不报错，避免新旧版本互打）。
+
+	/**
+	 * 读取当前用户的应用设置副本。
+	 *
+	 * <p>没有副本时返回 `{ settings: {}, revision: 0, synced: false }`——
+	 * `synced=false` 必须当成「这台设备没有可用的云端副本」，不能当成「用户的设置被清空了」。</p>
+	 */
+	getAppSettings: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/app/settings'),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 增量保存应用设置（只带改动的键）。
+	 *
+	 * @param {Object} settings 扁平点号键 → 布尔/枚举字符串
+	 */
+	saveAppSettings: async (settings) => {
+		return directRequest({
+			url: buildUniHaloUrl('/app/settings'),
+			method: 'POST',
+			data: { settings: settings || {} },
+			header: buildOpenidHeader()
+		});
+	},
+
 	// ==================== 分类订阅 ====================
 	//
 	// 订阅只维护一套数据：postCategories（站点分类的 metadata.name）。
@@ -1725,6 +1784,149 @@ export default {
 				// 订阅的站点分类：决定首页主列表显示哪些文章
 				postCategories: payload.postCategories || []
 			},
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 分类订阅热度榜：每个分类被多少用户主动订阅（不含邀请继承项）。
+	 *
+	 * <p>「发现」页用它回答「哪些分类被订阅得最多」。服务端是全站聚合 + 几分钟缓存，
+	 * 所以数字不是实时的；调用方要把它当「排序依据」，拿不到时整块降级而不是报错。</p>
+	 */
+	getCategoryRanking: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/digest/categories/ranking'),
+			method: 'GET'
+		});
+	},
+
+	/**
+	 * 首页内容流（服务端并集）：一次请求拿到「我订阅的几个分类」合并后的文章。
+	 *
+	 * <p>分类由服务端解析（客户端不能传），所以这里只给范围与分页：
+	 * scope=mine 用我的生效分类，scope=hot 用人气分类（零订阅/游客走它）。
+	 * 响应里还会带 fallback 与 hint，用来决定提示条说什么。</p>
+	 */
+	getHomeFeed: async ({ scope = 'mine', page = 1, size = 10 } = {}) => {
+		return directRequest({
+			url: buildUniHaloUrl(`/digest/feed?scope=${encodeURIComponent(scope)}`
+				+ `&page=${ Number(page) || 1 }&size=${ Number(size) || 10 }`),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 用积分解锁一份订阅额度（永久、可累计）。
+	 *
+	 * <p>服务端按「买完之后的总份数」做幂等：重复提交不会扣两次积分。
+	 * 未开启积分解锁、积分不足、超出最大份数都会返回可读原因。</p>
+	 */
+	purchaseSubscribeQuota: async (count = 1) => {
+		return directRequest({
+			url: buildUniHaloUrl('/digest/subscription/quota'),
+			method: 'POST',
+			data: { count: Number(count) || 1 },
+			header: buildOpenidHeader()
+		});
+	},
+
+	// ==================== AI 定制内容（付费权益） ====================
+	//
+	// 与「分类订阅」是两条独立链路：订阅免费、管首页按分类筛站点文章；
+	// 这里是付费权益，产出的是「我的简报」（从已生成的日报内容里按用户方向筛）。
+	// 身份同样只走 Wechat-Session-Id 请求头——简报按 openid 存，绝不能从参数里取身份。
+
+	/**
+	 * 权益状态 + 当前偏好 + 可选项 + 各维度上限（一次拉齐，页面只请求这一个接口）。
+	 *
+	 * <p>未登录也能调：只会拿到「未开通」状态与购买引导，不会拿到任何内容。</p>
+	 */
+	getAiContentPreference: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/preference'),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 保存关注方向（全量替换：三个维度都显式提交）。
+	 *
+	 * <p>服务端做数量与长度校验，超限或分类不在站长清单里时返回可读原因（不会静默截断）。</p>
+	 */
+	saveAiContentPreference: async (payload = {}) => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/preference'),
+			method: 'POST',
+			data: {
+				enabled: payload.enabled !== false,
+				categories: payload.categories || [],
+				sources: payload.sources || [],
+				keywords: payload.keywords || []
+			},
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 我的简报（当天；首次打开会在服务端生成一次，可能等几秒到十几秒）。
+	 *
+	 * @param {string} [date] 指定日期看往期；留空为今天
+	 */
+	getAiContentFeed: async (date) => {
+		const query = date ? '?date=' + encodeURIComponent(date) : '';
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/feed') + query,
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/** 往期简报（只给日期、导语与条数） */
+	getAiContentIssues: async (limit = 10) => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/issues') + '?limit=' + encodeURIComponent(limit),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	// ==================== 消息推送（微信订阅消息） ====================
+	//
+	// 普通类目只能用「一次性订阅消息」：用户点一次授权 → 服务端可发一条。
+	// 微信不提供额度查询，所以授权成功后必须由前端上报记账（reportPushQuota）。
+
+	/** 推送状态：各模板剩余额度、开关、模板是否已配置 */
+	getPushStatus: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/push/status'),
+			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 上报「授权成功」：给指定类型各 +1 条额度。
+	 *
+	 * @param {string[]} kinds 授权通过的类型（newPost / aiDigest）
+	 */
+	reportPushQuota: async (kinds) => {
+		return directRequest({
+			url: buildUniHaloUrl('/push/quota'),
+			method: 'POST',
+			data: { kinds: Array.isArray(kinds) ? kinds : [] },
+			header: buildOpenidHeader()
+		});
+	},
+
+	/** 用户级推送总开关（关掉后不再收到任何订阅消息，额度保留） */
+	setPushEnabled: async (enabled) => {
+		return directRequest({
+			url: buildUniHaloUrl('/push/setting'),
+			method: 'POST',
+			data: { enabled: enabled !== false },
 			header: buildOpenidHeader()
 		});
 	},

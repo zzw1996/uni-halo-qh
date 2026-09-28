@@ -46,7 +46,7 @@ const showCategoryInputPasswordModal = (response, category) => {
                 // TODO 2.另外也可以拿到密码之后，直接选中该分类追加password参数，重新请求，可惜也不会
                 setCache('APP_CATEGORY_PWD_' + category, res.content)
                 uni.reLaunch({
-                    url: '/pages/tabbar/category/category'
+                    url: '/pages/tabbar/discover/discover'
                 });
             } else if (res.cancel) {
             }

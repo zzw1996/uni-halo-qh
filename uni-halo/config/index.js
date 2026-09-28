@@ -99,6 +99,23 @@ export const DefaultAppConfigs = {
 		titles: [],
 		outfits: []
 	},
+	/**
+	 * AI 定制内容配置（由插件后台 aiContentConfig 下发）。
+	 *
+	 * 这是一个付费权益：用户自行配置关注方向（主题/来源/关键词），
+	 * 服务端据此从已生成的 AI 日报内容里筛出他的每日简报。
+	 * 默认关闭——没配商品就露出一个买不了的入口，比不显示更糟。
+	 */
+	aiContentConfig: {
+		enabled: false,
+		aiIntroEnabled: true,
+		maxCategories: 5,
+		maxSources: 5,
+		maxKeywords: 10,
+		maxItems: 10,
+		windowDays: 7,
+		benefitNote: ''
+	},
 	/** 邀请奖励配置（由插件后台 inviteConfig 下发） */
 	inviteConfig: {
 		enabled: true,

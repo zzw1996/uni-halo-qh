@@ -178,8 +178,6 @@
 							:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
 							:button-text="`${getRestrictReadTypeName(result)}`"
 							button-color="#2F54EB"
-							skeleton-color="#f0f0f0"
-							skeleton-highlight="#e0e0e0"
 							animation-duration="2"
 							@refresh="readMore"
 						/>
@@ -200,6 +198,27 @@
 							:showLanguageName="true"
 							:copyByLongPress="true"
 						/>
+					</view>
+				</view>
+
+				<!--
+					上一篇 / 下一篇：正文读完紧接着给「继续阅读」的出口，所以贴在内容区正下方。
+					左右两栏：左=上一篇（更早发布），右=下一篇（更晚发布）；标题单行省略（超出显示 ...）。
+					哪一侧没有文章就不渲染那一栏，不留点了没反应的占位。
+				-->
+				<view v-if="!calcAuditModeEnabled && (neighbors.prev || neighbors.next)"
+					class="post-nav bg-white mt-24 round-4">
+					<view v-if="neighbors.prev" class="post-nav_cell" hover-class="post-nav_cell--pressed"
+						:hover-stay-time="60" @click="fnToRelatedPost(neighbors.prev.name)">
+						<text class="post-nav_label">‹ 上一篇</text>
+						<text class="post-nav_title text-sub-one">{{ neighbors.prev.title }}</text>
+					</view>
+					<view v-if="neighbors.prev && neighbors.next" class="post-nav_divider"></view>
+					<view v-if="neighbors.next" class="post-nav_cell post-nav_cell--right"
+						hover-class="post-nav_cell--pressed" :hover-stay-time="60"
+						@click="fnToRelatedPost(neighbors.next.name)">
+						<text class="post-nav_label">下一篇 ›</text>
+						<text class="post-nav_title text-sub-one">{{ neighbors.next.title }}</text>
 					</view>
 				</view>
 
@@ -274,6 +293,21 @@
 				<!-- 表情快捷反馈 -->
 				<view v-if="result" class="reaction-block mt-24">
 					<content-reaction-bar content-type="post" :content-name="result.metadata.name"></content-reaction-bar>
+				</view>
+
+				<!--
+					猜你喜欢：按本文标签 → 分类 → 最新 的顺序凑 5 篇（前两级可能不足 5 篇）。
+					标签比分类更贴近「相似」；都不够时用最新文章兜底，保证这一栏不空着。
+					只列标题（不带封面、不带日期）：这一栏是「顺手看一眼还有啥」，做成大卡片反而
+					把评论区推得更远，一行一条更好扫。
+				-->
+				<view v-if="!calcAuditModeEnabled && relatedPosts.length" class="related-wrap bg-white mt-24 pa-24 round-4">
+					<view class="related-head text-weight-b">猜你喜欢</view>
+					<view v-for="(item, index) in relatedPosts" :key="item.name" class="related-item"
+						hover-class="related-item--pressed" :hover-stay-time="60" @click="fnToRelatedPost(item.name)">
+						<text class="related-item_index">{{ index + 1 }}</text>
+						<text class="related-item_title text-sub-one">{{ item.title }}</text>
+					</view>
 				</view>
 
 				<!-- 评论展示区域 -->
@@ -505,6 +539,13 @@ export default {
 				name: null
 			},
 			result: null,
+			/** 上一篇 / 下一篇（插件接口按发布时间算好，没有对应文章时为 null 并隐藏按钮） */
+			neighbors: {
+				prev: null,
+				next: null
+			},
+			/** 猜你喜欢：按标签/分类取的相似文章，最多 5 篇 */
+			relatedPosts: [],
 
 			commentDetail: {
 				loading: 'loading',
@@ -755,6 +796,109 @@ export default {
 	methods: {
 		getRestrictReadTypeName,
 		checkPostRestrictRead,
+		/**
+		 * 详情页底部的两块内容：上一篇/下一篇、猜你喜欢。
+		 *
+		 * <p>都在正文渲染完后再取，且各自独立失败（catch 掉，页面安静地少一块），
+		 * 绝不能让附件内容把正文的加载或渲染拖下水。</p>
+		 */
+		fnLoadFooterModules() {
+			if (this.calcAuditModeEnabled || !this.result) return;
+			this.fnLoadNeighbors();
+			this.fnLoadRelatedPosts();
+		},
+
+		/** 上一篇 / 下一篇（插件接口，服务端按发布时间算好相邻关系） */
+		async fnLoadNeighbors() {
+			const name = this.result?.metadata?.name;
+			this.neighbors = { prev: null, next: null };
+			if (!name) return;
+			try {
+				const res = await this.$httpApi.v2.getPostNeighbors(name);
+				const body = res?.data || res || {};
+				this.neighbors = {
+					prev: body.prev && body.prev.name ? body.prev : null,
+					next: body.next && body.next.name ? body.next : null
+				};
+			} catch (err) {
+				console.warn('[article-detail] 上下篇加载失败：', err);
+			}
+		},
+
+		/**
+		 * 猜你喜欢：标签 → 分类 → 最新，依次凑满 5 篇。
+		 *
+		 * <p>为什么要有「最新」兜底：只按标签/分类取，冷门文章的相似列表常常只剩 1~2 篇，
+		 * 这一栏就会看起来像坏了一半；用最新文章补齐后至少始终有 5 条可读内容。</p>
+		 */
+		async fnLoadRelatedPosts() {
+			const post = this.result;
+			this.relatedPosts = [];
+			if (!post) return;
+			const limit = 5;
+			const exclude = new Set([post?.metadata?.name]);
+			const picked = [];
+			const collect = (items) => {
+				(Array.isArray(items) ? items : []).forEach((item) => {
+					const name = item?.metadata?.name;
+					if (!name || exclude.has(name) || picked.length >= limit) return;
+					exclude.add(name);
+					picked.push(item);
+				});
+			};
+			// 每个来源单独兜错：某一个接口挂了（标签没权限/分类被删）不能让整栏都空掉
+			const loadFrom = async (label, loader) => {
+				try {
+					const res = await loader();
+					collect(res?.items);
+				} catch (err) {
+					console.warn(`[article-detail] 猜你喜欢(${label})加载失败：`, err);
+				}
+			};
+			try {
+				// 1) 标签（最贴近「相似」）
+				for (const tag of (post.tags || []).slice(0, 2)) {
+					if (picked.length >= limit) break;
+					const name = tag?.metadata?.name;
+					if (!name) continue;
+					await loadFrom('标签', () => this.$httpApi.v2.getPostByTagName(name, { page: 0, size: 6 }));
+				}
+				// 2) 分类（同一栏目）
+				for (const cate of (post.categories || []).slice(0, 2)) {
+					if (picked.length >= limit) break;
+					const name = cate?.metadata?.name;
+					if (!name) continue;
+					await loadFrom('分类', () => this.$httpApi.v2.getCategoryPostList(name, { page: 0, size: 6 }));
+				}
+				// 3) 最新（兜底，保证凑满）
+				if (picked.length < limit) {
+					await loadFrom('最新', () => this.$httpApi.v2.getPostList({ page: 0, size: 8 }));
+				}
+				// 只留跳转与展示要的字段：这一栏只显示标题，封面/日期都不取，
+				// 也顺带避免了把 Halo 那些带点的 label 一起塞进 data（setData 会当路径解析）
+				this.relatedPosts = picked.slice(0, limit).map((item) => ({
+					name: item.metadata.name,
+					title: item.spec?.title || '未命名文章'
+				}));
+			} catch (err) {
+				console.warn('[article-detail] 猜你喜欢加载失败：', err);
+				this.relatedPosts = [];
+			}
+		},
+
+		/**
+		 * 跳转到相邻 / 推荐文章。
+		 *
+		 * <p>用 redirectTo 而不是 navigateTo：详情页之间互相跳很容易把页面栈顶到 10 层上限
+		 * （A→B→C…），到那时再点就没反应了。redirectTo 替换当前页，返回时回到文章列表。</p>
+		 */
+		fnToRelatedPost(name) {
+			if (!name) return;
+			uni.redirectTo({
+				url: '/pagesA/article-detail/article-detail?name=' + name
+			});
+		},
+
 		fnGetData() {
 			const name = (this.queryParams.name || '').trim();
 			if (!name) {
@@ -790,6 +934,8 @@ export default {
 					this.fnHandleSetFlotButtonItems(this.haloConfigs);
 					this.handleQueryCommentListScrollTop();
 					this.fnTrackersCounter();
+					// 底部两块是附加内容：正文渲染完之后再取，且各自失败互不影响
+					this.fnLoadFooterModules();
 				})
 				.catch((err) => {
 					// 付费文章被插件拦截（ContentTicketFilter 返回 403 + ContentLockedDTO）。
@@ -2418,4 +2564,86 @@ export default {
 		}
 	}
 }
+
+	/* ===== 上一篇 / 下一篇（正文下方左右两栏） ===== */
+	.post-nav {
+		display: flex;
+		align-items: stretch;
+		box-sizing: border-box;
+		overflow: hidden;
+	}
+
+	.post-nav_cell {
+		flex: 1;
+		min-width: 0;
+		box-sizing: border-box;
+		padding: 20rpx 24rpx;
+	}
+
+	/* 整块是热区，按下时给一层浅底；两侧各自反馈，用户能明确知道点的是哪一边 */
+	.post-nav_cell--pressed {
+		background-color: $uh-fill;
+	}
+
+	.post-nav_divider {
+		width: 1rpx;
+		background-color: $uh-line;
+	}
+
+	.post-nav_label {
+		display: block;
+		font-size: 22rpx;
+		color: $uh-accent;
+	}
+
+	/* 标题单行省略：超出部分显示 ...（text-sub-one 提供 ellipsis），
+	   右侧栏整体右对齐，视觉上像「往右翻」 */
+	.post-nav_title {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 26rpx;
+		color: $uh-ink-1;
+	}
+
+	.post-nav_cell--right {
+		text-align: right;
+	}
+
+	/* ===== 猜你喜欢（紧凑标题列表） ===== */
+	.related-wrap {
+		box-sizing: border-box;
+	}
+
+	.related-head {
+		font-size: 28rpx;
+		color: $uh-ink-1;
+	}
+
+	.related-item {
+		display: flex;
+		align-items: center;
+		/* 单行标题：行高压到 12rpx 内边距，5 条加起来只占一百多 rpx */
+		padding: 12rpx 0;
+	}
+
+	/* 文字行的按下反馈用透明度，比整行变色更轻，也不会和卡片底色打架 */
+	.related-item--pressed {
+		opacity: 0.55;
+	}
+
+	.related-item_index {
+		flex-shrink: 0;
+		width: 32rpx;
+		margin-right: 8rpx;
+		font-size: 22rpx;
+		color: $uh-ink-4;
+	}
+
+	.related-item_title {
+		flex: 1;
+		min-width: 0;
+		font-size: 26rpx;
+		color: $uh-ink-2;
+	}
+
 </style>

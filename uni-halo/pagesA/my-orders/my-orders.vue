@@ -65,7 +65,7 @@
 			</view>
 
 			<view class="footer-tip">
-				<text>「待支付」的订单若已扣款请耐心等待，系统会自动补发到账；「需人工处理」表示该笔权益未发放，请联系站长退款。</text>
+				<text>「待支付」的订单 15 分钟内有效，超时未支付会自动变为「已失效」（届时可重新下单）；若已扣款请耐心等待，系统会自动补发到账；「需人工处理」表示该笔权益未发放，请联系站长退款。</text>
 			</view>
 		</block>
 	</view>
@@ -73,12 +73,14 @@
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import { checkHasWxLogin } from '@/utils/auth.js';
 
 	/** 已到账、可计入实付合计的状态 */
 	const PAID_STATUS = 'delivered';
 
 	export default {
+		mixins: [loadMoreMixin],
 		components: {
 			tmSkeleton
 		},
@@ -121,17 +123,18 @@
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 0;
 			this.fnLoad(true);
 		},
 		onReachBottom() {
-			if (this.hasMore) {
+			// 空列表不提示「没有更多数据了」——那会像报错；只在有数据且确实到底时才提示
+			if (!this.orders.length) return;
+			this.fnLoadMore(this.hasMore, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnLoad(false);
-			} else if (this.orders.length) {
-				uni.showToast({ icon: 'none', title: '没有更多数据了' });
-			}
+			});
 		},
 		methods: {
 			async fnLoad(refresh) {
@@ -163,6 +166,7 @@
 					});
 				} finally {
 					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
 				}
 			},
 			/**
@@ -184,6 +188,7 @@
 					// 兜底查单可能刚刚补发成功，整表刷新一次更准
 					this.queryParams.page = 0;
 					this.isLoadMore = false;
+					this.fnLoadMoreDone();
 					await this.fnLoad(true);
 					uni.showToast({ title: body.delivered ? '已到账' : '状态已更新', icon: 'none' });
 				} catch (err) {
@@ -209,6 +214,7 @@
 				if (status === PAID_STATUS) return 'done';
 				if (status === 'pending') return 'pending';
 				if (status === 'needs_refund') return 'alert';
+				// 已失效 / 已关闭都是「不用管」的终态，统一走灰色
 				return 'muted';
 			}
 		}

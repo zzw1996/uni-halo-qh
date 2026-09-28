@@ -518,7 +518,7 @@ export default {
 
 	&__time {
 		font-size: 24rpx;
-		color: #999;
+		color: $uh-ink-3;
 	}
 
 	&__actions {
@@ -530,14 +530,14 @@ export default {
 		width: 72rpx;
 		height: 44rpx;
 		border-radius: 8rpx;
-		background: #ececec;
+		background: $uh-fill;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		box-shadow: inset 0 0 0 1rpx rgba(0, 0, 0, 0.04);
 
 		&.is-active {
-			background: #e2e2e2;
+			background: $uh-line;
 		}
 	}
 
@@ -610,7 +610,7 @@ export default {
 
 	&__box {
 		margin-top: 16rpx;
-		background: #f7f7f7;
+		background: $uh-fill;
 		border-radius: 8rpx;
 		padding: 12rpx 16rpx;
 	}
@@ -622,7 +622,7 @@ export default {
 
 		.likes-icon {
 			font-size: 24rpx;
-			color: #576b95;
+			color: $uh-accent;
 			margin-right: 12rpx;
 			flex-shrink: 0;
 		}
@@ -646,27 +646,27 @@ export default {
 			width: 100%;
 			height: 100%;
 			display: block;
-			background: #ececec;
+			background: $uh-fill;
 		}
 
 		.likes-avatar-placeholder {
 			width: 100%;
 			height: 100%;
-			background: #d8d8d8;
+			background: $uh-line;
 			display: flex;
 			align-items: center;
 			justify-content: center;
 
 			.placeholder-icon {
 				font-size: 22rpx;
-				color: #f5f5f5;
+				color: $uh-ink-4;
 			}
 		}
 	}
 
 	&__comments {
 		&.has-likes {
-			border-top: 1rpx solid #ededed;
+			border-top: 1rpx solid $uh-line;
 			padding-top: 8rpx;
 			margin-top: 4rpx;
 		}
@@ -680,21 +680,21 @@ export default {
 	}
 
 	.comment-author {
-		color: #576b95;
+		color: $uh-accent;
 		font-weight: 500;
 	}
 
 	.comment-reply-tag {
-		color: #333;
+		color: $uh-ink-1;
 		margin: 0 4rpx;
 	}
 
 	.comment-colon {
-		color: #333;
+		color: $uh-ink-1;
 	}
 
 	.comment-content {
-		color: #333;
+		color: $uh-ink-1;
 	}
 }
 

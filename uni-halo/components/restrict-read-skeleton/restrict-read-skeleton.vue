@@ -28,13 +28,20 @@ export default {
       default: 4,
       validator: value => value >= 1 && value <= 6
     },
+    /**
+     * 骨架条的两个颜色。
+     *
+     * <p>默认留空 = 用样式里的设计 Token（$uh-fill / $uh-line），深色皮肤下会跟着变暗。
+     * 只有调用方显式传色才走内联渐变。之前调用方一律传浅灰（#f0f0f0 / #e0e0e0），
+     * 而内联样式皮肤生成器换不到 —— 深色下「此处内容已隐藏」就是一块发亮的白条。</p>
+     */
     skeletonColor: {
       type: String,
-      default: '#f5f5f5'
+      default: ''
     },
     skeletonHighlight: {
       type: String,
-      default: '#e8e8e8'
+      default: ''
     },
     animationDuration: {
       type: Number,
@@ -55,6 +62,22 @@ export default {
     tipSize: {
       type: Number,
       default: 24 // 提示文字大小，单位rpx
+    }
+  },
+  computed: {
+    /**
+     * 骨架条的渐变。
+     *
+     * <p>调用方没传颜色时返回空串：此时不写内联样式，交给样式表里的 Token 渐变
+     * （$uh-fill → $uh-line），深色皮肤由皮肤生成器一并换掉。传了颜色才走内联。</p>
+     */
+    calcLineBackground() {
+      if (!this.skeletonColor && !this.skeletonHighlight) {
+        return '';
+      }
+      const base = this.skeletonColor || '#f0f0e9';
+      const highlight = this.skeletonHighlight || '#e9e9e2';
+      return `linear-gradient(90deg, ${base} 25%, ${highlight} 50%, ${base} 75%)`;
     }
   },
   methods: {
@@ -87,7 +110,7 @@ export default {
             'shorter': index === lines - 1
           }"
           :style="{
-            background: `linear-gradient(90deg, ${skeletonColor} 25%, ${skeletonHighlight} 50%, ${skeletonColor} 75%)`,
+            background: calcLineBackground,
             animationDuration: `${animationDuration}s`
           }">
         </view>
@@ -156,6 +179,8 @@ export default {
 
   &-line {
     height: 32rpx;
+    /* 默认渐变走 Token（深色皮肤下自动变暗）；调用方传色时会被内联样式覆盖 */
+    background: linear-gradient(90deg, $uh-fill 25%, $uh-line 50%, $uh-fill 75%);
     background-size: 400% 100%;
     border-radius: 8rpx;
     margin-bottom: 20rpx;

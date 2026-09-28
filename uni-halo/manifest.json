@@ -119,6 +119,9 @@
     "quickapp" : {},
     /* 小程序特有相关 */
     "mp-weixin" : {
+		/* 深色模式：这两个键只有放在本节点才会被写进编译产物的 app.json；写在 pages.json 里会被丢掉（themeLocation 侥幸透传、darkmode 丢失），表现为 @变量没人解析、小程序启动即报 module not defined */
+		"darkmode": true,
+		"themeLocation": "theme.json",
         "appid" : "wx510a685c60ccb388",
         "setting" : {
             "urlCheck" : false,

@@ -1,150 +1,175 @@
 <template>
 	<view class="app-page" :class="[skinClass, { 'is-balck grey-darken-6': isBlackTheme }]">
 		<tm-form v-if="!loading" ref="formData">
-			<!-- <tm-sheet :shadow="24" :padding="[12, 24]" :margin="[24, 24]">
-					<view class="py-12 px-24 mx-12 round-3 border-b-1 grey text">
-						<text class="text-size-n text-weight-b ">标题</text>
-						<text class="text-grey text-size-xs px-10">副标题/描述</text>
+			<!--
+				⓪ 外观：明暗偏好。放在最前是因为它决定整页配色，
+				用户找「怎么变深色」时第一眼就能看到；皮肤（买的配色）在装扮商店里，两者分开。
+			-->
+			<tm-sheet :shadow="6" :padding="[0, 0]" :margin="[24, 20]">
+				<view class="group-head">
+					<view class="group-title-wrap">
+						<view class="group-bar"></view>
+						<text class="group-title">外观</text>
 					</view>
-					<view class="sheet-content">内容区域</view>
-				</tm-sheet> -->
-			<tm-sheet :shadow="6" :padding="[12, 24]" :margin="[24, 24]">
-				<view class="py-12 px-24 mx-12 round-3  grey text">
-					<text class="text-size-n text-weight-b text-grey-darken-3">布局</text>
-					<text class="text-grey text-size-xs px-10 ml-12">应用以及文章列表布局设置</text>
+					<text class="group-desc">明暗与跟随系统</text>
 				</view>
-				<view class="sheet-content">
-					<tm-pickers title="请选择首页布局" btn-color="indigo" :default-value.sync="homeLayout.selectDefault"
-						rang-key="name" :list="homeLayout.list" @confirm="fnOnHomeLayoutConfirm">
-						<tm-input name="status" required title="首页文章布局" placeholder="请选择首页文章布局" disabled align="right"
-							:value="homeLayout.selectLabel" right-icon="icon-angle-right"></tm-input>
+				<view class="group-body">
+					<tm-pickers title="请选择外观模式" btn-color="indigo"
+						:default-value.sync="appearance.selectDefault" rang-key="name"
+						:list="appearance.list" @confirm="fnOnAppearanceConfirm">
+						<uh-setting-row title="外观模式" :desc="appearanceHint">
+							<view class="row-value">
+								<text class="row-value-text">{{ appearance.selectLabel }}</text>
+								<text class="row-arrow">›</text>
+							</view>
+						</uh-setting-row>
 					</tm-pickers>
+				</view>
+			</tm-sheet>
+
+			<!-- ① 布局与卡片：决定首页列表长什么样 -->
+			<tm-sheet :shadow="6" :padding="[0, 0]" :margin="[24, 20]">
+				<view class="group-head">
+					<view class="group-title-wrap">
+						<view class="group-bar"></view>
+						<text class="group-title">布局与卡片</text>
+					</view>
+					<text class="group-desc">首页列表长什么样</text>
+				</view>
+				<view class="group-body">
+					<tm-pickers title="请选择首页布局" btn-color="indigo"
+						:default-value.sync="homeLayout.selectDefault" rang-key="name" :list="homeLayout.list"
+						@confirm="fnOnHomeLayoutConfirm">
+						<uh-setting-row title="首页文章布局"
+							:desc="homeLayoutHint">
+							<view class="row-value">
+								<text class="row-value-text">{{ homeLayout.selectLabel }}</text>
+								<text class="row-arrow">›</text>
+							</view>
+						</uh-setting-row>
+					</tm-pickers>
+
 					<tm-pickers title="请选择文章卡片样式" btn-color="indigo"
 						:default-value.sync="articleCardStyle.selectDefault" rang-key="name"
 						:list="articleCardStyle.list" @confirm="fnOnArticleCardStyleConfirm">
-						<tm-input name="status" required title="文章卡片样式" placeholder="请选择文章卡片样式" disabled align="right"
-							:value="articleCardStyle.selectLabel" right-icon="icon-angle-right"></tm-input>
+						<uh-setting-row title="文章卡片样式" desc="图与标题的排布方式">
+							<view class="row-value">
+								<text class="row-value-text">{{ articleCardStyle.selectLabel }}</text>
+								<text class="row-arrow">›</text>
+							</view>
+						</uh-setting-row>
 					</tm-pickers>
-				</view>
-			</tm-sheet>
 
-			<tm-sheet v-if="false" :shadow="24" :padding="[12, 24]" :margin="[24, 24]">
-				<view class="py-12 px-24 mx-12 round-3 grey text">
-					<text class="text-size-n text-weight-b ">外观</text>
-					<text class="text-grey text-size-xs px-10">设置应用主题色/暗黑模式等</text>
-				</view>
-				<view class="sheet-content">
-					<!-- 内容区域 -->
-					<text class="ma-24">todo</text>
-				</view>
-			</tm-sheet>
-
-			<tm-sheet :shadow="6" :padding="[12, 24]" :margin="[24, 24]">
-				<view class="py-12 px-24 mx-12 round-3 grey text">
-					<text class="text-size-n text-weight-b text-grey-darken-3">功能</text>
-					<text class="text-grey text-size-xs px-10  ml-12">一些常用的功能性设置</text>
-				</view>
-				<view class="sheet-content">
-						<!-- 	<view class="mx-32 mt-24 mb-0 border-b-1 pb-24 flex-between">
-						<text class="text-size-m">启用评论弹幕</text>
-						<tm-switch v-model="appSettings.barrage.use" color="indigo" :text="['是', '否']"></tm-switch>
-					</view>
-					<tm-pickers
-						v-if="appSettings.barrage.use"
-						title="评论弹幕位置"
-						btn-color="indigo"
-						:default-value.sync="barrage.selectDefault"
-						rang-key="name"
-						:list="barrage.list"
-						@confirm="fnOnBarrageConfirm"
-					>
-						<tm-input
-							name="status"
-							title="评论弹幕位置"
-							placeholder="请选择评论弹幕位置"
-							disabled
-							align="right"
-							:value="barrage.selectLabel"
-							right-icon="icon-angle-right"
-						></tm-input>
-					</tm-pickers> -->
-				<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m">显示文章封面</text>
+					<uh-setting-row title="显示文章封面" desc="关掉后列表只留标题与摘要">
 						<tm-switch v-model="appSettings.articleCard.showCover" color="indigo"
 							:text="['显示', '隐藏']"></tm-switch>
+					</uh-setting-row>
+				</view>
+			</tm-sheet>
+
+			<!-- ② 阅读体验 -->
+			<tm-sheet :shadow="6" :padding="[0, 0]" :margin="[24, 20]">
+				<view class="group-head">
+					<view class="group-title-wrap">
+						<view class="group-bar"></view>
+						<text class="group-title">阅读体验</text>
 					</view>
-					<view class="mx-32 my-24 border-b-1 pb-24 flex-between">
-						<text class="text-size-m">显示文章详情统计</text>
+					<text class="group-desc">文章页与首页的细节</text>
+				</view>
+				<view class="group-body">
+					<uh-setting-row title="显示文章详情统计" desc="文章底部的阅读量等数据">
 						<tm-switch v-model="appSettings.articleDetail.showStats" color="indigo"
 							:text="['显示', '隐藏']"></tm-switch>
-					</view>
-					<view class="mx-32 my-24 border-b-1 pb-24 flex-between">
-						<text class="text-size-m">全局悬浮按钮</text>
+					</uh-setting-row>
+
+					<uh-setting-row title="全局悬浮按钮" desc="右下角一直显示的回顶按钮">
 						<tm-switch v-model="appSettings.flotbutton.show" color="indigo"
 							:text="['显示', '隐藏']"></tm-switch>
-					</view>
-					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m ">轮播图指示器</text>
+					</uh-setting-row>
+
+					<uh-setting-row title="轮播图指示器" desc="首页顶部大图上的圆点">
 						<tm-switch v-model="appSettings.banner.useDot" color="indigo"
-							:text="['是', '否']"></tm-switch>
-					</view>
-					<view v-if="appSettings.banner.useDot" class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m ">轮播图指示器位置</text>
+							:text="['显示', '隐藏']"></tm-switch>
+					</uh-setting-row>
+
+					<!-- 圆点位置：两个选项横排，放在标题下方一整行更宽松，不挤在右侧 -->
+					<view v-if="appSettings.banner.useDot" class="stack-row">
+						<text class="stack-title">指示器位置</text>
 						<tm-groupradio name="dotPosition" @change="fnOnBannerDotChange">
 							<tm-radio :name="item.name" :size="28" color="indigo"
-								v-for="(item, index) in dotPositionList" :key="index" v-model="item.checked"
+								v-for="(item, index) in dotPositionList" :key="item.value" v-model="item.checked"
 								:label="item.name"></tm-radio>
 						</tm-groupradio>
 					</view>
+				</view>
+			</tm-sheet>
+
+			<!-- ③ 提醒与导航：会带来外部效果（微信通知 / 底栏）的两项放一起 -->
+			<tm-sheet :shadow="6" :padding="[0, 0]" :margin="[24, 20]">
+				<view class="group-head">
+					<view class="group-title-wrap">
+						<view class="group-bar"></view>
+						<text class="group-title">提醒与导航</text>
+					</view>
+					<text class="group-desc">微信通知与底部导航</text>
+				</view>
+				<view class="group-body">
+					<!--
+						推送开关：只在站长开了「消息推送」时出现。
+						它同时写本地设置与服务端（服务端才是权威——决定要不要给你发消息），
+						所以用 @change 而不是 v-model：点一下就要立刻同步过去。
+					-->
+					<uh-setting-row v-if="calcPushAvailable" title="接收更新提醒"
+						desc="订阅的分类有新文章时，微信通知你">
+						<tm-switch :checked="pushEnabled" @change="fnOnPushToggle" color="indigo"
+							:text="['接收', '不接收']"></tm-switch>
+					</uh-setting-row>
 
 					<!--
 						底部导航：站长在插件后台「底部导航（TabBar）」里定好默认显示哪几项，
 						用户可以在下面按自己的习惯再调。固定项（首页/我的）不提供开关；
 						总数限制在 3~5 项（微信原生底栏最多 5 项；最少 3 项是本站的口径，可调）。
 					-->
-					<view v-if="calcTabbarEnabled" class="mx-32 my-24 border-b-1 pb-24 flex-between">
-						<text class="text-size-m">自定义底部导航</text>
+					<uh-setting-row v-if="calcTabbarEnabled" title="自定义底部导航"
+						desc="按自己的习惯决定底栏显示哪几项">
 						<tm-switch v-model="appSettings.tabbar.useCustom" color="indigo"
 							:text="['是', '否']"></tm-switch>
-					</view>
+					</uh-setting-row>
+
 					<block v-if="calcTabbarEnabled && appSettings.tabbar.useCustom">
-						<view v-for="(item, index) in calcTabbarToggles" :key="item.key"
-							class="mx-32 my-24 border-b-1 pb-24 flex-between">
-							<text class="text-size-m">显示「{{ item.label }}」</text>
+						<uh-setting-row v-for="item in calcTabbarToggles" :key="item.key"
+							:title="`显示「${item.label}」`">
 							<tm-switch v-model="appSettings.tabbar.show[item.key]" color="indigo"
 								:text="['显示', '隐藏']" @change="fnOnTabbarToggle(item)"></tm-switch>
-						</view>
-						<text class="setting-tabbar-tip">
-							「首页」与「我的」固定显示；其余项随意增减，但底栏总数需保持在 3~5 项之间
-						</text>
-						<view class="mx-32 my-24">
-							<tm-button size="m" plan theme="indigo" :fllowTheme="false" :shadow="0"
-								@click="fnOnTabbarResetToAdmin">按站长配置恢复</tm-button>
+						</uh-setting-row>
+
+						<view class="tip-box">
+							<text class="tip-text">「首页」与「我的」固定显示；其余项随意增减，但底栏总数需保持在 3~5 项之间。</text>
+							<view class="tip-action" @click="fnOnTabbarResetToAdmin">
+								<text class="tip-action-text">按站长配置恢复</text>
+							</view>
 						</view>
 					</block>
-
-					<!-- 	<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m">显示完整统计</text>
-						<tm-switch v-model="appSettings.about.showAllCount" color="indigo" :text="['是', '否']"></tm-switch>
-					</view>
-					<view class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m ">链接直接打开</text>
-						<tm-switch v-model="appSettings.contact.isLinkCopy" color="indigo" :text="['是', '否']"></tm-switch>
-					</view>
-					<view v-if="false" class="mx-32 my-24 border-b-1  pb-24 flex-between">
-						<text class="text-size-m ">显示后台入口</text>
-						<tm-switch v-model="appSettings.about.showAdmin" color="indigo" :text="['是', '否']"></tm-switch>
-					</view> -->
 				</view>
 			</tm-sheet>
 		</tm-form>
 
-		<!-- 操作区域 -->
-		<view v-if="!loading" class="btn-bar flex flex-center bg-white">
-			<!-- 保存为主操作，跟随主题皮肤变色；恢复默认（危险）与返回需保持语义色 -->
-			<tm-button theme="indigo" :shadow="0" block :height="70" @click="fnOnSave()">保存设置</tm-button>
-			<tm-button theme="red" :fllowTheme="false" :shadow="0" block :height="70" @click="fnOnSaveDefault()">恢复默认设置</tm-button>
-			<tm-button theme="blue-grey" :fllowTheme="false" :shadow="0" block :height="70" @click="fnOnBack()">返回</tm-button>
+		<!-- 操作区：保存是主操作，另外两个退成描边按钮 -->
+		<view v-if="!loading" class="action-bar">
+			<text v-if="!isSaved" class="unsaved-hint">有未保存的改动</text>
+			<view class="action-row">
+				<view class="action-item is-minor">
+					<tm-button size="m" plan theme="blue-grey" :fllowTheme="false" :shadow="0" block
+						@click="fnOnBack">返回</tm-button>
+				</view>
+				<view class="action-item is-minor">
+					<tm-button size="m" plan theme="red" :fllowTheme="false" :shadow="0" block
+						@click="fnOnSaveDefault">恢复默认</tm-button>
+				</view>
+				<view class="action-item is-primary">
+					<tm-button size="m" theme="indigo" :shadow="0" block @click="fnOnSave">保存设置</tm-button>
+				</view>
+			</view>
 		</view>
 	</view>
 </template>
@@ -160,6 +185,11 @@
 		getTabbarCandidates,
 		getToggleableCandidates
 	} from '@/utils/tabbar.js';
+	import { requestSubscribe } from '@/utils/subscribeMessage.js';
+	import { getAppConfigs } from '@/config/index.js';
+	// 「接收更新提醒」的两个入口都要用它判断登录态：早前漏了这一行，
+	// 站长一开推送、进这个页面就报 checkHasWxLogin is not defined
+	import { checkHasWxLogin } from '@/utils/auth.js';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import tmForm from '@/tm-vuetify/components/tm-form/tm-form.vue';
 	import tmPickers from '@/tm-vuetify/components/tm-pickers/tm-pickers.vue';
@@ -168,6 +198,9 @@
 	import tmSheet from '@/tm-vuetify/components/tm-sheet/tm-sheet.vue';
 	import tmGroupradio from '@/tm-vuetify/components/tm-groupradio/tm-groupradio.vue';
 	import tmRadio from '@/tm-vuetify/components/tm-radio/tm-radio.vue';
+	import uhSettingRow from '@/components/uh-setting-row/uh-setting-row.vue';
+	import { APPEARANCE_MODES, appearanceState, appearanceLabelOf, applyAppearanceMode } from '@/utils/skin.js';
+	import { pushAppearanceMode } from '@/utils/appSettingsSync.js';
 
 	export default {
 		components: {
@@ -178,7 +211,8 @@
 			tmSwitch,
 			tmSheet,
 			tmGroupradio,
-			tmRadio
+			tmRadio,
+			uhSettingRow
 		},
 		data() {
 			return {
@@ -187,6 +221,13 @@
 				appSettings: {},
 				isSaved: true,
 				firstLoad: true,
+				appearance: {
+					// 选项来自 utils/skin.js 的 APPEARANCE_MODES：加模式只改那一处
+					list: APPEARANCE_MODES.map((item) => ({ name: item.label, value: item.id })),
+					selectDefault: [appearanceLabelOf(appearanceState.mode)],
+					selectLabel: appearanceLabelOf(appearanceState.mode),
+					selectValue: appearanceState.mode
+				},
 				homeLayout: {
 					list: [{
 						name: '一行一列',
@@ -234,18 +275,10 @@
 					value: 'bottom',
 					checked: false
 				}],
-				barrage: {
-					list: [{
-						name: '顶部',
-						value: 'rightToLeft'
-					}, {
-						name: '左下',
-						value: 'leftBottom'
-					}],
-					selectDefault: ['顶部'],
-					selectLabel: '顶部',
-					selectValue: 'rightToLeft'
-				}
+				/** 是否接收更新提醒（服务端为准；本地设置里也留一份用于离线显示） */
+				pushEnabled: true,
+				/** 服务端是否已返回过推送状态（决定用哪一份值） */
+				pushStatusLoaded: false
 			};
 		},
 
@@ -274,6 +307,7 @@
 				show: Object.assign({}, _DefaultAppSettings.tabbar.show, storedTabbar.show || {})
 			});
 			this.fnHandleFormatSelect();
+			this.fnLoadPushStatus();
 			uni.showLoading({
 				title: '加载中...',
 				mask: true
@@ -285,6 +319,16 @@
 		},
 
 		computed: {
+			/**
+			 * 是否显示「接收更新提醒」开关。
+			 *
+			 * 只在站长开启了消息推送（且模板已配置）时出现——没开这个功能时露出开关，
+			 * 用户点了也收不到消息，只会以为功能坏了。
+			 */
+			calcPushAvailable() {
+				const push = this.haloConfig?.pushConfig;
+				return push?.enabled === true && !!push?.templateId;
+			},
 			/** 站长是否开启了可配置底部导航：没开或服务端没下发候选清单时，整块不展示（改了也没意义） */
 			calcTabbarEnabled() {
 				return this.haloConfig?.tabbarConfig?.enabled === true && this.calcTabbarToggles.length > 0;
@@ -296,10 +340,93 @@
 			/** 当前已勾选的可选项个数：需介于 1~3 之间（固定项占 2 席，总数即 3~5） */
 			calcTabbarPickedCount() {
 				return countUserPicked(getTabbarCandidates(this.haloConfig), this.appSettings.tabbar);
+			},
+			/** 首页布局的说明跟着选中项走：光看「一行一列 / 一行两列」看不出区别在哪 */
+			/** 外观提示：跟随系统时把「当前系统是深是浅」说出来，用户才知道为什么现在是这个配色 */
+			appearanceHint() {
+				if (appearanceState.mode !== 'auto') {
+					return '不跟随系统，界面固定用这个明暗';
+				}
+				return appearanceState.systemDark
+					? '跟随系统（当前系统：深色）'
+					: '跟随系统（当前系统：浅色）';
+			},
+			homeLayoutHint() {
+				return this.appSettings?.layout?.home === 'h_row_col2'
+					? '一行两列：一屏看得更多'
+					: '一行一列：每篇的信息更完整';
 			}
 		},
 
 		methods: {
+			/**
+			 * 读取服务端的推送开关。
+			 *
+			 * 以服务端为准：它决定要不要真的给你发消息，本地那份只是显示用的缓存。
+			 * 未登录或没开通时不请求（服务端会返回未开通，没必要多打一次接口）。
+			 */
+			async fnLoadPushStatus() {
+				if (!this.calcPushAvailable || !checkHasWxLogin()) {
+					return;
+				}
+				try {
+					const res = await this.$httpApi.v2.getPushStatus();
+					const body = res?.data || res || {};
+					if (!body.error) {
+						this.pushEnabled = body.userEnabled !== false;
+						this.pushStatusLoaded = true;
+					}
+				} catch (err) {
+					// 读不到就按本地那份显示，不打扰用户
+				}
+			},
+			/** 切换「接收更新提醒」：先写服务端，失败则回滚 UI（不能让显示与事实相反） */
+			async fnOnPushToggle(e) {
+				// tm-switch 的 change 事件载荷固定是 { checked, value }：checked 才是开关状态，
+				// value 是 name 自定义数据（不是布尔值），别拿它当状态用
+				const next = !!(e && e.checked);
+				const previous = this.pushEnabled;
+				this.pushEnabled = next;
+				if (!checkHasWxLogin()) {
+					this.pushEnabled = previous;
+					uni.$tm.toast('请先登录');
+					return;
+				}
+				// 打开时先争一次微信授权：这时候用户刚点完开关，正是他愿意收提醒的时刻，
+				// 不拿到授权的话这个开关是「虚」的——服务端没有额度可发，用户却以为已经开了
+				if (next) {
+					const push = getAppConfigs()?.pushConfig || {};
+					if (push.enabled === true && push.templateId) {
+						const result = await requestSubscribe(this.$httpApi.v2, [
+							{ kind: 'newPost', tmplId: push.templateId }
+						]);
+						if (result.ok) {
+							uni.$tm.toast('已开启，有更新时通知你');
+						} else if (Array.isArray(result.banned) && result.banned.length > 0) {
+							this.pushEnabled = previous;
+							uni.$tm.toast('你已关闭订阅消息，请在小程序设置里重新打开');
+							return;
+						} else {
+							// 用户这次没同意：开关仍然打开（服务端会记着），但先别报「已开启」
+							uni.$tm.toast(result.error || '未获得提醒授权，可在「发现」页重新开启');
+						}
+					}
+				}
+				try {
+					const res = await this.$httpApi.v2.setPushEnabled(next);
+					const body = res?.data || res || {};
+					if (body.error) {
+						throw body;
+					}
+					this.pushEnabled = body.userEnabled !== false;
+					if (!next) {
+						uni.$tm.toast('已关闭（剩余提醒额度会保留）');
+					}
+				} catch (err) {
+					this.pushEnabled = previous;
+					uni.$tm.toast(err?.error || '设置失败，请稍后重试');
+				}
+			},
 			// 统一处理选择框的内容
 			fnHandleFormatSelect() {
 				// 首页布局
@@ -313,11 +440,6 @@
 				this.articleCardStyle.selectDefault = [_articleCardStyle.name];
 				this.articleCardStyle.selectLabel = _articleCardStyle.name;
 				this.articleCardStyle.selectValue = _articleCardStyle.value;
-
-				const _barrage = this.fnFindObjInList(this.barrage.list, 'value', this.appSettings.barrage.type);
-				this.barrage.selectDefault = [_barrage.name];
-				this.barrage.selectLabel = _barrage.name;
-				this.barrage.selectValue = _barrage.value;
 			},
 			// 在集合中找匹配的对象
 			fnFindObjInList(list, key, value) {
@@ -333,6 +455,17 @@
 				}
 			},
 			// 首页布局
+			/** 切换外观模式：立即生效（根类名与原生栏一起变），并存本地偏好 */
+			fnOnAppearanceConfirm(e) {
+				const _select = e[0].data;
+				applyAppearanceMode(_select.value);
+				// 外观模式不在 APP_GLOBAL_SETTINGS 里，走不了 store 的那个口子，单独同步一次
+				pushAppearanceMode(_select.value);
+				this.appearance.selectDefault = [_select.name];
+				this.appearance.selectLabel = _select.name;
+				this.appearance.selectValue = _select.value;
+				uni.showToast({ title: `外观：${_select.name}`, icon: 'none' });
+			},
 			fnOnHomeLayoutConfirm(e) {
 				const _select = e[0].data;
 				this.homeLayout.selectDefault = [_select.name];
@@ -347,14 +480,6 @@
 				this.articleCardStyle.selectLabel = _select.name;
 				this.articleCardStyle.selectValue = _select.value;
 				this.appSettings.layout.cardType = _select.value;
-			},
-			// 弹幕设置
-			fnOnBarrageConfirm(e) {
-				const _select = e[0].data;
-				this.barrage.selectDefault = [_select.name];
-				this.barrage.selectLabel = _select.name;
-				this.barrage.selectValue = _select.value;
-				this.appSettings.barrage.type = _select.value;
 			},
 			// 保存
 			/**
@@ -430,40 +555,138 @@
 <style scoped lang="scss">
 	.app-page {
 		box-sizing: border-box;
-		padding-bottom: 120rpx;
-
-		.btn-bar {
-			width: 100vw;
-			position: fixed;
-			left: 0;
-			bottom: 0;
-			box-sizing: border-box;
-			padding: 24rpx;
-			gap: 0 24rpx;
-			box-shadow: $uh-shadow-sm;
-		}
+		/* 给固定在底部的操作栏留位置：栏高 ≈ 按钮 + 内边距，再加一点余量 */
+		padding: 8rpx 0 200rpx;
 	}
 
-	.required {
-		position: relative;
-		padding-left: 18rpx;
-
-		&:before {
-			content: '*';
-			position: absolute;
-			left: -4rpx;
-			top: 50%;
-			transform: translateY(-50%);
-			font-size: 34rpx;
-			color: rgba(244, 67, 54, 1);
-		}
+	/* ===== 分组 ===== */
+	.group-head {
+		padding: 28rpx 28rpx 10rpx;
 	}
 
-	.setting-tabbar-tip {
+	.group-title-wrap {
+		display: flex;
+		align-items: center;
+	}
+
+	/* 品牌色小竖条：比整块灰底标题轻，也比纯文字有层级 */
+	.group-bar {
+		width: 8rpx;
+		height: 30rpx;
+		margin-right: 16rpx;
+		border-radius: 4rpx;
+		background-image: $uh-grad-accent;
+	}
+
+	.group-title {
+		font-size: 30rpx;
+		font-weight: 700;
+		color: $uh-ink-1;
+	}
+
+	.group-desc {
 		display: block;
-		padding: 0 32rpx;
-		font-size: 22rpx;
+		margin-top: 6rpx;
+		font-size: 21rpx;
+		color: $uh-ink-3;
+	}
+
+	.group-body {
+		padding-bottom: 10rpx;
+	}
+
+	/* 选择项右侧的当前值 + 箭头（比原来的表单输入框轻，也更像「设置」） */
+	.row-value {
+		display: flex;
+		align-items: center;
+	}
+
+	.row-value-text {
+		font-size: 26rpx;
+		color: $uh-ink-2;
+	}
+
+	.row-arrow {
+		margin-left: 10rpx;
+		font-size: 30rpx;
+		line-height: 1;
+		color: $uh-ink-4;
+	}
+
+	/* 选项横排的一整行（例如指示器位置）：挤在右侧会太窄 */
+	.stack-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 20rpx 28rpx 26rpx;
+		border-top: 1rpx solid $uh-line;
+	}
+
+	.stack-title {
+		font-size: 28rpx;
+		color: $uh-ink-1;
+	}
+
+	/* ===== 提示与按钮 ===== */
+	.tip-box {
+		margin: 6rpx 28rpx 26rpx;
+		padding: 20rpx 22rpx;
+		border-radius: $uh-radius-md;
+		background: $uh-accent-weak;
+	}
+
+	.tip-text {
+		display: block;
+		font-size: 21rpx;
 		line-height: 1.6;
-		color: #9a9a94;
+		color: $uh-ink-2;
+	}
+
+	.tip-action {
+		margin-top: 16rpx;
+		align-self: flex-start;
+	}
+
+	.tip-action-text {
+		padding: 8rpx 24rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-card;
+		font-size: 22rpx;
+		color: $uh-accent;
+	}
+
+	/* ===== 底部操作栏 ===== */
+	.action-bar {
+		position: fixed;
+		left: 0;
+		bottom: 0;
+		width: 100vw;
+		padding: 16rpx 24rpx;
+		/* 有安全区时再往下垫一层；基础库不认 env() 时保留上一行，不会把内边距整个丢掉 */
+		padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+		background: $uh-card;
+		box-shadow: $uh-shadow-md;
+	}
+
+	.unsaved-hint {
+		display: block;
+		padding-bottom: 10rpx;
+		font-size: 21rpx;
+		color: $uh-warning;
+	}
+
+	.action-row {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+	}
+
+	/* 保存是主操作，占最宽；另外两个退成描边，避免三个按钮平均分配注意力 */
+	.action-item.is-minor {
+		flex: 1;
+	}
+
+	.action-item.is-primary {
+		flex: 1.6;
 	}
 </style>

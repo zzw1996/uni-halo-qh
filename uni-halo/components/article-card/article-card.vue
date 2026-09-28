@@ -3,10 +3,14 @@
 		<view class="left" v-if="calcShowArticleCover">
 			<cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
 			<!-- <image class="thumbnail" lazy-load :src="$utils.checkThumbnailUrl(article.spec.cover)" mode="aspectFill"></image> -->
+			<!-- 分类标识：浮在封面左上角，绝对定位，不占卡片任何布局空间 -->
+			<text class="cat-badge" v-if="calcShowCategoryBadge">{{ categoryLabel }}</text>
 		</view>
 		<view class="right">
 			<view class="title">
 				<text class="is-top" v-if="article.spec.pinned">置顶</text>
+				<!-- 没有封面（或卡片是纯文字）时退回标题行：高度压在标题行高之内，同样不撑高卡片 -->
+				<text class="cat-badge-inline" v-if="calcShowCategoryInline">{{ categoryLabel }}</text>
 				<text class="title-text text-overflow">{{ article.spec.title }}</text>
 			</view>
 			<view class="content text-overflow-2">{{ article.status.excerpt }}</view>
@@ -39,12 +43,49 @@
 			article: {
 				type: Object,
 				default: () => {}
+			},
+			/**
+			 * 是否显示分类标识。
+			 *
+			 * <p>默认关闭：分类详情页里每篇都属于同一个分类，挂个标签只是噪音；
+			 * 首页与邀请落地页的列表是混合分类，需要它来回答「这篇是哪一类」。</p>
+			 */
+			showCategory: {
+				type: Boolean,
+				default: false
 			}
 		},
 		computed: {
 			// 应用设置：是否显示文章封面
 			calcShowArticleCover() {
 				return this.globalAppSettings?.articleCard?.showCover !== false;
+			},
+			/**
+			 * 分类标识的文案。
+			 *
+			 * <p>列表接口的 categories 已被 {@code $utils.stripDataUnsafeList} 洗成
+			 * {@code { name, displayName }}，一篇文章可能属于多个分类，只取第一个当主分类。</p>
+			 */
+			categoryLabel() {
+				const categories = this.article?.categories;
+				if (!Array.isArray(categories) || !categories.length) {
+					return '';
+				}
+				return categories[0].displayName || '';
+			},
+			/** 卡片实际生效的类型（宫格模式下会被强制成 tb_image_text，不能只看设置项） */
+			effectiveCardType() {
+				const type = this.cardType;
+				return Array.isArray(type) ? type[type.length - 1] : type;
+			},
+			/** 封面浮标：封面真的显示出来时才用（纯文字卡片里封面被 display:none 掉了） */
+			calcShowCategoryBadge() {
+				return this.showCategory && !!this.categoryLabel
+					&& this.calcShowArticleCover && this.effectiveCardType !== 'only_text';
+			},
+			/** 标题行版本：封面没显示时的回退，两种形态互斥 */
+			calcShowCategoryInline() {
+				return this.showCategory && !!this.categoryLabel && !this.calcShowCategoryBadge;
 			},
 			cardType() {
 				// tb_image_text=上图下文
@@ -277,6 +318,7 @@
 		}
 
 		.left {
+			position: relative; // 分类浮标的定位基准
 			width: 240rpx;
 			height: 180rpx;
 
@@ -285,6 +327,45 @@
 				height: 100%;
 				border-radius: $uh-radius-sm;
 			}
+		}
+
+		// ── 分类标识 ──
+		// 封面浮标：绝对定位，完全不参与布局，所以可以比标题行那个稍大一点、
+		// 也就能在缩略图上看得清
+		.cat-badge {
+			position: absolute;
+			left: 10rpx;
+			top: 10rpx;
+			z-index: 2;
+			max-width: 70%;
+			height: 34rpx;
+			padding: 0 14rpx;
+			line-height: 34rpx;
+			font-size: 20rpx;
+			color: #fff;
+			background-color: rgba(0, 0, 0, 0.42);
+			border-radius: $uh-radius-pill;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		// 标题行版本（无封面时）：高度必须小于标题行现有行高（列表 30rpx 字、宫格 26rpx 字），
+		// 否则会把卡片撑高哪怕一两像素——「不改变卡片尺寸」是这次改动的硬要求
+		.cat-badge-inline {
+			flex-shrink: 0;
+			max-width: 40%;
+			height: 28rpx;
+			padding: 0 10rpx;
+			margin-right: 10rpx;
+			line-height: 28rpx;
+			font-size: 18rpx;
+			color: $uh-accent;
+			background-color: $uh-accent-weak;
+			border-radius: $uh-radius-pill;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
 		}
 
 		.right {

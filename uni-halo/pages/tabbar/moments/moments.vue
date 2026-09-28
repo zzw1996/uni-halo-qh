@@ -220,6 +220,7 @@
 	import momentInteraction from '@/pagesA/components/moment-interaction/moment-interaction.vue';
 	import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import { fetchUserPublishStatus } from '@/utils/userPublish.js';
 	import { isWxLoginRequired } from '@/utils/wxLogin.js';
 	import { USER_ACTIVITY_TYPES, recordMomentUserActivity } from '@/utils/userActivity.js';
@@ -230,7 +231,7 @@
 	} from '@/utils/momentPublish.js';
 	
 	export default {
-		mixins: [pluginAvailableMixin],
+		mixins: [pluginAvailableMixin, loadMoreMixin],
 		components: {
 			tmSkeleton,
 			tmFlotbutton,
@@ -456,37 +457,31 @@
 			if (!this.uniHaloPluginAvailable || !this.canShowMoments) {
 				uni.hideLoading();
 				uni.stopPullDownRefresh();
+				this.fnLoadMoreDone();
 				return
 			}
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 1;
 			this.videoContexts = {};
 			this.currentVideoId = null;
 			this.fnGetData();
 		},
-		onReachBottom(e) {
+		onReachBottom() {
 			if (this.viewMode === 'gallery') {
 				this.galleryReachBottomTick += 1;
 				return;
 			}
 			if (!this.uniHaloPluginAvailable || !this.canShowMoments) return;
 			if (this.calcAuditModeEnabled) {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-				return
+				this.fnLoadMoreNoMore();
+				return;
 			}
-			if (this.hasNext) {
+			this.fnLoadMore(this.hasNext, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnGetData();
-			} else {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-			}
+			});
 		},
 		methods: {
 			/**
@@ -623,6 +618,7 @@
 				this.isLoggedIn = true;
 				this.fnRefreshPublishPermission();
 				this.isLoadMore = false;
+				this.fnLoadMoreDone();
 				this.queryParams.page = 1;
 				this.fnGetData();
 			},
@@ -643,6 +639,7 @@
 					return;
 				}
 				this.isLoadMore = false;
+				this.fnLoadMoreDone();
 				this.queryParams.page = 1;
 				this.videoContexts = {};
 				this.currentVideoId = null;
@@ -685,13 +682,17 @@
 					this.loadMoreText = '呜呜，没有更多数据啦~';
 					uni.hideLoading();
 					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
 					this.fnRefreshPublishPermission();
 					return;
 				}
-				uni.showLoading({
-					mask: true,
-					title: '加载中...'
-				});
+				// 只有首屏给全屏 loading：上拉加载靠列表底部文案提示，每页闪一次弹窗正是「一卡一卡」的观感来源
+				if (!this.isLoadMore) {
+					uni.showLoading({
+						mask: true,
+						title: '加载中...'
+					});
+				}
 				// 设置状态为加载中
 				if (!this.isLoadMore && !options.keepContent) {
 					this.loading = 'loading';
@@ -741,6 +742,7 @@
 						setTimeout(() => {
 							uni.hideLoading();
 							uni.stopPullDownRefresh();
+							this.fnLoadMoreDone();
 						}, 500);
 						this.fnRefreshPublishPermission();
 					});

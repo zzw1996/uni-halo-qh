@@ -677,7 +677,8 @@
 				// membership = 会员卡（单次购买的有效期权益），bundle = 套餐。
 				// 三者都走同一条下单链路，因此统一在这里放行；
 				// points（现金充值积分）仍然被排除，防止形成代币通道。
-				const ALLOWED = ['content_ticket', 'membership', 'bundle'];
+				// ai_content = AI 定制内容（单次购买的有效期权益，用户自配关注方向）
+				const ALLOWED = ['content_ticket', 'membership', 'ai_content', 'bundle'];
 				return (Array.isArray(goods) ? goods : [])
 					.filter((item) => item && item.goodsId && ALLOWED.includes(item.type))
 					.map((item) => ({
@@ -857,6 +858,12 @@
 					const benefit = this.membership?.freeContent === false
 						? '' : '，期间付费文章免券阅读';
 					return `会员 ${days} 天${benefit}`;
+				}
+				if (item.type === 'ai_content') {
+					const days = Number(item.value || 0);
+					// 0 天 = 永久买断（与后端 AiContentConfigHelper 的口径一致）
+					const period = days > 0 ? `${days} 天` : '永久';
+					return `${period}，可自选关注主题 / 来源 / 关键词，每天一份专属简报`;
 				}
 				if (item.type === 'bundle') {
 					return this.bundleItemsText(item) || '套餐（支付成功后逐项到账）';

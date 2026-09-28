@@ -30,6 +30,7 @@
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
@@ -38,6 +39,7 @@
 	import { mapActivityItemToArticle, enrichActivityArticlesStats, USER_ACTIVITY_TITLES } from '@/utils/userActivity.js';
 
 	export default {
+		mixins: [loadMoreMixin],
 		components: {
 			tmSkeleton,
 			tmTranslate,
@@ -84,17 +86,16 @@
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 0;
 			this.fnGetData();
 		},
 		onReachBottom() {
-			if (this.hasNext) {
+			this.fnLoadMore(this.hasNext, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnGetData();
-			} else {
-				uni.showToast({ icon: 'none', title: '没有更多数据了' });
-			}
+			});
 		},
 		methods: {
 			calcAniWait(index) {
@@ -143,6 +144,7 @@
 					uni.showToast({ title: err?.error || '加载失败', icon: 'none' });
 				} finally {
 					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
 				}
 			},
 			fnToArticleDetail(article) {

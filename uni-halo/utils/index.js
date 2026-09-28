@@ -228,6 +228,17 @@ const utils = {
                 creationTimestamp: clone.metadata.creationTimestamp
             };
         }
+        // 分类：首页文章卡片要显示分类标识，但接口给的是完整分类对象
+        // （带着 postCount / spec / status 以及同一批带点的 label），
+        // 卡片只用得上显示名，洗成最小形状：数据小一截，也少一处上面那个坑
+        if (Array.isArray(clone.categories)) {
+            clone.categories = clone.categories
+                .map((category) => ({
+                    name: (category && category.metadata && category.metadata.name) || '',
+                    displayName: (category && category.spec && category.spec.displayName) || ''
+                }))
+                .filter((category) => category.displayName);
+        }
         // 文章正文不进列表（详情页单独取），留着只会把 data 撑大
         delete clone.content;
         return clone;

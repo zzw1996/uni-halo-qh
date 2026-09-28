@@ -10,6 +10,7 @@ import {
 	setAppSettings,
 	_DefaultAppSettings,
 } from '@/utils/app.js'
+import { queueAppSettingsDiff } from '@/utils/appSettingsSync.js'
 
 export default {
 	namespaced: true,
@@ -23,8 +24,12 @@ export default {
 	},
 	mutations: {
 		setSettings(state, data) {
+			const previous = state.settings;
 			state.settings = data;
 			setAppSettings(data)
+			// 本地已经生效，这里只把改动的键排队上传到账号副本（去抖、失败保留待下次启动补传）。
+			// 所有走 store 的改动都会经过这一个口子，所以不必在每个页面各记一次「改了什么」。
+			queueAppSettingsDiff(previous, data)
 		},
 	},
 	actions: {

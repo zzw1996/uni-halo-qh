@@ -68,6 +68,7 @@
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
@@ -86,6 +87,7 @@
 	 * 不会因为打开别人的分享就改写自己原来的订阅——那是登录结算时由服务端判定的事。</p>
 	 */
 	export default {
+		mixins: [loadMoreMixin],
 		components: {
 			tmSkeleton,
 			tmTranslate,
@@ -160,8 +162,9 @@
 			this.fnLoadLanding();
 		},
 		onReachBottom() {
-			// 落地页只做"看一眼就走"的第一屏，不做无限翻页：够了就引导去关注或回首页
-			uni.showToast({ icon: 'none', title: '看完了，关注这些分类去首页看更多吧' });
+			// 落地页只做"看一眼就走"的第一屏，不做无限翻页：够了就引导去关注或回首页。
+			// 走 mixin 只为「只提示一次」——否则在底部滑动会反复弹这句。
+			this.fnLoadMore(false, null, '看完了，关注这些分类去首页看更多吧');
 		},
 		methods: {
 			/** 从分享参数里取出邀请码：卡片 path 带 query，海报小程序码带 scene */

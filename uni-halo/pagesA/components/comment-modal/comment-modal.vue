@@ -270,7 +270,7 @@ export default {
         height: 72rpx;
         border-radius: 12rpx;
         flex-shrink: 0;
-        border: 2rpx solid #fff;
+        border: 2rpx solid $uh-card;
         box-shadow: $uh-shadow-sm;
 
         &.is-radius {

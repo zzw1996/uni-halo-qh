@@ -1,26 +1,28 @@
 /**
- * 自绘底部导航样式
+ * 自绘底部导航样式（液态玻璃 / Liquid Glass）
  *
  * 尺寸与微信原生底栏对齐（内容区 50px = 100rpx，图标 24px，文字 10px），
  * 这样从原生栏切到自绘栏时页面不会突然跳一下。
  *
- * 配色走 $uh-* 设计 Token：皮肤生成器（tools/gen-skins.cjs）会把取值换成各皮肤的值，
- * 但 PNG 图标本身不会变色（选中态仍是靛青）——要跟皮肤变色得换成 iconfont，暂未做。
- * 注意：改完本文件需要重新编译并重跑生成器，皮肤才会跟着变。
+ * 几何：悬浮胶囊。内容区 100rpx + 下沿间距 12rpx（TABBAR_GLASS_GAP_RPX），
+ * 左右各留 20rpx（TABBAR_GLASS_SIDE_RPX）——这三个数在 utils/tabbar.js 里有同名常量，
+ * 悬浮按钮的抬高量按它们计算，改这里必须同步改那边，否则浮动按钮又会被压住。
+ *
+ * 配色：玻璃底色与高光用字面量（Token 无法表达「半透明的卡片色」），
+ * 深色皮肤由 common/styles/skins.scss 单独覆盖；液态高亮块用 $uh-accent 字面量 +
+ * opacity，这样皮肤生成器能识别并换色（rgba() 形式不在生成器的调色板里）。
  */
 
 /* 占位：把页面内容顶起来，避免最后一屏被 fixed 底栏压住。
-   高度 = 内容区 + iPhone 底部安全区，与下面 .uh-tabbar 的总高一致。 */
+   高度 = 内容区 + 胶囊下沿间距 + iPhone 底部安全区，与下面 .uh-tabbar 的总高一致。 */
 .uh-tabbar_holder {
 	width: 100%;
-	height: 100rpx;
+	height: 112rpx;
 	padding-bottom: env(safe-area-inset-bottom);
 }
 
 .uh-tabbar {
 	width: 100%;
-	background-color: $uh-card;
-	border-top: 1rpx solid $uh-line;
 
 	&.is-fixed {
 		position: fixed;
@@ -32,9 +34,54 @@
 }
 
 .uh-tabbar_inner {
+	position: relative;
 	display: flex;
 	align-items: center;
 	height: 100rpx;
+	/* 悬浮胶囊：左右与下沿都留白，底下的内容从两侧透出来 */
+	margin: 0 20rpx 12rpx;
+	border-radius: 999rpx;
+
+	/* 磨砂玻璃：半透明底 + 背景模糊 + 提高饱和度（iOS 玻璃的「通透」主要来自后两者）。
+	   底层不透明度取 0.68：既不依赖 backdrop-filter 也能看清文字（部分安卓机型不支持模糊）。 */
+	background-color: rgba(255, 255, 255, 0.68);
+	backdrop-filter: blur(24rpx) saturate(180%);
+	-webkit-backdrop-filter: blur(24rpx) saturate(180%);
+	border: 1rpx solid rgba(255, 255, 255, 0.72);
+
+	/* 外投影给出「浮起来」的层次；内阴影是玻璃的厚度 */
+	box-shadow:
+		0 12rpx 32rpx rgba(31, 31, 31, 0.12),
+		0 2rpx 8rpx rgba(31, 31, 31, 0.06),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 玻璃边缘的顶高光：一条从中间向两侧淡出的亮线，比整圈描边更像真实玻璃 */
+.uh-tabbar_rim {
+	position: absolute;
+	left: 12%;
+	right: 12%;
+	top: 0;
+	height: 1rpx;
+	border-radius: 999rpx;
+	background-image: linear-gradient(90deg,
+		rgba(255, 255, 255, 0) 0%,
+		rgba(255, 255, 255, 0.95) 50%,
+		rgba(255, 255, 255, 0) 100%);
+	pointer-events: none;
+}
+
+/* 液态高亮：一层淡淡的主色药丸，玻璃上看起来像「液体聚拢到选中项」 */
+.uh-tabbar_glider {
+	position: absolute;
+	left: 8rpx;
+	top: 10rpx;
+	bottom: 10rpx;
+	border-radius: 999rpx;
+	background-color: $uh-accent;
+	opacity: 0.14;
+	transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+	pointer-events: none;
 }
 
 .uh-tabbar_safe {
@@ -43,6 +90,8 @@
 }
 
 .uh-tabbar_item {
+	position: relative;
+	z-index: 1;
 	flex: 1;
 	display: flex;
 	flex-direction: column;
@@ -61,7 +110,30 @@
 	line-height: 1;
 	color: $uh-ink-3;
 
-	.is-active & {
+	.uh-tabbar_item.is-active & {
 		color: $uh-accent;
+		font-weight: 600;
+	}
+}
+
+/* 小店页（static）：官方要求 store-home 完整展示，这里保持满宽不悬浮——
+   玻璃样式只作用在悬浮态，避免在别人的组件上叠一层半透明底 */
+.uh-tabbar.is-static {
+	background-color: $uh-card;
+	border-top: 1rpx solid $uh-line;
+
+	.uh-tabbar_inner {
+		margin: 0;
+		border-radius: 0;
+		border: none;
+		box-shadow: none;
+		background-color: transparent;
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+	}
+
+	.uh-tabbar_rim,
+	.uh-tabbar_glider {
+		display: none;
 	}
 }

@@ -45,6 +45,7 @@
 
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import tmSearch from '@/tm-vuetify/components/tm-search/tm-search.vue';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmTabs from '@/tm-vuetify/components/tm-tabs/tm-tabs.vue';
@@ -67,7 +68,7 @@
 		options: {
 			styleIsolation: 'shared'
 		},
-		mixins: [pluginAvailableMixin],
+		mixins: [pluginAvailableMixin, loadMoreMixin],
 		components: {
 			tmSkeleton,
 			tmSearch,
@@ -206,32 +207,26 @@
 			if (!this.uniHaloPluginAvailable) {
 				uni.hideLoading();
 				uni.stopPullDownRefresh();
+				this.fnLoadMoreDone();
 				return
 			}
 			this.fnResetSetAniWaitIndex();
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 0;
 			this.fnGetData();
 		},
-		onReachBottom(e) {
+		onReachBottom() {
 			if (!this.uniHaloPluginAvailable) return;
 			if (this.calcAuditModeEnabled) {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-				return
+				this.fnLoadMoreNoMore();
+				return;
 			}
-			if (this.hasNext) {
+			this.fnLoadMore(this.hasNext, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnGetData();
-			} else {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-			}
+			});
 		},
 		methods: {
 			fnOnSearch() {
@@ -243,10 +238,13 @@
 				if (this.calcAuditModeEnabled) {
 					return;
 				}
-				uni.showLoading({
-					mask: true,
-					title: '加载中...'
-				});
+				// 只有首屏给全屏 loading：上拉加载靠列表底部文案提示，每页闪一次弹窗正是「一卡一卡」的观感来源
+				if (!this.isLoadMore) {
+					uni.showLoading({
+						mask: true,
+						title: '加载中...'
+					});
+				}
 				// 设置状态为加载中
 				if (!this.isLoadMore) {
 					this.loading = 'loading';
@@ -308,6 +306,7 @@
 						setTimeout(() => {
 							uni.hideLoading();
 							uni.stopPullDownRefresh();
+							this.fnLoadMoreDone();
 						}, 100);
 					});
 			},
@@ -373,6 +372,7 @@
 
 				this.queryParams.page = 0;
 				this.isLoadMore = false;
+				this.fnLoadMoreDone();
 				this.fnResetSetAniWaitIndex();
 				this.fnToTopPage();
 				this.fnGetData();

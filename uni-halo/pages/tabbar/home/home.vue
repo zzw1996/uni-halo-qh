@@ -80,9 +80,11 @@
 				不说明白的话，用户会以为站点丢了内容——所以这里既解释「为什么不一样」，
 				也给一个直接去改的口子。
 			-->
-			<!-- 筛选结果为空时说明原因，而不是留一个空首页 -->
-			<view v-if="feedFallback" class="feed-hint ml-24 mr-24 mb-16">
-				<text class="feed-hint-text">{{ feedFallbackText }}</text>
+			<!-- 内容为什么是这样，说清楚；零订阅的引导条可以关掉，本地记住不再打扰 -->
+			<view v-if="feedHintVisible" class="feed-hint ml-24 mr-24 mb-16">
+				<text class="feed-hint-text">{{ feedHintText }}</text>
+				<text v-if="feedHintDismissible" class="feed-hint-close"
+					@click="fnDismissFeedHint">知道了</text>
 			</view>
 
 			<view v-if="articleList.length === 0" class="article-empty">
@@ -92,7 +94,7 @@
 				<view :class="globalAppSettings.layout.home">
 					<tm-translate v-for="(article, index) in articleList" :key="index" class="ani-item"
 						animation-name="fadeUp" :wait="calcAniWait(index)">
-						<article-card from="home" :article="article" :post="article"
+						<article-card from="home" :article="article" :post="article" :show-category="true"
 							@on-click="fnToArticleDetail"></article-card>
 					</tm-translate>
 				</view>
@@ -122,17 +124,23 @@
 	import tmGrid from '@/tm-vuetify/components/tm-grid/tm-grid.vue';
 
 	import eSwiper from '@/components/e-swiper/e-swiper.vue';
+	import loadMoreMixin from '@/common/mixins/loadMore.js';
 	import NotifyDialog from "@/components/notify-dialog/notify-dialog.vue";
 	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import { openChannelsProfile } from '@/utils/channels.js';
 	import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
+	import { accumulatePushQuota } from '@/utils/subscribeMessage.js';
 	import qs from 'qs'
 	import {
 		checkHasWxLogin,
 		getWxLoginInfo
 	} from '@/utils/auth.js';
 
-	export default {
+	/** 零订阅引导条「知道了」的本地标记：关掉后不再打扰（它不是功能提示，只是建议） */
+const HOME_GUIDE_DISMISSED_KEY = 'home.feedGuideDismissed';
+
+export default {
+		mixins: [loadMoreMixin],
 		components: {
 			tmMenubars,
 			tmSkeleton,
@@ -169,6 +177,10 @@
 				/** 主列表是否正在按订阅分类筛选 / 是否已回落站内默认列表 */
 				feedPersonalized: false,
 				feedFallback: false,
+				/** 列表上方的提示条：服务端会说明为什么内容是这样（零订阅/有暂停/没内容） */
+				feedHint: '',
+				/** 零订阅的引导条是否允许关闭（关掉后本地记住，不再打扰） */
+				feedHintDismissible: false,
 				/** 多路合并分页：每个分类当前取到第几页 */
 				feedPages: {},
 				/** 已同步过的订阅版本号：分类页改过订阅后会写这个值，切回首页时据此判断要不要重取 */
@@ -178,6 +190,13 @@
 		computed: {
 			feedFallbackText() {
 				return '你订阅的分类暂时没有内容，已为你展示全站最新';
+			},
+			/** 顶部提示条：服务端给了原因就用它，否则用本地那句「已回落全站最新」 */
+			feedHintText() {
+				return this.feedHint || (this.feedFallback ? this.feedFallbackText : '');
+			},
+			feedHintVisible() {
+				return !!this.feedHintText;
 			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;
@@ -313,29 +332,22 @@
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
+			this.fnLoadMoreDone();
 			this.queryParams.page = 1;
 			// 多路分页也要重置，否则下拉后每一路都从中间页继续取
 			this.feedPages = {};
 			this.fnQuery();
 		},
-		onReachBottom(e) {
+		onReachBottom() {
 			if (this.calcAuditModeEnabled) {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-				return
+				this.fnLoadMoreNoMore();
+				return;
 			}
-			if (this.result.hasNext) {
+			this.fnLoadMore(this.result.hasNext, () => {
 				this.queryParams.page += 1;
 				this.isLoadMore = true;
 				this.fnGetArticleList();
-			} else {
-				uni.showToast({
-					icon: 'none',
-					title: '没有更多数据了'
-				});
-			}
+			});
 		},
 		methods: {
 			fnSyncWxUser() {
@@ -349,6 +361,8 @@
 			async fnQuery() {
 				// 每次重新拉取都从「没有回落」开始，否则上一轮的空列表提示会一直挂着
 				this.feedFallback = false;
+				this.feedHint = '';
+				this.feedHintDismissible = false;
 				await this.fnLoadSubscription();
 				this.fnGetBanner();
 				this.fnGetArticleList();
@@ -390,6 +404,99 @@
 					};
 					this.feedPersonalized = false;
 				}
+			},
+
+			/**
+			 * 首页内容流（服务端并集）。
+			 *
+			 * <p>一次请求拿到「我订阅的生效分类」合并后的文章；没有订阅时服务端改用人气分类
+			 * （scope=hot）并把原因写在 fallback 里，首页据此显示引导条——而不是留一片空白。</p>
+			 *
+			 * <p>失败时不做复杂补偿：直接回落站内默认列表（feedFallback=true），
+			 * 首页永远要能出内容。</p>
+			 */
+			async fnGetUnionFeed() {
+				const scope = this.feedPersonalized ? 'mine' : 'hot';
+				const page = this.isLoadMore ? this.queryParams.page : 1;
+				if (!this.isLoadMore) {
+					this.loading = 'loading';
+				}
+				this.loadMoreText = '加载中...';
+				try {
+					const res = await this.$httpApi.v2.getHomeFeed({
+						scope,
+						page,
+						size: this.queryParams.size
+					});
+					const body = res?.data || res || {};
+					if (body.error) {
+						throw new Error(body.error);
+					}
+					const items = this.$utils.stripDataUnsafeList(body.items || []);
+					const merged = this.fnMergeArticles(
+						this.isLoadMore ? this.articleList.concat(items) : items);
+					// 订阅了却一篇都没取到：换成全站最新，并把原因留在提示条里
+					if (!this.isLoadMore && merged.length === 0) {
+						this.feedHint = body.hint || this.feedFallbackText;
+						this.feedHintDismissible = false;
+						this.fnFallbackToLatest();
+						return;
+					}
+					this.articleList = merged;
+					this.result.hasNext = body.hasMore === true;
+					this.feedPersonalized = scope === 'mine';
+					this.fnApplyFeedHint(body);
+					this.loading = 'success';
+					this.loadMoreText = body.hasMore ? '上拉加载更多' : '呜呜，没有更多数据啦~';
+					uni.hideLoading();
+					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
+				} catch (err) {
+					// 并集接口不可用（老服务端 / 网络问题）：先退回原来「按分类并发」的实现，
+					// 它自己也取不到内容时会继续回落站内默认列表——首页永远要能出内容
+					if (this.feedPersonalized) {
+						this.fnGetPersonalArticleList();
+						return;
+					}
+					this.fnFallbackToLatest();
+				}
+			},
+
+			/**
+			 * 提示条：服务端说清原因，本地决定要不要给「知道了」。
+			 *
+			 * <p>零订阅的引导条允许关掉（本地记住）：同一条引导每次进首页都弹，
+			 * 很快就会从「提醒」变成「噪音」，而它本来只是建议。</p>
+			 */
+			fnApplyFeedHint(body) {
+				const dismissed = uni.getStorageSync(HOME_GUIDE_DISMISSED_KEY) === '1';
+				const paused = Array.isArray(body.pausedCategories) ? body.pausedCategories.length : 0;
+				if (paused > 0) {
+					this.feedHint = body.hint || '';
+					this.feedHintDismissible = false;
+					return;
+				}
+				if ((body.fallback === 'no-subscription' || body.fallback === 'inherited-only')
+					&& body.hint && !dismissed) {
+					// 两种都是「去自己选几个」的建议：可以关掉，不再反复打扰
+					this.feedHint = body.hint;
+					this.feedHintDismissible = true;
+					return;
+				}
+				this.feedHint = '';
+				this.feedHintDismissible = false;
+			},
+
+			fnDismissFeedHint() {
+				if (this.feedHintDismissible) {
+					try {
+						uni.setStorageSync(HOME_GUIDE_DISMISSED_KEY, '1');
+					} catch (e) {
+						// 存储不可用就算了：下次进来再提示一遍，总比这里报错好
+					}
+				}
+				this.feedHint = '';
+				this.feedHintDismissible = false;
 			},
 
 			/**
@@ -447,6 +554,7 @@
 				this.loadMoreText = this.result.hasNext ? '上拉加载更多' : '呜呜，没有更多数据啦~';
 				uni.hideLoading();
 				uni.stopPullDownRefresh();
+				this.fnLoadMoreDone();
 			},
 
 			/** 合并多路结果：按文章名去重，置顶优先、其次发布时间倒序 */
@@ -487,7 +595,11 @@
 			fnFallbackToLatest() {
 				this.feedPersonalized = false;
 				this.feedFallback = true;
+				if (!this.feedHint) {
+					this.feedHint = this.feedFallbackText;
+				}
 				this.isLoadMore = false;
+				this.fnLoadMoreDone();
 				this.queryParams.page = 1;
 				this.fnGetArticleList();
 			},
@@ -516,6 +628,7 @@
 			async fnOnSubscriptionChanged() {
 				this.feedPages = {};
 				this.isLoadMore = false;
+				this.fnLoadMoreDone();
 				this.queryParams.page = 1;
 				this.feedFallback = false;
 				await this.fnLoadSubscription();
@@ -676,13 +789,15 @@
 					this.loadMoreText = '呜呜，没有更多数据啦~';
 					uni.hideLoading();
 					uni.stopPullDownRefresh();
+					this.fnLoadMoreDone();
 					return;
 				}
-				// 配了「站点分类」关注条件时按它筛选；未配或已退回则走原路径
-				// 只看 feedPersonalized：它已经包含「继承来的分类」，
-				// 光比 postCategories 会让「只继承、没自己订」的用户被当成没订阅
-				if (this.feedPersonalized) {
-					this.fnGetPersonalArticleList();
+				// 主列表统一走服务端的并集接口：订阅了几个分类都只发一次请求，
+				// 分类数量不再影响首页并发；零订阅时它会自动用人气分类兜底。
+				// feedFallback 为 true 时（并集取不到内容/接口失败）才回到站内默认列表，
+				// 这个标记也顺便避免了「并集 → 回落 → 又去试并集」的来回切换。
+				if (!this.feedFallback) {
+					this.fnGetUnionFeed();
 					return;
 				}
 
@@ -717,12 +832,14 @@
 						this.loadMoreText = data.hasNext ? '上拉加载更多' : '呜呜，没有更多数据啦~';
 						uni.hideLoading();
 						uni.stopPullDownRefresh();
+						this.fnLoadMoreDone();
 					},
 					fail: (err) => {
 						this.loading = 'error';
 						this.loadMoreText = '加载失败，请下拉刷新！';
 						uni.$tm.toast(err.message || '数据加载失败！');
 						uni.stopPullDownRefresh();
+						this.fnLoadMoreDone();
 					}
 				})
 			},
@@ -731,6 +848,10 @@
 				if (this.calcAuditModeEnabled) {
 					return;
 				}
+				// 顺手补一次「更新提醒」额度：这是用户本来就要做的点击，微信允许在这个时机
+				// 调订阅授权；勾过「总是保持以上选择」的话不弹窗、也没有任何提示，
+				// 于是用户同意一次之后就不必再回来手动续了（内部有多道闸门，见 utils/subscribeMessage.js）
+				accumulatePushQuota(this.$httpApi.v2);
 				uni.navigateTo({
 					url: '/pagesA/article-detail/article-detail?name=' + article.metadata.name,
 					animationType: 'slide-in-right'
@@ -869,7 +990,9 @@
 	}
 
 	.quick-nav {
-		background-color: #fff;
+		/* 走 Token 而不是写死白色：皮肤生成器按调色板字面量换色，
+		   短写 #fff 不在调色板里 → 深色皮肤下会留一块白底 */
+		background-color: $uh-card;
 		box-sizing: border-box;
 
 		// box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
@@ -916,6 +1039,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 12rpx;
 		padding: 14rpx 20rpx;
 		border-radius: $uh-radius-md;
 		background: $uh-accent-weak;
@@ -924,6 +1048,16 @@
 	.feed-hint-text {
 		flex: 1;
 		font-size: 21rpx;
+		color: $uh-accent;
+	}
+
+	/* 只有「零订阅引导」可关：它是建议不是功能提示，反复出现会变成噪音 */
+	.feed-hint-close {
+		flex-shrink: 0;
+		padding: 4rpx 16rpx;
+		border-radius: $uh-radius-pill;
+		border: 1rpx solid $uh-accent;
+		font-size: 20rpx;
 		color: $uh-accent;
 	}
 

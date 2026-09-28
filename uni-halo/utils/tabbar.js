@@ -19,6 +19,17 @@ import { getAppConfigs, DefaultAppConfigs } from '@/config/index.js';
 export const TABBAR_BAR_HEIGHT_RPX = 100;
 
 /**
+ * 玻璃底栏与屏幕底边的间距（悬浮感）。
+ *
+ * 自绘底栏做成了悬浮胶囊（左右留白 + 下沿留白），所以它比原生栏「更占高度」：
+ * 悬浮按钮的抬高量必须把这个间距算进去——漏算就会出现「回到顶部按钮被底栏压住一半」。
+ */
+export const TABBAR_GLASS_GAP_RPX = 12;
+
+/** 玻璃胶囊左右留白：与页面内容边距对齐，底下的内容从两侧透出来才有悬浮感 */
+export const TABBAR_GLASS_SIDE_RPX = 20;
+
+/**
  * 兜底底栏项：只在「后台已开启，但配置里没有 items」时用（例如服务端返回被截断、
  * 或首次启动时本地存储里只有旧配置）。内容与 pages.json 的原生 5 项一致。
  *
@@ -27,7 +38,7 @@ export const TABBAR_BAR_HEIGHT_RPX = 100;
  */
 const FALLBACK_TABBAR_ITEMS = [
 	{ key: 'home', label: '首页', icon: '/static/tabbar/select_home.png', activeIcon: '/static/tabbar/select_home_active.png', path: '/pages/tabbar/home/home', nativeTab: true },
-	{ key: 'category', label: '分类', icon: '/static/tabbar/select_category.png', activeIcon: '/static/tabbar/select_category_active.png', path: '/pages/tabbar/category/category', nativeTab: true },
+	{ key: 'category', label: '发现', icon: '/static/tabbar/select_category.png', activeIcon: '/static/tabbar/select_category_active.png', path: '/pages/tabbar/discover/discover', nativeTab: true },
 	{ key: 'moments', label: '瞬间', icon: '/static/tabbar/select_gallery.png', activeIcon: '/static/tabbar/select_gallery_active.png', path: '/pages/tabbar/moments/moments', nativeTab: true },
 	{ key: 'rank', label: '榜单', icon: '/static/tabbar/select_rank.png', activeIcon: '/static/tabbar/select_rank_active.png', path: '/pages/tabbar/rank/rank', nativeTab: true },
 	{ key: 'about', label: '我的', icon: '/static/tabbar/select_mine.png', activeIcon: '/static/tabbar/select_mine_active.png', path: '/pages/tabbar/about/about', nativeTab: true }
@@ -230,11 +241,14 @@ export function hideNativeTabBar(configs, retries = 2) {
  */
 export function tabbarBottomOffsetPx() {
 	if (!isCustomTabbarEnabled()) return 0;
-	return uni.upx2px(TABBAR_BAR_HEIGHT_RPX);
+	// 内容区 + 胶囊下沿间距：底栏是悬浮的，抬高量要按它的实际占用算
+	return uni.upx2px(TABBAR_BAR_HEIGHT_RPX + TABBAR_GLASS_GAP_RPX);
 }
 
 export default {
 	TABBAR_BAR_HEIGHT_RPX,
+	TABBAR_GLASS_GAP_RPX,
+	TABBAR_GLASS_SIDE_RPX,
 	TABBAR_MIN_ITEMS,
 	TABBAR_MAX_ITEMS,
 	TABBAR_MIN_OPTIONAL,

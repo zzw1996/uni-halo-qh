@@ -300,7 +300,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	// #ifdef APP-PLUS
 	import CheckAppUpdate from '@/uni_modules/uni-upgrade-center-app/utils/check-update';
 	// #endif
-	import { CheckWxUpdate } from '@/utils/update.js';
+	import { CheckWxUpdate, clearVolatileStorage } from '@/utils/update.js';
 	import {
 		NeedPluginIds,
 		checkNeedPluginAvailable
@@ -454,6 +454,15 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			calcShowPayRelated() {
 				return this.calcPayEnabled || this.haloConfigs?.contentConfig?.enabled === true;
 			},
+			/**
+			 * 是否展示「AI 定制内容」入口。
+			 *
+			 * 只看站长开没开这个功能：未购买的用户点进去是权益说明与购买引导，
+			 * 所以这里不需要判断购买态（省掉一次接口请求）。
+			 */
+			calcShowAiContent() {
+				return this.haloConfigs?.aiContentConfig?.enabled === true;
+			},
 			calcPointsBalance() {
 				if (!this.isLoggedIn) return '-';
 				return this.pointsBalance;
@@ -576,6 +585,19 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 						icon: 'haloicon-wenzhang1',
 						color: 'light-blue',
 						path: '/pagesA/unlocked-articles/unlocked-articles',
+						requireLogin: true
+					});
+				}
+				// AI 定制内容是付费权益：站长开了这个功能才有入口，
+				// 未购买的用户点进去看到的是权益说明与购买（不是空页面），所以不额外判断购买态
+				if (this.calcShowAiContent) {
+					list.push({
+						text: 'AI 定制内容',
+						// 图标必须用图标字体里真实存在的名字（见 common/icons/*.css）：
+						// 写错不会报错，只会渲染成一个空白方块
+						icon: 'halocoloricon-classify',
+						color: 'light-blue',
+						path: '/pagesA/ai-content/ai-content',
 						requireLogin: true
 					});
 				}
@@ -1265,14 +1287,17 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					if (path === 'clear') {
 						uni.$eShowModal({
 							title: '提示',
-							content: '确定清除缓存？可能影响登录状态。',
+							content: '确定清除本地缓存？登录状态与个人设置会保留。要重置设置请用「应用设置」里的恢复默认。',
 							showCancel: true,
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
 							confirmColor: '#2F54EB'
 						}).then(() => {
-							uni.clearStorageSync();
+							// 只清易失缓存：原来的一把清空会连登录态与设置一起清掉，
+							// 用户以为在「清缓存」，实际被登出、设置也回到默认（见 utils/update.js 的说明）
+							clearVolatileStorage();
+							uni.showToast({ icon: 'none', title: '缓存已清理' });
 							this.fnCheckLoginStatus();
 						}).catch(() => {});
 					} else if (path === 'update') {

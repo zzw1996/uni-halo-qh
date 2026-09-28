@@ -24,3 +24,71 @@ view.skin-sunrise {
 view.skin-ink {
 	background-color: #14141a !important;
 }
+
+/*
+ * 墨韵深色下的玻璃底栏。
+ *
+ * 液态玻璃的底色必须是「卡片色 + 半透明」，而皮肤生成器（tools/gen-skins.cjs）只按调色板
+ * 替换十六进制字面量，认不出 rgba() 里的颜色——所以白玻璃在深色皮肤下会变成一块发亮的白板。
+ * 这里手工覆盖；浅色皮肤（青瓷/晨光）的卡片本身就是白色，用默认那套即可。
+ */
+view.skin-ink .uh-tabbar_inner {
+	background-color: rgba(30, 30, 38, 0.72) !important;
+	border-color: rgba(255, 255, 255, 0.14) !important;
+	box-shadow:
+		0 12rpx 32rpx rgba(0, 0, 0, 0.5),
+		0 2rpx 8rpx rgba(0, 0, 0, 0.35),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.12) !important;
+}
+
+view.skin-ink .uh-tabbar_rim {
+	background-image: linear-gradient(90deg,
+		rgba(255, 255, 255, 0) 0%,
+		rgba(255, 255, 255, 0.28) 50%,
+		rgba(255, 255, 255, 0) 100%) !important;
+}
+
+/* 深色底上 14% 的主色太弱，提一点才看得出「液体聚拢」 */
+view.skin-ink .uh-tabbar_glider {
+	opacity: 0.28 !important;
+}
+
+/*
+ * 墨韵深色下的 markdown 正文（瞬间 / 文章详情 / 瞬间详情 / 通知弹窗）。
+ *
+ * 正文容器与各标签的样式来自 common/markdown/markdown.config.js 的 **JS 字符串**
+ * （containerStyle / tagStyle 交给 mp-html 当内联样式用），因此：
+ * - 皮肤生成器只替换编译产物里的字面量，读不到 JS 里的颜色 → 换不到；
+ * - 普通 class 规则也压不过内联样式 → 只能用 !important。
+ * 表现就是深色下正文是一块白底（containerStyle 里的 background-color:#FFFFFF）。
+ *
+ * 这几条放在 app.wxss（本文件由 App.vue 引入）还有一个前提：全局样式能命中自定义组件
+ * 内部的节点——skins.generated.scss 里 `view.skin-ink .md-tr` 这类覆盖依赖的正是这一点。
+ */
+view.skin-ink ._root {
+	background-color: #1e1e26 !important;
+	color: #f2f2f6 !important;
+}
+
+view.skin-ink ._root ._h1,
+view.skin-ink ._root ._h2,
+view.skin-ink ._root ._h3,
+view.skin-ink ._root ._h4,
+view.skin-ink ._root ._h5,
+view.skin-ink ._root ._h6,
+view.skin-ink ._root ._p,
+view.skin-ink ._root ._li {
+	color: #f2f2f6 !important;
+}
+
+view.skin-ink ._root ._table {
+	color: #f2f2f6 !important;
+	background: #262630 !important;
+	border-color: #31313d !important;
+}
+
+view.skin-ink ._root ._blockquote {
+	color: #b9b9c5 !important;
+	background: #232a45 !important;
+	border-left-color: #7d95ff !important;
+}
