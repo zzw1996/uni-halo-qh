@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.services.WxContentSecurityService;
+import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
@@ -29,18 +30,13 @@ public class WxContentSecurityServiceImpl implements WxContentSecurityService {
     private static final String APP_CONFIG_GROUP = "appConfig";
     /** 接口单次上限 2500 字，超出截断检测（长文按首段判定，够拦住明显违规） */
     private static final int MAX_CHECK_LENGTH = 2500;
-    /** token 提前失效窗口 */
-    private static final Duration TOKEN_SAFETY_WINDOW = Duration.ofMinutes(5);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final WebClient WEB_CLIENT = WebClient.builder().build();
 
-    private final ReactiveSettingFetcher settingFetcher;
+    private final WxAccessTokenProvider wxAccessTokenProvider;
 
-    private volatile String cachedToken = "";
-    private volatile long cachedTokenExpireAt = 0L;
-
-    public WxContentSecurityServiceImpl(ReactiveSettingFetcher settingFetcher) {
-        this.settingFetcher = settingFetcher;
+    public WxContentSecurityServiceImpl(WxAccessTokenProvider wxAccessTokenProvider) {
+        this.wxAccessTokenProvider = wxAccessTokenProvider;
     }
 
     @Override
@@ -100,41 +96,25 @@ public class WxContentSecurityServiceImpl implements WxContentSecurityService {
             .then();
     }
 
+    /**
+     * 取 access_token。
+     *
+     * <p>缓存与换取交给 {@link WxAccessTokenProvider}：检测链路原本自带一份提前 5 分钟的缓存，
+     * 与小程序码/支付那两份互不感知——三份都用同一个 appid 换 token，谁换一次就让另两家的
+     * 缓存失效。收口成一份之后这个问题从根上消失。</p>
+     *
+     * <p>失败仍以 {@code WxAuthException} 抛出：本链路是 fail-open（微信侧不可用不阻塞发布），
+     * 靠这个类型在 onErrorResume 里区分「配置问题要告警」与「其它异常」。错误类型变了，
+     * 放行语义就变了。</p>
+     */
     private Mono<String> loadAccessToken() {
-        var token = cachedToken;
-        if (StringUtils.hasText(token) && System.currentTimeMillis() < cachedTokenExpireAt) {
-            return Mono.just(token);
-        }
-        return settingFetcher.get(APP_CONFIG_GROUP)
-            .map(config -> {
-                var appInfo = config.path("appInfo");
-                var appId = appInfo.path("appId").asText("");
-                var appSecret = appInfo.path("appSecret").asText("");
-                if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
-                    throw new WxAuthException("未配置小程序 appId/appSecret，无法进行内容安全检测");
-                }
-                return TOKEN_URL + "?grant_type=client_credential&appid=" + appId
-                    + "&secret=" + appSecret;
-            })
-            .flatMap(url -> WEB_CLIENT.get().uri(url).retrieve().bodyToMono(String.class)
-                .map(this::parseJson))
-            .map(node -> {
-                var fresh = node.path("access_token").asText("");
-                if (!StringUtils.hasText(fresh)) {
-                    throw new WxAuthException("微信 access_token 获取失败："
-                        + node.path("errmsg").asText("请检查 appId/appSecret"));
-                }
-                var expiresIn = node.path("expires_in").asLong(7200L);
-                cachedToken = fresh;
-                cachedTokenExpireAt = System.currentTimeMillis()
-                    + Duration.ofSeconds(expiresIn).minus(TOKEN_SAFETY_WINDOW).toMillis();
-                return fresh;
-            });
+        return wxAccessTokenProvider.token()
+            .onErrorMap(ex -> new WxAuthException("内容安全检测取 access_token 失败："
+                + ex.getMessage()));
     }
 
     private void invalidateToken() {
-        cachedToken = "";
-        cachedTokenExpireAt = 0L;
+        wxAccessTokenProvider.invalidate();
     }
 
     private com.fasterxml.jackson.databind.JsonNode parseJson(String raw) {

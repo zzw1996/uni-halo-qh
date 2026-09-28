@@ -103,6 +103,7 @@ public class PayStatsService {
             .outfitSold(sold.outfit())
             .membershipSold(sold.membership())
             .contentTicketOrders(sold.contentTicket())
+            .aiContentSold(sold.aiContent())
             .trend(buildTrend(delivered))
             .goodsRanking(buildGoodsRanking(delivered))
             .build();
@@ -174,25 +175,28 @@ public class PayStatsService {
     }
 
     /** 已到货订单按商品类型的销量。 */
-    private record SoldCounts(long outfit, long membership, long contentTicket) {
+    private record SoldCounts(long outfit, long membership, long contentTicket, long aiContent) {
     }
 
     private static SoldCounts soldCountsOf(List<PayOrder> delivered) {
         long outfit = 0;
         long membership = 0;
         long contentTicket = 0;
+        long aiContent = 0;
         for (var order : delivered) {
             var type = order.getGoodsType() == null ? "" : order.getGoodsType();
             switch (type) {
                 case "content_ticket" -> contentTicket++;
                 case "outfit" -> outfit++;
                 case "membership" -> membership++;
+                // 新增的商品类型必须在这里显式归类，否则后台看板上「卖了几个」永远是 0
+                case "ai_content" -> aiContent++;
                 default -> {
                     // bundle 等类型无法归到单一权益：已计入总额与商品排行，此处不重复计数
                 }
             }
         }
-        return new SoldCounts(outfit, membership, contentTicket);
+        return new SoldCounts(outfit, membership, contentTicket, aiContent);
     }
 
     /**

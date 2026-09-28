@@ -62,4 +62,24 @@ public class UserPoints extends AbstractExtension {
      * 详见 {@code MemberConfigDTO} 的说明。</p>
      */
     private Instant memberExpireAt;
+
+    /**
+     * 已购的「分类订阅额度」份数（null = 0）。
+     *
+     * <p>免费额度之外的订阅能力：用积分解锁，<b>永久有效、可累计</b>。它是容量而不是占用——
+     * 取消某个订阅只腾出位置，额度本身不退还（也就不存在退款链路）。</p>
+     *
+     * <p>与会员权益取大者而不叠加：会员期内订阅上限走 {@code subscriptionConfig.memberMaxQuota}，
+     * 会员到期后回落到「免费 + 已购」，超出部分的订阅会暂停但记录保留。</p>
+     */
+    private Integer subscribeQuota;
+
+    /**
+     * AI 定制内容权益到期时间（null = 从未购买；远期时间 = 永久买断）。
+     *
+     * <p>与 {@link #memberExpireAt} 同构：一次性买断 + 有效期，续费在当前到期时间上叠加。
+     * 区分「永久」与「未开通」靠 {@code AiContentConfigHelper.isPermanent} 判断远期时间，
+     * 因此不需要额外的布尔字段，权益判定也能与会员共用同一套口径。</p>
+     */
+    private Instant aiContentExpireAt;
 }

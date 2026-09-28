@@ -2,14 +2,20 @@ package pro.uhalo.uni;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import pro.uhalo.uni.scheme.AiContentIssue;
+import pro.uhalo.uni.scheme.AiContentPreference;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.scheme.DigestSubscription;
 import pro.uhalo.uni.scheme.LuckyWinning;
 import pro.uhalo.uni.scheme.PointsRecord;
+import pro.uhalo.uni.scheme.PushRecord;
+import pro.uhalo.uni.scheme.PushState;
+import pro.uhalo.uni.scheme.PushSubscription;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.QRCodeInfo;
 import pro.uhalo.uni.scheme.UserActivity;
+import pro.uhalo.uni.scheme.UserAppSettings;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
 import run.halo.app.extension.SchemeManager;
@@ -41,7 +47,10 @@ public class UniHaloPlugin extends BasePlugin {
         EXTENSION_TYPES = java.util.List.of(
             QRCodeInfo.class, WxUser.class, UserActivity.class, UserPoints.class,
             PointsRecord.class, PayOrder.class, LuckyWinning.class, ContentUnlock.class,
-            DigestSubscription.class, DigestReport.class);
+            DigestSubscription.class, DigestReport.class,
+            AiContentPreference.class, AiContentIssue.class,
+            UserAppSettings.class,
+            PushSubscription.class, PushRecord.class, PushState.class);
 
     private final SchemeManager schemeManager;
 
@@ -182,6 +191,60 @@ public class UniHaloPlugin extends BasePlugin {
                 .setName("status")
                 .setIndexFunc(simpleAttribute(DigestReport.class, DigestReport::getStatus)));
             log.info("【UniHalo】DigestReport scheme 注册成功");
+        });
+
+        schemeManager.register(AiContentPreference.class, indexSpecs -> {
+            // 偏好按用户查询（一个用户一条记录，资源名由 openid 派生）
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(AiContentPreference.class,
+                    AiContentPreference::getWxOpenid)));
+            log.info("【UniHalo】AiContentPreference scheme 注册成功");
+        });
+
+        schemeManager.register(AiContentIssue.class, indexSpecs -> {
+            // 简报按「用户 + 日期」查询：既是「每天一份」的幂等键，也是成本阀门
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(AiContentIssue.class, AiContentIssue::getWxOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("date")
+                .setIndexFunc(simpleAttribute(AiContentIssue.class, AiContentIssue::getDate)));
+            log.info("【UniHalo】AiContentIssue scheme 注册成功");
+        });
+
+        schemeManager.register(UserAppSettings.class, indexSpecs -> {
+            // 应用设置副本按用户查询（一个用户一条记录，资源名由 openid 派生）
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(UserAppSettings.class,
+                    UserAppSettings::getWxOpenid)));
+            log.info("【UniHalo】UserAppSettings scheme 注册成功");
+        });
+
+        schemeManager.register(PushSubscription.class, indexSpecs -> {
+            // 推送额度按用户查询（一个用户一条记录，资源名由 openid 派生）
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(PushSubscription.class,
+                    PushSubscription::getWxOpenid)));
+            log.info("【UniHalo】PushSubscription scheme 注册成功");
+        });
+
+        schemeManager.register(PushRecord.class, indexSpecs -> {
+            // 推送记录：按用户 + 类型查询（后台看失败原因），幂等靠资源名
+            indexSpecs.add(new IndexSpec()
+                .setName("wxOpenid")
+                .setIndexFunc(simpleAttribute(PushRecord.class, PushRecord::getWxOpenid)));
+            indexSpecs.add(new IndexSpec()
+                .setName("kind")
+                .setIndexFunc(simpleAttribute(PushRecord.class, PushRecord::getKind)));
+            log.info("【UniHalo】PushRecord scheme 注册成功");
+        });
+
+        schemeManager.register(PushState.class, indexSpecs -> {
+            // 单例状态（水位 + 当日计数）：按固定资源名读取，不需要索引
+            log.info("【UniHalo】PushState scheme 注册成功");
         });
 
         log.info("【UniHalo】插件启动成功！");

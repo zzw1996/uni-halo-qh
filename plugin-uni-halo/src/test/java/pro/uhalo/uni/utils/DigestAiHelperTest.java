@@ -33,7 +33,23 @@ class DigestAiHelperTest {
         // 正文截断到 300 字，避免长描述把提示词顶爆
         assertThat(prompt).contains("x".repeat(300));
         assertThat(prompt).doesNotContain("x".repeat(301));
-        assertThat(prompt).contains("\"category\": \"engineering\"");
+        // JSON 示例里的分类取清单第一项，保证示例永远是合法值
+        assertThat(prompt).contains(
+            "\"category\": \"" + DigestCategoryCatalog.defaultCatalog().sampleKey() + "\"");
+    }
+
+    @Test
+    void scoringPromptShouldListCategoriesFromConfiguredCatalog() {
+        var catalog = DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("wechat", "微信生态", "💬",
+                "小程序、公众号、微信支付相关", "微信")));
+
+        var prompt = DigestAiHelper.buildScoringPrompt(List.of(article("A", "d")), 0, catalog);
+
+        // 站长配了什么，AI 就只能选什么；清单外的分类不再出现在提示词里
+        assertThat(prompt).contains("- wechat: 小程序、公众号、微信支付相关");
+        assertThat(prompt).doesNotContain("ai-ml");
+        assertThat(prompt).contains("\"category\": \"wechat\"");
     }
 
     @Test

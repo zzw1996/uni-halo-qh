@@ -57,6 +57,10 @@
         <span class="stat-label">装扮 / 会员 / 券单</span>
         <span class="stat-value">{{ stats.outfitSold }} / {{ stats.membershipSold }} / {{ stats.contentTicketOrders }}</span>
       </div>
+      <div class="stat-card mini stat-h">
+        <span class="stat-label">AI 定制内容</span>
+        <span class="stat-value">{{ stats.aiContentSold }}</span>
+      </div>
     </div>
 
     <div class="panel">
@@ -139,6 +143,7 @@ interface PayStats {
   outfitSold: number;
   membershipSold: number;
   contentTicketOrders: number;
+  aiContentSold: number;
   trend: { date: string; count: number; amountCents: number }[];
   goodsRanking: {
     goodsId: string;
@@ -166,6 +171,7 @@ const emptyStats: PayStats = {
   outfitSold: 0,
   membershipSold: 0,
   contentTicketOrders: 0,
+  aiContentSold: 0,
   trend: [],
   goodsRanking: [],
 };

@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import pro.uhalo.uni.dto.DigestAiBalanceDTO;
+import pro.uhalo.uni.dto.DigestAiProviderDTO;
 import pro.uhalo.uni.dto.DigestArticleDTO;
 import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.dto.DigestFeedResultDTO;
@@ -26,8 +28,13 @@ import pro.uhalo.uni.services.DigestRenderer;
 import pro.uhalo.uni.services.DigestService;
 import pro.uhalo.uni.services.DigestTaxonomyService;
 import pro.uhalo.uni.services.HaloPostPublisher;
+import pro.uhalo.uni.enums.DigestAiTask;
+import pro.uhalo.uni.utils.DigestAiChannelResolver;
 import pro.uhalo.uni.utils.DigestAiHelper;
+import pro.uhalo.uni.utils.DigestAiUsageLog;
+import pro.uhalo.uni.utils.DigestCategoryCatalog;
 import pro.uhalo.uni.utils.DigestConfigHelper;
+import pro.uhalo.uni.utils.DigestCoverGenerator;
 import pro.uhalo.uni.utils.DigestSelection;
 import pro.uhalo.uni.utils.DigestTextUtils;
 import run.halo.app.plugin.ReactiveSettingFetcher;
@@ -63,9 +70,12 @@ public class DigestServiceImpl implements DigestService {
     private static final int MIN_WORDS_PER_ARTICLE = 80;
     private static final int IMAGE_UPLOAD_CONCURRENCY = 4;
 
-    /** 候选池上限：给「必须有封面图」留补位空间，又不想为太多文章白抓一次页面 */
-    private static final int MAX_CANDIDATE_POOL = 40;
+    /** 候选池上限：给「必须有封面图」与分类保底留补位空间，又不想为太多文章白抓一次页面 */
+    private static final int MAX_CANDIDATE_POOL = 50;
     private static final int DESCRIPTION_FALLBACK_LIMIT = 200;
+
+    /** 每个分类至少进池子的篇数：低于这个数，冷门分类的保底名额就没有可挑的素材 */
+    private static final int MIN_PER_CATEGORY_POOL = 3;
 
     /** 逐篇发布时单篇的发布确认上限（秒）：单篇正文小，等太久没有意义 */
     private static final int ARTICLE_PUBLISH_WAIT_SECONDS = 180;
@@ -76,6 +86,7 @@ public class DigestServiceImpl implements DigestService {
     private final DigestPersistence persistence;
     private final DigestFeedService feedService;
     private final DigestAiClient aiClient;
+    private final DigestAiModelService aiModelService;
     private final DigestRenderer renderer;
     private final DigestAssetUploader assetUploader;
     private final HaloPostPublisher publisher;
@@ -134,14 +145,26 @@ public class DigestServiceImpl implements DigestService {
                         "AI 日报未开启，请先在插件设置「AI 日报」中打开总开关"));
                 }
                 aiClient.resetForNewRun();
+                // 价格表为空时后台去官网读一次：不阻塞本轮（本轮用内置表，数值同源），
+                // 下次运行就能按官网价算
+                // defer + onErrorResume：这段是「顺手做的事」，任何异常都不许影响日报本身
+                reactor.core.publisher.Mono.defer(() -> aiModelService.fillPricesIfEmpty())
+                    .onErrorResume(ex -> reactor.core.publisher.Mono.empty())
+                    .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                    .subscribe(ignored -> {
+                        // 成功已由服务层记日志
+                    }, ex -> log.debug("[UniHalo][Digest] 自动读取单价结束：{}", ex.getMessage()));
                 var now = ZonedDateTime.now(DigestConfigHelper.zoneOf(config.getTimezone()));
                 var date = now.format(DATE_FORMAT);
                 progressTracker.generating("开始抓取 RSS 源（时间窗 " + config.getHours() + " 小时）…");
                 log.info("[UniHalo][Digest] ===== 开始生成日报 ===== date={} slot={} 是否发布={} "
-                        + "时间窗={}h 精选={}篇 每篇≈{}字 语言={} 模型={}@{} 图片={}",
-                    date, slot, publish, config.getHours(), config.getTopN(), config.getWords(),
-                    config.getLanguage(), config.getAiModel(), config.getAiApiBase(),
-                    config.isImageEnabled());
+                        + "时间窗={}h 精选={}篇 每类至少={}篇 每篇≈{}字 语言={} 通道={} "
+                        + "图片={} 配图兜底={}",
+                    date, slot, publish, config.getHours(), config.getTopN(),
+                    config.getMinPerCategory(), config.getWords(),
+                    config.getLanguage(), DigestAiChannelResolver.describe(config),
+                    config.isImageEnabled(),
+                    DigestConfigHelper.coverFallbackLabel(config.getCoverFallbackMode()));
                 // 同一日期+时段只有一条记录（资源名固定）。重试必须复用它，
                 // 否则 create 会撞「已存在」，重试永远不会真正执行、也永远到不了次数上限。
                 return persistence.fetch(DigestPersistence.resourceName(date, slot))
@@ -151,7 +174,7 @@ public class DigestServiceImpl implements DigestService {
                     .switchIfEmpty(Mono.defer(() ->
                         persistence.create(DigestPersistence.newReport(date, slot))))
                     .flatMap(saved -> execute(saved, config, publish, now)
-                        .flatMap(output -> markSuccess(saved, output))
+                        .flatMap(output -> markSuccess(saved, output, config))
                         .onErrorResume(ex -> markFailed(saved, ex)))
                     // 无论成功还是失败都要收尾进度：否则页面上会一直显示「进行中」
                     .doOnNext(this::finishProgress)
@@ -275,38 +298,98 @@ public class DigestServiceImpl implements DigestService {
     private Mono<PipelineOutput> execute(DigestReport report, DigestConfigDTO config, boolean publish,
         ZonedDateTime startedAt) {
         var startedMs = System.currentTimeMillis();
+        var catalog = catalogOf(config);
+        var trace = new RunTrace(config);
         return feedService.fetchRecent(config.getHours())
-            .flatMap(feeds -> ensureHasArticles(feeds)
-                .then(scoreAll(feeds.getArticles(), config))
-                .map(scored -> selectCandidates(scored, config))
-                // 先给候选池解析头图，没图的才能被后面有图的文章顶上来
-                .flatMap(candidates -> preResolveImages(candidates, config))
-                .map(candidates -> DigestSelection.trim(candidates, config.getTopN(),
-                    config.isRequireImage()))
-                .flatMap(selected -> ensureHasArticlesAfterImageFilter(selected, config))
-                .flatMap(selected -> summarizeBatchwise(selected, config))
-                .flatMap(articles -> generateOverview(articles, config)
-                    .flatMap(overview -> uploadImages(articles, config)
-                        .flatMap(imageCount -> enforceImageRequirement(articles, config)
-                            .map(finalArticles -> buildReport(finalArticles, overview, feeds,
-                                imageCount, config, startedAt, startedMs)))))
-                .flatMap(output -> persistDraft(report, output))
-                .flatMap(output -> publishIfEnabled(output, config, publish)));
+            .flatMap(feeds -> {
+                // 去重放在评分之前：转载的同一篇文章没必要重复评分，也不该占两个名额
+                var articles = deduplicate(feeds.getArticles(), trace);
+                return ensureHasArticles(feeds)
+                    .then(scoreAll(articles, config, trace))
+                    .map(scored -> selectCandidates(scored, config))
+                    // 先给候选池解析头图，没图的才能被后面有图的文章顶上来
+                    .flatMap(candidates -> preResolveImages(candidates, config))
+                    .map(candidates -> DigestSelection.selectByCategory(candidates, catalog,
+                        config.getMinPerCategory(), config.getMaxPerCategory(), config.getTopN(),
+                        config.isRequireImage()))
+                    .flatMap(selection -> supplementMissingCategories(selection, catalog,
+                        feeds.getArticles(), config, trace))
+                    .flatMap(selection -> ensureHasSelection(selection, config)
+                        .then(summarizeBatchwise(selection.articles(), config, trace))
+                        .flatMap(selected -> generateOverview(selected, config, trace)
+                            .flatMap(overview -> uploadImages(selected, config)
+                                .flatMap(imageCount -> generateFallbackCovers(selected, config,
+                                    catalog, startedAt, trace)
+                                    .flatMap(placeholderCount -> enforceImageRequirement(selected,
+                                        config)
+                                        .map(finalArticles -> buildReport(finalArticles, overview,
+                                            feeds, selection, trace, imageCount, placeholderCount,
+                                            config, startedAt, startedMs))))))
+                        .flatMap(output -> persistDraft(report, output, config))
+                        .flatMap(output -> publishIfEnabled(output, config, publish)));
+            });
     }
 
     /**
-     * 候选池：按评分取 topN 的两倍（最多 40 篇）。
+     * 候选池：全局高分 + 每个分类的头部文章。
      *
-     * <p>开「只发布带封面图」时，靠前的文章可能没图，需要后面的文章补位，
-     * 所以不能直接只取 topN 再筛。</p>
+     * <p>只取全局前 N 篇是不够的：冷门分类可能整类都进不了池子，
+     * 「每个分类至少几篇」也就无从谈起（配额再高，池子里没素材也选不出来）。
+     * 所以先把每个分类的前几篇钉进池子，再用全局高分把池子补满到上限。</p>
+     *
+     * <p>开了「只发布带封面图」时，靠前的文章可能没图，需要后面的文章补位，
+     * 因此池子比精选篇数更宽。</p>
      */
     private List<DigestArticleDTO> selectCandidates(List<DigestArticleDTO> scored,
         DigestConfigDTO config) {
         var sorted = new ArrayList<>(scored);
         sorted.sort(Comparator.comparingInt(DigestArticleDTO::getTotalScore).reversed());
-        var poolSize = Math.min(sorted.size(),
-            Math.max(config.getTopN(), Math.min(MAX_CANDIDATE_POOL, config.getTopN() * 2)));
-        return new ArrayList<>(sorted.subList(0, poolSize));
+        var pool = new java.util.LinkedHashSet<DigestArticleDTO>();
+        if (config.getMinPerCategory() > 0) {
+            var perCategory = Math.max(MIN_PER_CATEGORY_POOL, config.getMinPerCategory() * 2);
+            var counts = new java.util.HashMap<String, Integer>();
+            for (var article : sorted) {
+                var key = article.getCategory() == null ? "" : article.getCategory();
+                if (counts.getOrDefault(key, 0) >= perCategory) {
+                    continue;
+                }
+                counts.merge(key, 1, Integer::sum);
+                pool.add(article);
+            }
+        }
+        for (var article : sorted) {
+            if (pool.size() >= MAX_CANDIDATE_POOL) {
+                break;
+            }
+            pool.add(article);
+        }
+        return new ArrayList<>(pool);
+    }
+
+    /**
+     * 链接去重：同一篇文章常被多个源转载，重复文章既白花 AI 调用，也会占掉别的文章的名额。
+     *
+     * <p>同一条去重键保留**先出现**的那一份：去重发生在评分之前，此时还没有分数可比，
+     * 而「先出现」至少是可预期、可复现的。</p>
+     */
+    private List<DigestArticleDTO> deduplicate(List<DigestArticleDTO> articles, RunTrace trace) {
+        var kept = new java.util.LinkedHashMap<String, DigestArticleDTO>();
+        for (var article : articles) {
+            var key = DigestTextUtils.dedupKey(article.getLink(), article.getTitle());
+            if (!StringUtils.hasText(key)) {
+                // 既没有链接也没有标题：无从判断是不是同一篇，按对象身份各留一份，
+                // 否则这些「无从判断」的条目会被合成一篇、静默丢掉内容
+                key = "@" + System.identityHashCode(article);
+            }
+            kept.putIfAbsent(key, article);
+        }
+        var list = new ArrayList<>(kept.values());
+        trace.deduped = articles.size() - list.size();
+        if (trace.deduped > 0) {
+            log.info("[UniHalo][Digest] 链接去重：{} 篇重复转载，保留 {} 篇参与评分",
+                trace.deduped, list.size());
+        }
+        return list;
     }
 
     private Mono<List<DigestArticleDTO>> preResolveImages(List<DigestArticleDTO> candidates,
@@ -317,22 +400,193 @@ public class DigestServiceImpl implements DigestService {
         return feedService.resolveLeadImages(candidates);
     }
 
-    /** 按「必须有封面图」筛完一篇不剩时直接失败：宁可这轮不发，也不发无图文章 */
-    private Mono<List<DigestArticleDTO>> ensureHasArticlesAfterImageFilter(
-        List<DigestArticleDTO> selected, DigestConfigDTO config) {
-        if (!selected.isEmpty()) {
-            return Mono.just(selected);
+    /**
+     * 分类有缺口时放宽时间窗补抓一轮。
+     *
+     * <p>只对「保底篇数没凑够」的分类做，且补抓回来的文章排在时间窗内的文章之后
+     * （见 {@code DigestSelection} 的排序口径），因此不会挤掉当天的新文章。
+     * 补抓失败不阻断本轮：宁可少一个分类，也不能整期发不出去。</p>
+     */
+    private Mono<DigestSelection.CategorySelection> supplementMissingCategories(
+        DigestSelection.CategorySelection selection, DigestCategoryCatalog catalog,
+        List<DigestArticleDTO> fetched, DigestConfigDTO config, RunTrace trace) {
+        if (!selection.hasMissingCategories()) {
+            return Mono.just(selection);
         }
-        return Mono.error(new IllegalStateException(config.isRequireImage()
-            ? "启用了「只发布带封面图的文章」，但本轮没有任何候选文章能配到头图；"
-                + "可放宽时间窗或精选篇数，或在插件设置里关闭该选项"
-            : "时间窗内没有可用文章"));
+        var missing = selection.missingCategories();
+        if (!config.isCategoryFallbackEnabled()) {
+            log.warn("[UniHalo][Digest] 以下分类本期没有凑够 {} 篇：{}（补抓已关闭）",
+                selection.minPerCategory(), labels(missing, catalog));
+            return Mono.just(selection);
+        }
+        var hours = Math.max(config.getCategoryFallbackHours(), config.getHours());
+        if (hours <= config.getHours()) {
+            log.warn("[UniHalo][Digest] 补抓时间窗（{}h）不大于主时间窗（{}h），跳过补抓；"
+                + "本期缺口分类：{}", hours, config.getHours(), labels(missing, catalog));
+            return Mono.just(selection);
+        }
+        log.info("[UniHalo][Digest] 分类缺口 {} 个（{}），用 {} 小时窗口补抓一轮",
+            missing.size(), labels(missing, catalog), hours);
+        progressTracker.generating("分类缺口补抓中（" + labels(missing, catalog) + "）…");
+        var seen = new java.util.HashSet<String>();
+        for (var article : fetched) {
+            seen.add(DigestTextUtils.dedupKey(article.getLink(), article.getTitle()));
+        }
+        return feedService.fetchRecent(hours)
+            .map(result -> pickFallbackCandidates(result.getArticles(), seen,
+                config.getCategoryFallbackScanLimit()))
+            .flatMap(extra -> {
+                if (extra.isEmpty()) {
+                    log.warn("[UniHalo][Digest] 补抓没有找到新的候选文章，本期缺口分类：{}",
+                        labels(missing, catalog));
+                    return Mono.just(selection);
+                }
+                extra.forEach(article -> article.setSupplementary(true));
+                trace.fallbackFetched = extra.size();
+                log.info("[UniHalo][Digest] 补抓窗口内新增 {} 篇候选，开始补评（最多 {} 篇）",
+                    extra.size(), config.getCategoryFallbackScanLimit());
+                return scoreAll(extra, config, trace)
+                    .flatMap(scored -> preResolveImages(scored, config))
+                    .map(scored -> {
+                        var merged = new ArrayList<>(selection.articles());
+                        merged.addAll(scored);
+                        var reselected = DigestSelection.selectByCategory(merged, catalog,
+                            config.getMinPerCategory(), config.getMaxPerCategory(),
+                            config.getTopN(), config.isRequireImage());
+                        log.info("[UniHalo][Digest] 补抓后重新精选：{} 篇（补位 {} 篇），"
+                                + "仍有缺口：{}",
+                            reselected.articles().size(), countSupplementary(reselected.articles()),
+                            reselected.hasMissingCategories()
+                                ? labels(reselected.missingCategories(), catalog) : "无");
+                        return reselected;
+                    });
+            })
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Digest] 分类补抓失败，按现有候选继续：{}", ex.getMessage());
+                return Mono.just(selection);
+            });
     }
 
-    /** 头图上传后仍没图的文章，按配置过滤掉（保证发出去的每篇都有封面） */
+    /**
+     * 从补抓结果里挑出值得再评的候选。
+     *
+     * <p>按发布时间倒序（越新越可能被选上），去掉第一轮已经见过的文章，
+     * 最多取 {@code limit} 篇——补抓的 AI 成本必须有上限。</p>
+     */
+    private static List<DigestArticleDTO> pickFallbackCandidates(List<DigestArticleDTO> articles,
+        java.util.Set<String> seen, int limit) {
+        if (articles == null || articles.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        var sorted = new ArrayList<>(articles);
+        sorted.sort(Comparator.comparing(DigestArticleDTO::getPubDate,
+            Comparator.nullsLast(Comparator.reverseOrder())));
+        var picked = new ArrayList<DigestArticleDTO>();
+        for (var article : sorted) {
+            if (picked.size() >= limit) {
+                break;
+            }
+            var key = DigestTextUtils.dedupKey(article.getLink(), article.getTitle());
+            // 没有可用的去重键时不做「见过」判断（见 deduplicate 的同类处理）
+            if (StringUtils.hasText(key) && !seen.add(key)) {
+                continue;
+            }
+            picked.add(article);
+        }
+        return picked;
+    }
+
+    /** 一篇都没选出来时直接失败：这轮没有任何可发内容，发出去也是空日报 */
+    private Mono<Void> ensureHasSelection(DigestSelection.CategorySelection selection,
+        DigestConfigDTO config) {
+        if (!selection.articles().isEmpty()) {
+            return Mono.empty();
+        }
+        return Mono.error(new IllegalStateException("时间窗内没有选出任何可用文章"
+            + (config.isRequireImage() ? "（已开启「只发布带封面图的文章」，候选都被封面要求挡掉了）" : "")
+            + "；可放宽时间窗或精选篇数，或在插件设置里检查分类清单与封面要求"));
+    }
+
+    /**
+     * 占位封面：给「配额内但配不到原文头图」的文章生成一张标题卡片。
+     *
+     * <p>这是「每个分类至少一篇带封面」的最后一环：没有它，某个分类只剩无图文章时，
+     * 要么发无图文章、要么整个分类没有文章，两条路都不满足站长的要求。
+     * 生成失败（字体、附件策略等问题）只跳过该篇，不阻断本轮。</p>
+     */
+    private Mono<Integer> generateFallbackCovers(List<DigestArticleDTO> articles,
+        DigestConfigDTO config, DigestCategoryCatalog catalog, ZonedDateTime generatedAt,
+        RunTrace trace) {
+        if (!config.isImageEnabled() || !config.isRequireImage()
+            || !DigestConfigHelper.COVER_FALLBACK_PLACEHOLDER
+                .equals(config.getCoverFallbackMode())) {
+            return Mono.just(0);
+        }
+        var missing = articles.stream()
+            .filter(article -> !DigestSelection.hasUploadedImage(article))
+            .toList();
+        if (missing.isEmpty()) {
+            return Mono.just(0);
+        }
+        log.info("[UniHalo][Digest] {} 篇没有可用的原文头图，按「配图兜底={}」生成标题卡片封面",
+            missing.size(), DigestConfigHelper.coverFallbackLabel(config.getCoverFallbackMode()));
+        var dateText = generatedAt.format(DATE_FORMAT);
+        return siteTitle().flatMap(siteName -> Flux.fromIterable(missing)
+            .index()
+            .flatMapSequential(tuple -> {
+                var index = tuple.getT1().intValue();
+                var article = tuple.getT2();
+                byte[] bytes;
+                try {
+                    bytes = DigestCoverGenerator.renderCard(article.getCategory(),
+                        catalog.labelOf(article.getCategory()), displayTitle(article),
+                        article.getSourceName(), dateText, siteName);
+                } catch (Exception ex) {
+                    log.warn("[UniHalo][Digest] 第 {} 篇的标题卡片生成失败，跳过：{}",
+                        index + 1, ex.getMessage());
+                    return Mono.empty();
+                }
+                var baseName = String.format("cover-%s-%s-%02d", dateText,
+                    DigestTextUtils.slugify(article.getCategory()), index + 1);
+                return assetUploader.uploadBytes(bytes, "image/png", baseName, config)
+                    .doOnNext(permalink -> {
+                        article.setUploadedImage(permalink);
+                        article.setPlaceholderCover(true);
+                        log.info("[UniHalo][Digest] 标题卡片封面已上传：{} → {}",
+                            article.getTitle(), permalink);
+                    })
+                    .onErrorResume(ex -> {
+                        log.warn("[UniHalo][Digest] 第 {} 篇的标题卡片上传失败，跳过：{}",
+                            index + 1, ex.getMessage());
+                        return Mono.empty();
+                    });
+            }, IMAGE_UPLOAD_CONCURRENCY)
+            .count()
+            .map(Long::intValue)
+            .doOnNext(count -> trace.placeholderCoverCount = count));
+    }
+
+    /**
+     * 站点名（画在卡片右下角）；读不到就留空，不影响出图。
+     *
+     * <p>{@code defaultIfEmpty} 不能省：{@code flatMap} 链上任何一处返回空 Mono，
+     * 整条流水线都会变成「没有结果」，报告会停在运行中而不是失败——比出不了图难查得多。</p>
+     */
+    private Mono<String> siteTitle() {
+        return settingFetcher.get("basic")
+            .map(node -> node.path("title").asText("").trim())
+            .defaultIfEmpty("")
+            .onErrorResume(ex -> Mono.just(""));
+    }
+
+    /** 头图上传后仍没图的文章，按配置处理（保证发出去的每篇都有封面） */
     private Mono<List<DigestArticleDTO>> enforceImageRequirement(List<DigestArticleDTO> articles,
         DigestConfigDTO config) {
         if (!config.isImageEnabled() || !config.isRequireImage()) {
+            return Mono.just(articles);
+        }
+        // 「允许无封面」是站长明确选的：不做过滤，这一篇照发
+        if (DigestConfigHelper.COVER_FALLBACK_NO_COVER.equals(config.getCoverFallbackMode())) {
             return Mono.just(articles);
         }
         var kept = DigestSelection.keepUploaded(articles);
@@ -341,12 +595,14 @@ public class DigestServiceImpl implements DigestService {
                 "启用了「只发布带封面图的文章」，但本次 " + articles.size()
                     + " 篇的头图都没有拿到可用的封面地址，已按该设置跳过本轮发布。"
                     + "常见原因：附件存储策略名不存在或不可写、图片站点拒绝服务端抓取（防盗链/超时）。"
-                    + "具体原因见插件日志里「Halo 转存头图失败」「头图下载被拒绝」「头图下载失败」这几行；"
+                    + "具体原因见插件日志里「Halo 转存头图失败」「头图下载被拒绝」「头图下载失败」"
+                    + "「标题卡片生成失败」这几行；"
                     + "也可以先在「AI 日报」设置中关闭「只发布带封面图的文章」，让本轮先发出去"));
         }
         if (kept.size() < articles.size()) {
-            log.warn("[UniHalo][Digest] {} 篇头图未上传成功，按「只发布带封面图」过滤后保留 {} 篇",
-                articles.size() - kept.size(), kept.size());
+            log.warn("[UniHalo][Digest] {} 篇头图未上传成功（配图兜底={}），过滤后保留 {} 篇",
+                articles.size() - kept.size(),
+                DigestConfigHelper.coverFallbackLabel(config.getCoverFallbackMode()), kept.size());
         }
         return Mono.just(kept);
     }
@@ -361,7 +617,29 @@ public class DigestServiceImpl implements DigestService {
 
     // ── 1. 评分 ──
 
-    private Mono<List<DigestArticleDTO>> scoreAll(List<DigestArticleDTO> articles, DigestConfigDTO config) {
+    /**
+     * 本轮的分类目录（站长配置的分类清单；清单留空 = 内置六类）。
+     *
+     * <p>不缓存成字段：{@code DigestServiceImpl} 是单例，而清单是站长的配置、
+     * 随时可能改；按 config 现算既便宜（最多十几行的小对象）又不会读到上一轮的旧清单。</p>
+     */
+    private static DigestCategoryCatalog catalogOf(DigestConfigDTO config) {
+        return DigestCategoryCatalog.from(config.getDigestCategories());
+    }
+
+    /**
+     * 评分失败 / 模型漏项时的默认分类。
+     *
+     * <p>按 {@code unknownCategoryPolicy} 的口径兜底：{@code other} → 清单里的兜底分类，
+     * {@code drop} → 空串（不打分类）。</p>
+     */
+    private static String defaultCategory(DigestConfigDTO config) {
+        return DigestAiHelper.normalizeCategory("", catalogOf(config),
+            config.getUnknownCategoryPolicy());
+    }
+
+    private Mono<List<DigestArticleDTO>> scoreAll(List<DigestArticleDTO> articles,
+        DigestConfigDTO config, RunTrace trace) {
         var batches = partition(articles, AI_BATCH_SIZE);
         var startedMs = System.currentTimeMillis();
         progressTracker.generating("Step 2/5 AI 评分中（" + articles.size() + " 篇，"
@@ -369,33 +647,64 @@ public class DigestServiceImpl implements DigestService {
         log.info("[UniHalo][Digest] Step 2/5 AI 评分：{} 篇 → {} 批（每批最多 {} 篇，并发 {}）",
             articles.size(), batches.size(), AI_BATCH_SIZE, MAX_CONCURRENT_AI);
         return Flux.fromIterable(batches)
-            .flatMapSequential(batch -> scoreBatch(articles, batch, config), MAX_CONCURRENT_AI)
+            .flatMapSequential(batch -> scoreBatch(articles, batch, config, trace),
+                MAX_CONCURRENT_AI)
             .then(Mono.fromSupplier(() -> articles))
+            .doOnNext(list -> logDistribution(list, config))
             .doOnNext(list -> log.info("[UniHalo][Digest] Step 2/5 AI 评分完成，用时 {}s",
                 secondsSince(startedMs)));
     }
 
-    private Mono<Void> scoreBatch(List<DigestArticleDTO> all, Batch batch, DigestConfigDTO config) {
+    private Mono<Void> scoreBatch(List<DigestArticleDTO> all, Batch batch, DigestConfigDTO config,
+        RunTrace trace) {
         // 先铺默认分：模型漏项、批次失败都不会让文章停在「零分」状态
+        var fallbackCategory = defaultCategory(config);
         for (var article : batch.items()) {
             article.setRelevance(5);
             article.setQuality(5);
             article.setTimeliness(5);
-            article.setCategory("other");
+            article.setCategory(fallbackCategory);
             article.setKeywords(new ArrayList<>());
         }
-        var prompt = DigestAiHelper.buildScoringPrompt(batch.items(), batch.startIndex());
-        return aiClient.call(config, prompt)
-            .doOnNext(response -> applyScores(all, response))
+        return callScoring(all, batch, config, trace, 0);
+    }
+
+    /**
+     * 评分请求（失败重试一次）。
+     *
+     * <p>评分批次失败时改造前只打一行日志就按默认分继续，结果是整批文章挤进兜底分类——
+     * 分类覆盖会莫名其妙地塌掉。重试一次的成本很低，收益是「分类判定不因一次网络抖动而失真」。</p>
+     */
+    private Mono<Void> callScoring(List<DigestArticleDTO> all, Batch batch,
+        DigestConfigDTO config, RunTrace trace, int attempt) {
+        var prompt = DigestAiHelper.buildScoringPrompt(batch.items(), batch.startIndex(),
+            catalogOf(config));
+        return aiClient.call(config, prompt, DigestAiTask.SCORE)
+            .doOnNext(reply -> {
+                trace.usage.record(DigestAiTask.SCORE, reply);
+                applyScores(all, reply.text(), config);
+            })
             .then()
             .onErrorResume(ex -> {
-                log.warn("[UniHalo][Digest] 评分批次失败（{} 篇），按默认分处理：{}",
+                if (attempt == 0) {
+                    log.warn("[UniHalo][Digest] 评分批次失败（{} 篇），重试一次：{}",
+                        batch.items().size(), ex.getMessage());
+                    return callScoring(all, batch, config, trace, attempt + 1);
+                }
+                log.warn("[UniHalo][Digest] 评分批次重试仍失败（{} 篇），按默认分处理：{}",
                     batch.items().size(), ex.getMessage());
                 return Mono.empty();
             });
     }
 
-    private void applyScores(List<DigestArticleDTO> all, String response) {
+    /** 分类分布：分类塌到兜底一类时一眼能看出来（否则只会看到「今天文章很少」） */
+    private void logDistribution(List<DigestArticleDTO> articles, DigestConfigDTO config) {
+        var counts = countByCategory(articles);
+        log.info("[UniHalo][Digest] 评分后的分类分布：{}",
+            describeCounts(counts, catalogOf(config)));
+    }
+
+    private void applyScores(List<DigestArticleDTO> all, String response, DigestConfigDTO config) {
         JsonNode root;
         try {
             root = DigestAiHelper.parseJson(response);
@@ -403,6 +712,8 @@ public class DigestServiceImpl implements DigestService {
             log.warn("[UniHalo][Digest] 评分结果解析失败：{}", ex.getMessage());
             return;
         }
+        var catalog = catalogOf(config);
+        var policy = config.getUnknownCategoryPolicy();
         for (var result : root.path("results")) {
             var index = result.path("index").asInt(-1);
             if (index < 0 || index >= all.size()) {
@@ -412,7 +723,9 @@ public class DigestServiceImpl implements DigestService {
             article.setRelevance(DigestAiHelper.clampScore(result.path("relevance").asInt(5)));
             article.setQuality(DigestAiHelper.clampScore(result.path("quality").asInt(5)));
             article.setTimeliness(DigestAiHelper.clampScore(result.path("timeliness").asInt(5)));
-            article.setCategory(DigestAiHelper.normalizeCategory(result.path("category").asText("other")));
+            // 清单外的分类按 unknownCategoryPolicy 兜底（other → 兜底分类，drop → 不打分类）
+            article.setCategory(DigestAiHelper.normalizeCategory(
+                result.path("category").asText(""), catalog, policy));
             var keywords = new ArrayList<String>();
             for (var keyword : result.path("keywords")) {
                 if (keywords.size() >= 4) {
@@ -430,7 +743,7 @@ public class DigestServiceImpl implements DigestService {
     // ── 2. 摘要 ──
 
     private Mono<List<DigestArticleDTO>> summarizeBatchwise(List<DigestArticleDTO> articles,
-        DigestConfigDTO config) {
+        DigestConfigDTO config, RunTrace trace) {
         // 每批篇数按篇幅反比收缩，避免长文批次把单次响应顶到输出上限
         var batchSize = Math.max(3, Math.min(AI_BATCH_SIZE,
             AI_OUTPUT_CHARS_BUDGET / Math.max(config.getWords(), MIN_WORDS_PER_ARTICLE)));
@@ -441,9 +754,9 @@ public class DigestServiceImpl implements DigestService {
         log.info("[UniHalo][Digest] Step 3/5 AI 撰写：精选 {} 篇 → {} 批（每批 {} 篇，目标每篇 {} 字）",
             articles.size(), batches.size(), batchSize, config.getWords());
         return Flux.fromIterable(batches)
-            .flatMapSequential(batch -> summarizeOneBatch(articles, batch, config, 0),
+            .flatMapSequential(batch -> summarizeOneBatch(articles, batch, config, trace, 0),
                 MAX_CONCURRENT_AI)
-            .then(Mono.defer(() -> fillMissingSummaries(articles, config)))
+            .then(Mono.defer(() -> fillMissingSummaries(articles, config, trace)))
             .map(list -> {
                 for (var article : list) {
                     if (!StringUtils.hasText(article.getSummary())) {
@@ -464,12 +777,13 @@ public class DigestServiceImpl implements DigestService {
 
     /** 批次失败时拆半重试；仍失败则留给「缺失补齐」阶段单独请求 */
     private Mono<Void> summarizeOneBatch(List<DigestArticleDTO> articles, Batch batch,
-        DigestConfigDTO config, int depth) {
+        DigestConfigDTO config, RunTrace trace, int depth) {
         var prompt = DigestAiHelper.buildSummaryPrompt(batch.items(), batch.startIndex(),
             config.getLanguage(), config.getWords());
-        return aiClient.call(config, prompt)
-            .doOnNext(response -> {
-                var applied = applySummaries(batch, response);
+        return aiClient.call(config, prompt, DigestAiTask.WRITE)
+            .doOnNext(reply -> {
+                trace.usage.record(DigestAiTask.WRITE, reply);
+                var applied = applySummaries(batch, reply.text());
                 if (applied == 0) {
                     throw new IllegalStateException("摘要结果为空");
                 }
@@ -482,11 +796,11 @@ public class DigestServiceImpl implements DigestService {
                         batch.items().size(), ex.getMessage());
                     return summarizeOneBatch(articles,
                         new Batch(batch.startIndex(), batch.items().subList(0, mid)),
-                        config, depth + 1)
+                        config, trace, depth + 1)
                         .then(summarizeOneBatch(articles,
                             new Batch(batch.startIndex() + mid,
                                 batch.items().subList(mid, batch.items().size())),
-                            config, depth + 1));
+                            config, trace, depth + 1));
                 }
                 log.warn("[UniHalo][Digest] 摘要批次（{} 篇）失败，稍后单篇补请求：{}",
                     batch.items().size(), ex.getMessage());
@@ -534,7 +848,7 @@ public class DigestServiceImpl implements DigestService {
     }
 
     private Mono<List<DigestArticleDTO>> fillMissingSummaries(List<DigestArticleDTO> articles,
-        DigestConfigDTO config) {
+        DigestConfigDTO config, RunTrace trace) {
         var missing = articles.stream()
             .filter(article -> !StringUtils.hasText(article.getSummary()))
             .toList();
@@ -544,21 +858,22 @@ public class DigestServiceImpl implements DigestService {
         log.warn("[UniHalo][Digest] {} 篇未拿到摘要，逐篇补请求", missing.size());
         return Flux.fromIterable(missing)
             .flatMapSequential(item -> summarizeOneBatch(articles, new Batch(0, List.of(item)),
-                config, AI_BATCH_SPLIT_DEPTH), MAX_CONCURRENT_AI)
+                config, trace, AI_BATCH_SPLIT_DEPTH), MAX_CONCURRENT_AI)
             .then(Mono.fromSupplier(() -> articles));
     }
 
     // ── 3. 趋势总结 ──
 
     private Mono<DigestAiHelper.Overview> generateOverview(List<DigestArticleDTO> articles,
-        DigestConfigDTO config) {
+        DigestConfigDTO config, RunTrace trace) {
         var prompt = DigestAiHelper.buildOverviewPrompt(articles, config.getLanguage(),
             config.getWords());
         var startedMs = System.currentTimeMillis();
         progressTracker.generating("Step 4/5 生成今日看点与背景铺垫…");
         log.info("[UniHalo][Digest] Step 4/5 生成今日看点与背景铺垫…");
-        return aiClient.call(config, prompt)
-            .map(DigestAiHelper::parseOverviewResponse)
+        return aiClient.call(config, prompt, DigestAiTask.OVERVIEW)
+            .doOnNext(reply -> trace.usage.record(DigestAiTask.OVERVIEW, reply))
+            .map(reply -> DigestAiHelper.parseOverviewResponse(reply.text()))
             .doOnNext(overview -> log.info(
                 "[UniHalo][Digest] Step 4/5 趋势总结完成：看点 {} 字 / 背景 {} 字，用时 {}s",
                 length(overview.trend()), length(overview.background()), secondsSince(startedMs)))
@@ -610,38 +925,108 @@ public class DigestServiceImpl implements DigestService {
     // ── 5. 成稿 ──
 
     private PipelineOutput buildReport(List<DigestArticleDTO> articles,
-        DigestAiHelper.Overview overview, DigestFeedResultDTO feeds, int imageCount,
-        DigestConfigDTO config, ZonedDateTime generatedAt, long startedMs) {
+        DigestAiHelper.Overview overview, DigestFeedResultDTO feeds,
+        DigestSelection.CategorySelection selection, RunTrace trace, int imageCount,
+        int placeholderCount, DigestConfigDTO config, ZonedDateTime generatedAt, long startedMs) {
+        var catalog = catalogOf(config);
+        var counts = countByCategory(articles);
         var stats = DigestStatsDTO.builder()
             .totalFeeds(feeds.getTotalFeeds())
             .successFeeds(feeds.getSuccessFeeds())
             .totalArticles(feeds.getArticles().size())
-            .filteredArticles(feeds.getArticles().size())
+            .filteredArticles(Math.max(0, feeds.getArticles().size() - trace.deduped))
             .selected(articles.size())
             .hours(config.getHours())
             .words(config.getWords())
             .actualAvgWords(actualAvgWords(articles))
             .imageCount(imageCount)
+            .placeholderCoverCount(placeholderCount)
+            .dedupedCount(trace.deduped)
+            .fallbackFetched(trace.fallbackFetched)
+            .supplementCount(countSupplementary(articles))
+            .minPerCategory(config.getMinPerCategory())
+            .categoryCounts(counts)
+            .categorySummary(describeCounts(counts, catalog))
+            .requiredCategories(selection.requiredCategories())
+            .missingCategories(shortfall(selection.requiredCategories(), counts,
+                config.getMinPerCategory()))
             .language(config.getLanguage())
             .durationMs(System.currentTimeMillis() - startedMs)
+            .aiCost(trace.usage.snapshot())
             .build();
         var markdown = renderer.render(articles, overview, stats, config.isMermaidEnabled(),
-            config.getFooterNote(), generatedAt);
+            config.getFooterNote(), generatedAt, catalog);
         var cover = articles.stream()
             .map(DigestArticleDTO::getUploadedImage)
             .filter(StringUtils::hasText)
             .findFirst()
             .orElse("");
-        log.info("[UniHalo][Digest] Markdown 成稿完成：{} 字符，精选 {} 篇，配图 {} 张，"
-                + "扫描源 {}/{}，抓取 {} 篇",
-            markdown.length(), articles.size(), imageCount, stats.getSuccessFeeds(),
-            stats.getTotalFeeds(), stats.getTotalArticles());
+        log.info("[UniHalo][Digest] Markdown 成稿完成：{} 字符，精选 {} 篇，配图 {} 张"
+                + "（其中标题卡片 {} 张），扫描源 {}/{}，抓取 {} 篇",
+            markdown.length(), articles.size(), imageCount, placeholderCount,
+            stats.getSuccessFeeds(), stats.getTotalFeeds(), stats.getTotalArticles());
+        logCoverage(stats, catalog);
         progressTracker.generating("正在生成 Markdown 成稿…");
-        var payloads = buildPostPayloads(articles, markdown, config, stats, generatedAt);
+        var payloads = buildPostPayloads(articles, markdown, config, stats, generatedAt, catalog);
         log.info("[UniHalo][Digest] 待发布内容已备好：{} 篇（发布方式={}）",
             payloads.size(), config.getPublishMode());
         return new PipelineOutput(markdown, stats, articles.size(), cover,
             generatedAt.format(DATE_FORMAT), generatedAt, articles, payloads);
+    }
+
+    /** 分类覆盖度：本期每个分类各几篇、哪些没凑够（后台面板与日志都看这一份） */
+    private static void logCoverage(DigestStatsDTO stats, DigestCategoryCatalog catalog) {
+        if (stats.getMinPerCategory() <= 0) {
+            return;
+        }
+        var covered = stats.getRequiredCategories().size() - stats.getMissingCategories().size();
+        log.info("[UniHalo][Digest] 分类覆盖 {}/{}：{}", covered,
+            stats.getRequiredCategories().size(), describeCounts(stats.getCategoryCounts(), catalog));
+        if (!stats.getMissingCategories().isEmpty()) {
+            log.warn("[UniHalo][Digest] 以下分类本期不足 {} 篇：{}", stats.getMinPerCategory(),
+                labels(stats.getMissingCategories(), catalog));
+        }
+    }
+
+    /** 「AI / ML 3 · 安全 1」这样的中文可读分布，日志与后台都用同一口径 */
+    private static String describeCounts(java.util.Map<String, Integer> counts,
+        DigestCategoryCatalog catalog) {
+        if (counts == null || counts.isEmpty()) {
+            return "（无）";
+        }
+        return counts.entrySet().stream()
+            .map(entry -> catalog.labelOf(entry.getKey()) + " " + entry.getValue())
+            .collect(Collectors.joining(" · "));
+    }
+
+    /** 分类 key → 篇数（保持清单顺序，旧分类排在后面） */
+    private static java.util.Map<String, Integer> countByCategory(List<DigestArticleDTO> articles) {
+        var counts = new java.util.LinkedHashMap<String, Integer>();
+        for (var article : articles) {
+            var key = article.getCategory() == null ? "" : article.getCategory().trim();
+            counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    /** 清单里没凑够保底篇数的分类 */
+    private static List<String> shortfall(List<String> required,
+        java.util.Map<String, Integer> counts, int minPerCategory) {
+        if (required == null || required.isEmpty() || minPerCategory <= 0) {
+            return List.of();
+        }
+        return required.stream()
+            .filter(key -> counts.getOrDefault(key, 0) < minPerCategory)
+            .toList();
+    }
+
+    private static int countSupplementary(List<DigestArticleDTO> articles) {
+        return (int) articles.stream().filter(DigestArticleDTO::isSupplementary).count();
+    }
+
+    /** 分类 key 列表 → 中文名（日志里给人看） */
+    private static String labels(List<String> keys, DigestCategoryCatalog catalog) {
+        return keys.stream().map(catalog::labelOf).collect(Collectors.joining("、"));
     }
 
     /**
@@ -690,12 +1075,14 @@ public class DigestServiceImpl implements DigestService {
     /**
      * 把文章列表序列化成用户侧的条目 JSON。
      *
-     * <p>分类名与图标取自渲染器的同一份元数据，避免前端各维护一份映射。</p>
+     * <p>分类名与图标取自同一份分类目录（站长配置的清单），避免前端各维护一份映射。</p>
      */
-    private static String serializeArticleEntries(List<DigestArticleDTO> articles) {
+    private static String serializeArticleEntries(List<DigestArticleDTO> articles,
+        DigestCategoryCatalog catalog) {
         if (articles == null || articles.isEmpty()) {
             return "[]";
         }
+        var directory = catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
         var entries = new ArrayList<DigestArticleEntryDTO>();
         for (var article : articles) {
             var category = article.getCategory() == null ? "" : article.getCategory();
@@ -703,8 +1090,8 @@ public class DigestServiceImpl implements DigestService {
                 .title(DigestRenderer.displayTitle(article))
                 .cover(article.getUploadedImage() == null ? "" : article.getUploadedImage())
                 .category(category)
-                .categoryLabel(DigestRenderer.categoryLabel(category))
-                .categoryEmoji(DigestRenderer.categoryEmoji(category))
+                .categoryLabel(directory.labelOf(category))
+                .categoryEmoji(directory.emojiOf(category))
                 .keywords(article.getKeywords() == null ? List.of() : article.getKeywords())
                 .sourceName(article.getSourceName())
                 .sourceUrl(article.getSourceUrl())
@@ -724,7 +1111,7 @@ public class DigestServiceImpl implements DigestService {
 
     private List<DigestPostPayloadDTO> buildPostPayloads(List<DigestArticleDTO> articles,
         String digestMarkdown, DigestConfigDTO config, DigestStatsDTO stats,
-        ZonedDateTime generatedAt) {
+        ZonedDateTime generatedAt, DigestCategoryCatalog catalog) {
         var payloads = new ArrayList<DigestPostPayloadDTO>();
         var mode = config.getPublishMode();
         var wantDigest = DigestConfigHelper.PUBLISH_MODE_DIGEST.equals(mode)
@@ -762,7 +1149,7 @@ public class DigestServiceImpl implements DigestService {
                     .title(displayTitle(article))
                     .slug(buildArticleSlug(article))
                     .markdown(renderer.renderArticle(article, stats, config.getFooterNote(),
-                        generatedAt))
+                        generatedAt, catalogOf(config)))
                     .cover(article.getUploadedImage() == null ? "" : article.getUploadedImage())
                     // 逐篇时每篇带自己的分类，这样它才会出现在对应的站点分类下
                     .aiCategories(autoCategory && StringUtils.hasText(article.getCategory())
@@ -822,7 +1209,8 @@ public class DigestServiceImpl implements DigestService {
     }
 
     /** 先把正文与待发布内容落库：即使随后发布失败或卡住，报告本身已经可以查看与补发 */
-    private Mono<PipelineOutput> persistDraft(DigestReport report, PipelineOutput output) {
+    private Mono<PipelineOutput> persistDraft(DigestReport report, PipelineOutput output,
+        DigestConfigDTO config) {
         report.setMarkdown(output.markdown());
         report.setStats(serializeStats(output.stats()));
         report.setArticleCount(output.articleCount());
@@ -830,7 +1218,7 @@ public class DigestServiceImpl implements DigestService {
         report.setPostPayloads(serializePayloads(output.payloads()));
         // 一并保存「用户侧」的文章条目：AI 分类、关键词、摘要、封面这些是
         // 小程序端让用户自己挑内容看的依据，而发布结果与待发布载荷里都没有
-        report.setArticleEntries(serializeArticleEntries(output.articles()));
+        report.setArticleEntries(serializeArticleEntries(output.articles(), catalogOf(config)));
         log.info("[UniHalo][Digest] 日报正文与待发布内容已保存到插件数据（name={}，{}/{} 篇已备好），"
                 + "准备发布",
             report.getMetadata().getName(), output.posts().size(), output.payloads().size());
@@ -900,8 +1288,11 @@ public class DigestServiceImpl implements DigestService {
             // 手填的额外附加项：匹配不到就忽略（手误不该造出分类）
             .categoryNames(splitNames(config.getPostCategories()))
             .tagNames(splitNames(config.getPostTags()))
-            // AI 判定的分类与关键词：不存在则自动创建（这才是「不需要手工配置」的部分）
+            // AI 判定的分类与关键词：默认不存在则自动创建（这才是「不需要手工配置」的部分），
+            // 也可以按站长选的模式改成「只复用已有」或「按清单映射」
             .aiCategories(payload.getAiCategories())
+            .catalog(catalogOf(config))
+            .categoryMode(config.getCategoryMode())
             .keywords(payload.getKeywords())
             .build();
         log.info("[UniHalo][Digest] 发布文章：标题=「{}」 slug={} 正文 {} 字符 封面={}",
@@ -967,7 +1358,8 @@ public class DigestServiceImpl implements DigestService {
 
     // ── 收尾 ──
 
-    private Mono<DigestReport> markSuccess(DigestReport report, PipelineOutput output) {
+    private Mono<DigestReport> markSuccess(DigestReport report, PipelineOutput output,
+        DigestConfigDTO config) {
         // 重新取一次再写：persistDraft 已经更新过一轮，同一实例的 resourceVersion 已过期，
         // 直接用旧实例提交会命中乐观锁冲突
         return reload(report).flatMap(current -> {
@@ -978,7 +1370,7 @@ public class DigestServiceImpl implements DigestService {
             current.setCover(output.cover());
             current.setPublishState(output.publishState());
             current.setPosts(serializePosts(output.posts()));
-            current.setArticleEntries(serializeArticleEntries(output.articles()));
+            current.setArticleEntries(serializeArticleEntries(output.articles(), catalogOf(config)));
             current.setPostCount(output.posts().size());
             var first = output.posts().stream()
                 .filter(post -> StringUtils.hasText(post.getUrl()))
@@ -1127,6 +1519,34 @@ public class DigestServiceImpl implements DigestService {
 
     /** 一批文章 + 这批在全局列表中的起始下标（提示词里的 Index 用全局下标，便于回填） */
     private record Batch(int startIndex, List<DigestArticleDTO> items) {
+    }
+
+    /**
+     * 本轮运行的中间量：去重、补抓、占位封面这些不是每轮都会发生，
+     * 但统计与日志都要它们，所以集中放一处，避免到处传参。
+     */
+    private static final class RunTrace {
+
+        /**
+         * 本轮的 AI 用量账本：收尾时按任务/通道算成钱写进报告。
+         *
+         * <p>放在 RunTrace 里而不是客户端单例上：客户端是共享的（付费简报、旧文归类也会调用它），
+         * 计数挂在单例上会把别人的开销算进这一轮，甚至清掉已累计的。</p>
+         */
+        private final DigestAiUsageLog usage;
+
+        RunTrace(DigestConfigDTO config) {
+            this.usage = DigestAiUsageLog.forConfig(config);
+        }
+
+        /** 因重复转载被去掉的篇数 */
+        private int deduped;
+
+        /** 补抓窗口里额外参与评分的篇数 */
+        private int fallbackFetched;
+
+        /** 成功生成的标题卡片封面数 */
+        private int placeholderCoverCount;
     }
 
     /** 流水线产物 */

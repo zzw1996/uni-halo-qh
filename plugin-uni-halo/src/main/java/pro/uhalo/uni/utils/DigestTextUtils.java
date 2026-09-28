@@ -151,4 +151,75 @@ public final class DigestTextUtils {
         var normalized = contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
         return normalized.startsWith("text/") || normalized.contains("json") || normalized.contains("xml");
     }
+
+    // ── 去重 ──
+
+    /**
+     * 去掉链接里的「不影响内容身份」的部分：协议、www、末尾斜杠、锚点、跟踪参数。
+     *
+     * <p>同一篇文章被多个源转载时，链接常常只差这些：{@code https://www.x.com/a/}、
+     * {@code http://x.com/a?utm_source=rss}、{@code .../a#comments}。不归一化就等于没去重。</p>
+     *
+     * <p>只丢跟踪参数、保留其它查询参数：像 {@code ?p=123} 这种博客文章 ID 是身份的一部分，
+     * 一刀切丢掉查询串会把不同文章误判成同一篇。</p>
+     */
+    public static String normalizeLink(String link) {
+        if (!StringUtils.hasText(link)) {
+            return "";
+        }
+        var value = link.trim();
+        try {
+            var uri = URI.create(value);
+            var host = uri.getHost() == null ? ""
+                : uri.getHost().toLowerCase(Locale.ROOT).replaceFirst("^www\\.", "");
+            if (!StringUtils.hasText(host)) {
+                return value.toLowerCase(Locale.ROOT);
+            }
+            var path = uri.getPath() == null ? "" : uri.getPath().replaceAll("/+$", "");
+            var query = stripTrackingParams(uri.getRawQuery());
+            return host + path + (query.isEmpty() ? "" : "?" + query);
+        } catch (Exception ex) {
+            return value.toLowerCase(Locale.ROOT);
+        }
+    }
+
+    /** 去重键：有链接用归一化链接，没有链接退到标题（RSS 里两种情况都存在） */
+    public static String dedupKey(String link, String title) {
+        var normalized = normalizeLink(link);
+        if (StringUtils.hasText(normalized)) {
+            return "link:" + normalized;
+        }
+        var cleanTitle = isBlank(title) ? "" : title.trim().toLowerCase(Locale.ROOT)
+            .replaceAll("\\s+", " ");
+        return cleanTitle.isEmpty() ? "" : "title:" + cleanTitle;
+    }
+
+    /** 跟踪参数白名单：命中就丢（其余参数原样保留） */
+    private static final Pattern TRACKING_PARAM_PATTERN = Pattern.compile(
+        "^(utm_.*|ref|ref_src|referrer|source|from|from_source|fbclid|gclid|dclid|msclkid|"
+            + "yclid|igshid|spm|scm|mc_cid|mc_eid|_hsenc|_hsmi|vero_id|wt_mc|cmpid|campaign|"
+            + "share_token|share_source)$",
+        Pattern.CASE_INSENSITIVE);
+
+    private static String stripTrackingParams(String rawQuery) {
+        if (!StringUtils.hasText(rawQuery)) {
+            return "";
+        }
+        var kept = new java.util.ArrayList<String>();
+        for (var part : rawQuery.split("&")) {
+            if (!StringUtils.hasText(part)) {
+                continue;
+            }
+            var name = part.contains("=") ? part.substring(0, part.indexOf('=')) : part;
+            if (TRACKING_PARAM_PATTERN.matcher(name.trim()).matches()) {
+                continue;
+            }
+            kept.add(part);
+        }
+        return String.join("&", kept);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
 }

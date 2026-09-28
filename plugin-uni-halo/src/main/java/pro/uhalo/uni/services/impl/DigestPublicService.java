@@ -152,7 +152,7 @@ public class DigestPublicService {
                     var totalArticles = reports.stream()
                         .mapToInt(report -> report.getArticles().size())
                         .sum();
-                    var options = buildOptions(reports);
+                    var options = buildOptions(reports, PREFERENCE_WINDOW_DAYS);
 
                     if (!DigestPreferenceMatcher.hasPreferences(subscription)) {
                         return DigestMyFeedResponse.builder()
@@ -356,20 +356,61 @@ public class DigestPublicService {
 
     /** 可选筛选项：全部从窗口内实际出现过的内容里统计，保证点选之后有内容。 */
     public Mono<DigestFilterOptionsDTO> filterOptions() {
-        return visibleReports()
-            .map(DigestPublicService::buildOptions)
+        return filterOptions(PREFERENCE_WINDOW_DAYS);
+    }
+
+    /** 可选筛选项（窗口天数可指定，供「AI 定制内容」按其配置的窗口取候选）。 */
+    public Mono<DigestFilterOptionsDTO> filterOptions(int windowDays) {
+        var days = Math.max(1, windowDays);
+        return visibleReports(days)
+            .map(reports -> buildOptions(reports, days))
             .defaultIfEmpty(DigestFilterOptionsDTO.builder()
                 .categories(List.of())
                 .keywords(List.of())
                 .sources(List.of())
-                .days(PREFERENCE_WINDOW_DAYS)
+                .days(days)
                 .optionLimit(OPTION_LIMIT)
                 .build());
     }
 
+    /**
+     * 候选池：窗口内已发布日报的全部文章条目（已对齐可跳转的文章名）。
+     *
+     * <p>给「AI 定制内容」用：它按用户偏好在这批候选里筛。走的是同一套可见性判定，
+     * 因此不会出现「订阅里能看到、简报里却筛不到」的不一致。</p>
+     */
+    public Mono<List<DigestPublicArticleDTO>> candidateArticles(int windowDays) {
+        return visibleReports(windowDays)
+            .map(reports -> reports.stream()
+                .flatMap(report -> report.getArticles().stream())
+                .toList());
+    }
+
+    /**
+     * 候选池的来源分布（只给实际出现过的来源，带篇数）。
+     *
+     * <p>用户端「来源」这一维度必须只给出现过的选项：凭想象填一个来源，
+     * 结果简报里一篇都没有，用户会以为功能坏了。</p>
+     */
+    public Mono<List<DigestOptionItemDTO>> sourceOptions(int windowDays) {
+        return filterOptions(windowDays).map(DigestFilterOptionsDTO::getSources);
+    }
+
     /** 取窗口内已发布的日报（按日期倒序，文章条目已解析）。 */
     private Mono<List<DigestPublicReportDTO>> visibleReports() {
-        var from = LocalDate.now(ZONE).minusDays(PREFERENCE_WINDOW_DAYS - 1L);
+        return visibleReports(PREFERENCE_WINDOW_DAYS);
+    }
+
+    /**
+     * 取窗口内已发布的日报（窗口天数可指定）。
+     *
+     * <p>窗口做成参数是因为「AI 定制内容」的窗口由站长配置（默认 7 天），
+     * 而个性化流固定 14 天——两者共用同一套「哪些报告对用户可见」的判定，
+     * 避免出现「订阅里看得到的日报、简报里却筛不到」这种自相矛盾。</p>
+     */
+    private Mono<List<DigestPublicReportDTO>> visibleReports(int windowDays) {
+        var days = Math.max(1, windowDays);
+        var from = LocalDate.now(ZONE).minusDays(days - 1L);
         return persistence.listRecent(RECENT_LIMIT)
             .flatMapMany(Flux::fromIterable)
             .filter(DigestPublicService::isVisibleToUsers)
@@ -405,7 +446,8 @@ public class DigestPublicService {
     }
 
     /** 统计筛选项：分类 / 关键词 / 来源的出现频次，按频次倒序并截断。 */
-    private static DigestFilterOptionsDTO buildOptions(List<DigestPublicReportDTO> reports) {
+    private static DigestFilterOptionsDTO buildOptions(List<DigestPublicReportDTO> reports,
+        int windowDays) {
         var categoryCounts = new LinkedHashMap<String, Integer>();
         var categoryLabels = new LinkedHashMap<String, String>();
         var categoryEmojis = new LinkedHashMap<String, String>();
@@ -447,7 +489,7 @@ public class DigestPublicService {
             .categories(List.copyOf(categories))
             .keywords(optionsOf(keywordCounts))
             .sources(optionsOf(sourceCounts))
-            .days(PREFERENCE_WINDOW_DAYS)
+            .days(windowDays)
             .reportCount(reports.size())
             .articleCount(articleCount)
             .optionLimit(OPTION_LIMIT)

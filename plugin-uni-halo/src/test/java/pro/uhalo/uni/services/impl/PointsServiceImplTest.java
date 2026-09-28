@@ -71,6 +71,10 @@ class PointsServiceImplTest {
     @Mock
     private TicketRewardService ticketRewardService;
 
+    /** 积分解锁订阅额度走它取配置与已购份数 */
+    @Mock
+    private SubscriptionQuotaService subscriptionQuotaService;
+
     @InjectMocks
     private PointsServiceImpl pointsService;
 
@@ -308,7 +312,8 @@ class PointsServiceImplTest {
         var client = org.mockito.Mockito.mock(ReactiveExtensionClient.class);
         var wxUserService = org.mockito.Mockito.mock(WxUserService.class);
         var persistence = new PointsPersistence(client, wxUserService);
-        var service = new PointsServiceImpl(persistence, settingFetcher, wxUserService,
+        var service = new PointsServiceImpl(persistence, settingFetcher,
+            org.mockito.Mockito.mock(SubscriptionQuotaService.class), wxUserService,
             new PointsEvidenceServiceImpl(client), new RateLimiter(),
             new TicketRewardService(persistence, settingFetcher));
 
@@ -433,6 +438,99 @@ class PointsServiceImplTest {
                 assertThat(res.getBalance()).isEqualTo(70L);
             })
             .verifyComplete();
+    }
+
+    // ── 积分解锁订阅额度 ──
+
+    private void stubQuotaState(int purchased, long balance, int price, int maxQuota) {
+        var config = pro.uhalo.uni.dto.SubscriptionConfigDTO.builder()
+            .enabled(true).freeQuota(5).quotaPrice(price).maxQuota(maxQuota).memberMaxQuota(30)
+            .build();
+        when(subscriptionQuotaService.quotaStateOf("openid-123")).thenReturn(Mono.just(
+            new SubscriptionQuotaService.QuotaState(config, purchased, balance, false, null,
+                config.limitFor(purchased))));
+    }
+
+    @Test
+    void purchaseQuotaShouldDeductPointsAndRaiseTheQuota() {
+        userPoints.setBalance(200L);
+        userPoints.setSubscribeQuota(0);
+        stubQuotaState(0, 200L, 50, 10);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
+        when(persistence.saveAccount(any())).thenReturn(Mono.just(userPoints));
+
+        StepVerifier.create(pointsService.purchaseSubscribeQuota("openid-123", 1))
+            .assertNext(res -> {
+                assertThat(res.getPoints()).isEqualTo(50);
+                assertThat(res.getBalance()).isEqualTo(150L);
+                // 额度是容量：账户上直接涨一份，与「免费 5」相加就是新的上限
+                assertThat(res.getSubscribeQuota()).isEqualTo(1);
+            })
+            .verifyComplete();
+
+        var captor = ArgumentCaptor.forClass(PointsRecord.class);
+        verify(persistence).appendRecord(captor.capture());
+        var record = captor.getValue();
+        assertThat(record.getAction()).isEqualTo("subscribe_quota");
+        assertThat(record.getPoints()).isEqualTo(-50);
+        // 幂等键以「买完之后的总份数」为锚点：同一份重复提交会命中同一个资源名
+        assertThat(record.getEarnKey()).isEqualTo("openid-123:subscribe_quota:quota-1");
+    }
+
+    @Test
+    void purchaseQuotaShouldRejectWhenPointsAreNotEnough() {
+        userPoints.setBalance(10L);
+        stubQuotaState(0, 10L, 50, 10);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+
+        StepVerifier.create(pointsService.purchaseSubscribeQuota("openid-123", 1))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage()).contains("积分不足"))
+            .verify();
+        // 余额不足时一个字段都不该动
+        verify(persistence, never()).appendRecord(any());
+        verify(persistence, never()).saveAccount(any());
+    }
+
+    @Test
+    void purchaseQuotaShouldRejectBeyondTheConfiguredCeiling() {
+        stubQuotaState(10, 9999L, 50, 10);
+
+        StepVerifier.create(pointsService.purchaseSubscribeQuota("openid-123", 1))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage()).contains("最多解锁 10 份"))
+            .verify();
+        verify(persistence, never()).appendRecord(any());
+    }
+
+    @Test
+    void purchaseQuotaShouldRejectWhenDisabled() {
+        var config = pro.uhalo.uni.dto.SubscriptionConfigDTO.builder()
+            .enabled(false).freeQuota(5).quotaPrice(50).maxQuota(10).build();
+        when(subscriptionQuotaService.quotaStateOf("openid-123")).thenReturn(Mono.just(
+            new SubscriptionQuotaService.QuotaState(config, 0, 500L, false, null, 5)));
+
+        StepVerifier.create(pointsService.purchaseSubscribeQuota("openid-123", 1))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage()).contains("未开启"))
+            .verify();
+    }
+
+    @Test
+    void purchaseQuotaShouldNotChargeTwiceOnDuplicateSubmit() {
+        userPoints.setBalance(200L);
+        stubQuotaState(0, 200L, 50, 10);
+        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
+        // 幂等位已被占用（重复提交/并发）：create 抛「已存在」，此时账户必须原样不动
+        when(persistence.appendRecord(any())).thenReturn(Mono.error(
+            new IllegalStateException("resource already exists")));
+
+        StepVerifier.create(pointsService.purchaseSubscribeQuota("openid-123", 1))
+            .assertNext(res -> {
+                assertThat(res.getPoints()).isZero();
+                assertThat(res.getMessage()).contains("请勿重复提交");
+                assertThat(res.getBalance()).isEqualTo(200L);
+            })
+            .verifyComplete();
+        verify(persistence, never()).saveAccount(any());
     }
 
     @Test

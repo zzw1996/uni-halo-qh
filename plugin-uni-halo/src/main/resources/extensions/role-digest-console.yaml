@@ -27,6 +27,12 @@ rules:
       # 旧文章归类（status/preview/apply 三条都在这个前缀下）
       - "digest/classify"
       - "digest/classify/*"
+      # 大模型通道：清单读取、保存与连通性测试（test 在同名前缀下）
+      - "digest/models"
+      - "digest/models/*"
+      # 消息推送看板与自检
+      - "pushStats"
+      - "pushDiagnose"
       - "plugins/digest"
       - "plugins/digest/*"
     verbs: [ "get", "list", "create", "update", "delete" ]

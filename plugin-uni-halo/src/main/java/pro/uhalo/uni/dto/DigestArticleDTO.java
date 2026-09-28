@@ -55,10 +55,26 @@ public class DigestArticleDTO {
 
     private String reason;
 
+    // ── 精选阶段 ──
+
+    /**
+     * 补位文章：本期分类有缺口，靠放宽时间窗补抓找回来的。
+     *
+     * <p>只用于排序（同样有图、同分时让时间窗内的新文章优先）与统计标记。</p>
+     */
+    private boolean supplementary;
+
     // ── 图片上传阶段 ──
 
     /** 上传到 Halo 附件库后的访问地址，上传失败或未开启图片时为空 */
     private String uploadedImage;
+
+    /**
+     * 封面是服务端生成的标题卡片（不是原文头图）。
+     *
+     * <p>这种卡片只作封面用：正文里再插一遍它没有信息量，所以渲染时跳过。</p>
+     */
+    private boolean placeholderCover;
 
     public int getTotalScore() {
         return relevance + quality + timeliness;

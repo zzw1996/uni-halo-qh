@@ -9,6 +9,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import pro.uhalo.uni.dto.DigestAiProviderDTO;
+import pro.uhalo.uni.dto.DigestAiReplyDTO;
+import pro.uhalo.uni.dto.DigestAiUsageDTO;
 import pro.uhalo.uni.dto.PostClassifyApplyRequest;
 import pro.uhalo.uni.dto.PostClassifyCandidateDTO;
 import pro.uhalo.uni.dto.PostClassifyPreviewResponse;
@@ -78,11 +81,22 @@ class PostTaxonomyServiceTest {
         lenient().when(taxonomy.tagLabels()).thenReturn(Mono.just(Map.of()));
         lenient().when(taxonomy.resolveOrCreateCategories(any()))
             .thenReturn(Mono.just(List.of("ai-ml")));
+        // 分类清单随配置一起传下去，所以归类链路调用的是带目录的重载
+        lenient().when(taxonomy.resolveOrCreateCategories(any(), any()))
+            .thenReturn(Mono.just(List.of("ai-ml")));
         lenient().when(taxonomy.resolveOrCreateTags(any()))
             .thenReturn(Mono.just(List.of("rust")));
         lenient().when(taxonomy.resolveExistingCategories(any())).thenReturn(Mono.just(List.of()));
-        lenient().when(aiClient.call(any(), anyString()))
-            .thenReturn(Mono.just("{\"results\":[]}"));
+        lenient().when(aiClient.call(any(), anyString(), any()))
+            .thenReturn(aiReply("{\"results\":[]}"));
+    }
+
+
+    /** 这些链路只关心正文，用量给它一个「对方未上报」的壳即可 */
+    private static Mono<DigestAiReplyDTO> aiReply(String text) {
+        return Mono.just(DigestAiReplyDTO.of(text,
+            new DigestAiProviderDTO("test", "测试通道", "https://test.example/v1", "sk-test",
+                "test-model"), "test-model", DigestAiUsageDTO.unreported()));
     }
 
     private void stubConfig(String json) throws Exception {
@@ -144,7 +158,7 @@ class PostTaxonomyServiceTest {
             post("newest", "最新未归类", true, null, List.of(), 30),
             post("middle", "中间已归类", true, List.of("security"), List.of(), 20),
             post("oldest", "最旧未归类", true, null, List.of(), 10));
-        when(aiClient.call(any(), anyString())).thenReturn(Mono.just("""
+        when(aiClient.call(any(), anyString(), any())).thenReturn(aiReply("""
             {"results":[
               {"index":0,"category":"engineering","keywords":["Rust"]},
               {"index":1,"category":"tools","keywords":["CLI"]}
@@ -161,7 +175,7 @@ class PostTaxonomyServiceTest {
             .verifyComplete();
 
         var prompt = ArgumentCaptor.forClass(String.class);
-        verify(aiClient).call(any(), prompt.capture());
+        verify(aiClient).call(any(), prompt.capture(), any());
         assertThat(prompt.getValue()).contains("最新未归类").contains("最旧未归类");
         // 已归类的文章不该出现在提示词里：既浪费额度，也让它有可能被改判
         assertThat(prompt.getValue()).doesNotContain("中间已归类");
@@ -197,7 +211,7 @@ class PostTaxonomyServiceTest {
     void previewShouldMarkUnjudgedItemsForManualHandling() {
         stubPosts(post("p1", "文章", true, null, List.of(), 1));
         // 模型说了个不存在的类别：不能悄悄归到 other，要让站长看见
-        when(aiClient.call(any(), anyString())).thenReturn(Mono.just(
+        when(aiClient.call(any(), anyString(), any())).thenReturn(aiReply(
             "{\"results\":[{\"index\":0,\"category\":\"前端\",\"keywords\":[]}]}"));
 
         StepVerifier.create(service.preview(15))
@@ -213,7 +227,7 @@ class PostTaxonomyServiceTest {
     @Test
     void previewShouldTranslateCategoryKeyToChineseLabel() {
         stubPosts(post("p1", "文章", true, null, List.of(), 1));
-        when(aiClient.call(any(), anyString())).thenReturn(Mono.just(
+        when(aiClient.call(any(), anyString(), any())).thenReturn(aiReply(
             "{\"results\":[{\"index\":0,\"category\":\"ai-ml\",\"keywords\":[\"LLM\"]}]}"));
 
         StepVerifier.create(service.preview(15))
@@ -232,7 +246,7 @@ class PostTaxonomyServiceTest {
         stubConfig("""
             {"enabled":true,"aiApiKey":"sk-test","autoCategoryEnabled":false,"autoTagEnabled":false}""");
         stubPosts(post("p1", "文章", true, null, List.of(), 1));
-        when(aiClient.call(any(), anyString())).thenReturn(Mono.just(
+        when(aiClient.call(any(), anyString(), any())).thenReturn(aiReply(
             "{\"results\":[{\"index\":0,\"category\":\"ai-ml\",\"keywords\":[\"LLM\"]}]}"));
 
         StepVerifier.create(service.preview(15))
@@ -257,7 +271,7 @@ class PostTaxonomyServiceTest {
             })
             .verifyComplete();
 
-        verify(aiClient, never()).call(any(), anyString());
+        verify(aiClient, never()).call(any(), anyString(), any());
     }
 
     /**
@@ -280,7 +294,7 @@ class PostTaxonomyServiceTest {
             })
             .verifyComplete();
 
-        verify(aiClient, never()).call(any(), anyString());
+        verify(aiClient, never()).call(any(), anyString(), any());
     }
 
     /** 只分析插件自己发布的文章：站长自己写的（哪怕没分类）不替他做决定 */
@@ -295,7 +309,7 @@ class PostTaxonomyServiceTest {
             })
             .verifyComplete();
 
-        verify(aiClient, never()).call(any(), anyString());
+        verify(aiClient, never()).call(any(), anyString(), any());
     }
 
     /** 老版本只打了 annotation 没打 label，同样要认出来是 AI 文章 */
@@ -316,8 +330,31 @@ class PostTaxonomyServiceTest {
         StepVerifier.create(service.preview(15))
             .expectErrorSatisfies(error -> assertThat(error)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("API Key"))
+                .hasMessageContaining("大模型通道"))
             .verify();
+    }
+
+    /**
+     * 清单里配好了通道、旧字段全空时，归类不能再报「还没配置」。
+     *
+     * <p>这三个消费方（日报 / 归类 / 付费简报）共用一份通道配置，归类页的可用性判断
+     * 也必须按清单算，否则站长会看着一个配好的页面被拦住。</p>
+     */
+    @Test
+    void previewShouldAcceptChannelListWithoutLegacyKey() throws Exception {
+        stubConfig("""
+            {"enabled":true,"aiApiKey":"","aiApiBase":"",
+             "aiProviders":[{"key":"ds","label":"DeepSeek","apiBase":"https://api.deepseek.com/v1",
+                             "apiKey":"sk-list","model":"deepseek-chat","enabled":true}]}
+            """);
+        stubPosts(post("p1", "文章", true, null, List.of(), 1));
+        when(aiClient.call(any(), anyString(), any())).thenReturn(aiReply("""
+            {"results":[{"name":"p1","category":"ai-ml","tags":[],"reason":"讲模型"}]}
+            """));
+
+        StepVerifier.create(service.preview(15))
+            .assertNext(response -> assertThat(response.getAiModel()).isEqualTo("deepseek-chat"))
+            .verifyComplete();
     }
 
     // ── 应用 ──
@@ -514,7 +551,7 @@ class PostTaxonomyServiceTest {
             .verifyComplete();
 
         // 大小写归一化后才交给创建逻辑，否则会建出 AI-ML 这种不合法的扩展名
-        verify(taxonomy).resolveOrCreateCategories(List.of("ai-ml"));
+        verify(taxonomy).resolveOrCreateCategories(eq(List.of("ai-ml")), any());
     }
 
     // ── 工具 ──

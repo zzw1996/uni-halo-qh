@@ -46,14 +46,16 @@ public class DigestSubscriptionService {
     private static final int MAX_KEYWORDS = 20;
     private static final int MAX_SOURCES = 20;
 
-    /** 站点分类上限：首页要按这几路并发拉取，太多既无必要也会拖慢首页 */
-    private static final int MAX_POST_CATEGORIES = 5;
-
-    /** 从邀请人继承的分类上限；与自己的 5 个相加，首页并集上限就是 8 路 */
+    /** 从邀请人继承的分类上限（自己订阅的额度与它无关，继承永远是「额外看到」） */
     private static final int MAX_INHERITED_CATEGORIES = 3;
 
-    /** 首页实际生效的分类上限（自己 5 + 继承 3） */
-    private static final int MAX_EFFECTIVE_CATEGORIES = 8;
+    /**
+     * 生效集合的绝对上限：额度可配，但总得有个天花板。
+     *
+     * <p>首页要按生效分类并发拉内容，一个人订光全站分类会把首页拖成几十路请求；
+     * 正常配置下（免费 5 + 可买 10、会员 30）永远碰不到这个值。</p>
+     */
+    private static final int ABS_LIMIT = 100;
 
     /** 单个偏好项的长度上限 */
     private static final int MAX_ITEM_LENGTH = 40;
@@ -75,6 +77,9 @@ public class DigestSubscriptionService {
 
     private final ReactiveExtensionClient client;
 
+    /** 订阅上限（免费额度 + 已购额度 / 会员上限）的唯一来源 */
+    private final SubscriptionQuotaService quotaService;
+
     /** 是否是「Halo 正在建索引，暂时不让写」这类错误 */
     public static boolean isIndexBuildingError(Throwable error) {
         var message = error == null ? null : error.getMessage();
@@ -84,11 +89,27 @@ public class DigestSubscriptionService {
     /** 读取该用户的订阅偏好；没有记录时返回「未订阅且无偏好」。 */
     public Mono<DigestSubscriptionDTO> load(String openid) {
         if (!StringUtils.hasText(openid)) {
-            return Mono.just(empty());
+            // 游客也要知道额度规则：首页要靠它决定「零订阅时展示什么」
+            return attachLimits(empty(), null);
         }
-        return findOne(openid.trim())
-            .map(DigestSubscriptionService::toDto)
-            .defaultIfEmpty(empty());
+        return quotaService.limitOf(openid.trim()).flatMap(maxOwn -> findOne(openid.trim())
+            .map(subscription -> toDto(subscription, maxOwn))
+            .defaultIfEmpty(empty())
+            .flatMap(dto -> attachLimits(dto, openid.trim())));
+    }
+
+    /** 把额度视图挂到 DTO 上（上限、免费额度、已购、价格、被暂停的分类） */
+    private Mono<DigestSubscriptionDTO> attachLimits(DigestSubscriptionDTO dto, String openid) {
+        return reactor.core.publisher.Mono
+            .defer(() -> quotaService.limitsOf(openid, dto.getPostCategories()))
+            .map(limits -> {
+                dto.setLimits(limits);
+                return dto;
+            })
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Digest] 读取订阅额度失败，按无额度信息下发：{}", ex.getMessage());
+                return Mono.just(dto);
+            });
     }
 
     /**
@@ -114,8 +135,9 @@ public class DigestSubscriptionService {
                 MAX_KEYWORDS, "关注的关键词");
             var sources = sanitize(request == null ? null : request.getSources(),
                 MAX_SOURCES, "关注的来源");
+            return quotaService.limitOf(normalizedOpenid).flatMap(maxOwn -> {
             var postCategories = sanitize(request == null ? null : request.getPostCategories(),
-                MAX_POST_CATEGORIES, "关注的分类（首页）");
+                maxOwn, "关注的分类（首页）");
 
             return findOne(normalizedOpenid)
                 .flatMap(existing -> {
@@ -124,6 +146,15 @@ public class DigestSubscriptionService {
                     existing.setKeywords(keywords);
                     existing.setSources(sources);
                     existing.setPostCategories(postCategories);
+                    // 自己一个都不订了 = 明确表示「首页不要个性化」：连从邀请人继承来的推荐
+                    // 也一并清掉。否则会出现自相矛盾的状态——发现页显示「还没订阅分类」，
+                    // 首页却还在按（继承来的）分类筛选，用户会认为「取消订阅根本没生效」。
+                    // 「只继承、没自己订」的新用户不受影响：那是另一条分支（own 空、inherited 有值），
+                    // 首页照旧按推荐展示，并给出「这些内容来自邀请人推荐」的提示。
+                    if (postCategories.isEmpty()) {
+                        existing.setInheritedCategories(List.of());
+                        existing.setInheritedFrom(null);
+                    }
                     existing.setUpdatedAt(Instant.now());
                     return client.update(existing);
                 })
@@ -135,7 +166,8 @@ public class DigestSubscriptionService {
                     .doBeforeRetry(signal -> log.warn(
                         "[UniHalo][Digest] Halo 正在构建索引，订阅保存稍后重试（第 {} 次）",
                         signal.totalRetries() + 1)))
-                .map(DigestSubscriptionService::toDto);
+                .map(subscription -> toDto(subscription, maxOwn));
+            });
         });
     }
 
@@ -235,9 +267,10 @@ public class DigestSubscriptionService {
             if (!StringUtils.hasText(openid)) {
                 return Mono.error(new WxAuthException("请先登录"));
             }
-            var wanted = cap(categories, MAX_POST_CATEGORIES + MAX_INHERITED_CATEGORIES);
             var normalized = openid.trim();
             var inviter = inviterOpenid == null ? "" : inviterOpenid.trim();
+            return quotaService.limitOf(normalized).flatMap(maxOwn -> {
+            var wanted = cap(categories, maxOwn + MAX_INHERITED_CATEGORIES);
             return findOne(normalized)
                 .flatMap(existing -> {
                     var own = new LinkedHashSet<>(ownCategoriesOf(existing));
@@ -247,7 +280,7 @@ public class DigestSubscriptionService {
                         if (own.contains(name) || inherited.contains(name)) {
                             continue;
                         }
-                        if (own.size() < MAX_POST_CATEGORIES) {
+                        if (own.size() < maxOwn) {
                             own.add(name);
                         } else if (inherited.size() < MAX_INHERITED_CATEGORIES) {
                             inherited.add(name);
@@ -265,7 +298,8 @@ public class DigestSubscriptionService {
                 })
                 .switchIfEmpty(Mono.defer(() -> client.create(newInheritedSubscription(
                     normalized, inviter, cap(wanted, MAX_INHERITED_CATEGORIES)))))
-                .map(DigestSubscriptionService::toDto);
+                .map(subscription -> toDto(subscription, maxOwn));
+            });
         });
     }
 
@@ -325,7 +359,7 @@ public class DigestSubscriptionService {
         return subscription;
     }
 
-    private static DigestSubscriptionDTO toDto(DigestSubscription subscription) {
+    private static DigestSubscriptionDTO toDto(DigestSubscription subscription, int maxOwn) {
         var postCategories = ownCategoriesOf(subscription);
         var inherited = orEmpty(subscription.getInheritedCategories());
         var dto = DigestSubscriptionDTO.builder()
@@ -336,7 +370,7 @@ public class DigestSubscriptionService {
             .postCategories(postCategories)
             .inheritedCategories(inherited)
             .inheritedFrom(subscription.getInheritedFrom())
-            .effectiveCategories(effectiveOf(postCategories, inherited))
+            .effectiveCategories(effectiveOf(postCategories, inherited, maxOwn))
             .updatedAt(subscription.getUpdatedAt() == null ? null
                 : subscription.getUpdatedAt().atZone(ZONE).format(TIME_FMT))
             .build();
@@ -351,7 +385,13 @@ public class DigestSubscriptionService {
      * 站点分类名是同一串，所以直接把老值当作 postCategories 用即可，无需迁移脚本——
      * 用户不会发现自己的订阅"失效"了。</p>
      */
-    private static List<String> ownCategoriesOf(DigestSubscription subscription) {
+    /**
+     * 用户**自己**订阅的站点分类（含老数据回落）。
+     *
+     * <p>包内可见：推送调度要按「自己 + 继承」的同一套口径判断目标用户，
+     * 在这里重写一遍规则迟早会与首页筛选不一致。</p>
+     */
+    static List<String> ownCategoriesOf(DigestSubscription subscription) {
         var own = orEmpty(subscription.getPostCategories());
         if (own.isEmpty()) {
             own = orEmpty(subscription.getCategories());
@@ -360,16 +400,21 @@ public class DigestSubscriptionService {
     }
 
     /**
-     * 首页实际生效的分类：自己订阅的在前（最多 5 个），继承来的在后（最多 3 个），
-     * 去重后总共最多 8 个。
+     * 首页实际生效的分类：自己订阅的在前（最多 {@code maxOwn} 个），继承来的在后（最多 3 个）。
      *
      * <p>「自己优先」是刻意的：用户亲手选的分类不该被别人的推荐挤掉；名额有余量时
      * 才把继承项补进来，所以继承永远是「额外看到」，不是「替代」。</p>
+     *
+     * <p>{@code maxOwn} 就是用户的订阅额度（免费 + 已购，会员期内是会员上限）：
+     * 超出额度的订阅<b>不算失效</b>，只是不进这个集合——记录与顺序都还在，
+     * 续费会员或解锁额度后自动恢复。首页、消息推送共用这一个口径。</p>
      */
-    static List<String> effectiveOf(List<String> own, List<String> inherited) {
+    static List<String> effectiveOf(List<String> own, List<String> inherited, int maxOwn) {
+        var ownLimit = Math.min(Math.max(maxOwn, 1), ABS_LIMIT);
+        var effectiveLimit = ownLimit + MAX_INHERITED_CATEGORIES;
         var merged = new LinkedHashSet<String>();
         for (var name : orEmpty(own)) {
-            if (merged.size() >= MAX_POST_CATEGORIES) {
+            if (merged.size() >= ownLimit) {
                 break;
             }
             if (StringUtils.hasText(name)) {
@@ -381,7 +426,7 @@ public class DigestSubscriptionService {
         var inheritedUsed = 0;
         for (var name : orEmpty(inherited)) {
             if (inheritedUsed >= MAX_INHERITED_CATEGORIES
-                || merged.size() >= MAX_EFFECTIVE_CATEGORIES) {
+                || merged.size() >= effectiveLimit) {
                 break;
             }
             if (StringUtils.hasText(name) && merged.add(name.trim())) {

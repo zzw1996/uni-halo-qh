@@ -38,6 +38,10 @@ public class DigestPublicEndpoint implements CustomEndpoint {
 
     private final DigestPublicService digestPublicService;
     private final DigestSubscriptionService digestSubscriptionService;
+    private final pro.uhalo.uni.services.DigestSubscriptionStatsService subscriptionStatsService;
+    private final pro.uhalo.uni.services.impl.HomeFeedService homeFeedService;
+    private final pro.uhalo.uni.services.impl.SubscriptionQuotaService quotaService;
+    private final pro.uhalo.uni.services.PointsService pointsService;
 
     @Override
     public GroupVersion groupVersion() {
@@ -88,6 +92,43 @@ public class DigestPublicEndpoint implements CustomEndpoint {
                     .requestBody(org.springdoc.core.fn.builders.requestbody.Builder
                         .requestBodyBuilder()
                         .implementation(pro.uhalo.uni.dto.DigestSubscriptionRequest.class)))
+            .GET(Constants.END_POINT_API_BASE_PATH + "/digest/feed", this::homeFeed,
+                builder -> builder
+                    .operationId("GetDigestHomeFeed")
+                    .description("Home content feed: the union of the user's effective "
+                        + "categories (own subscriptions within quota + at most 3 inherited) "
+                        + "merged into ONE request. When the user has no subscription it falls "
+                        + "back to the hottest categories (scope=hot). Categories are resolved "
+                        + "server-side - the client cannot pass its own list.")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("scope")
+                        .in(ParameterIn.QUERY)
+                        .description("mine (default) or hot")
+                        .required(false)
+                        .implementation(String.class))
+                    .parameter(parameterBuilder()
+                        .name("page")
+                        .in(ParameterIn.QUERY)
+                        .description("Page index, starts from 1")
+                        .required(false)
+                        .implementation(Integer.class))
+                    .parameter(parameterBuilder()
+                        .name("size")
+                        .in(ParameterIn.QUERY)
+                        .description("Page size, max 30")
+                        .required(false)
+                        .implementation(Integer.class))
+                    .response(responseBuilder().implementation(
+                        pro.uhalo.uni.dto.HomeFeedDTO.class)))
+            .POST(Constants.END_POINT_API_BASE_PATH + "/digest/subscription/quota",
+                this::purchaseQuota,
+                builder -> builder
+                    .operationId("PurchaseDigestSubscriptionQuota")
+                    .description("Unlock one more subscription slot with points. The quota is "
+                        + "permanent capacity (cancel a subscription frees the slot but keeps the "
+                        + "quota). Idempotent by quota index: a double submit cannot charge twice.")
+                    .tag(apiTag))
             .GET(Constants.END_POINT_API_BASE_PATH + "/digest/shared", this::shared,
                 builder -> builder
                     .operationId("GetSharedDigest")
@@ -111,6 +152,18 @@ public class DigestPublicEndpoint implements CustomEndpoint {
                         + "subscription. Requires login; invite binding is handled by the "
                         + "existing login flow.")
                     .tag(apiTag))
+            .GET(Constants.END_POINT_API_BASE_PATH + "/digest/categories/ranking",
+                this::categoryRanking,
+                builder -> builder
+                    .operationId("GetDigestCategoryRanking")
+                    .description("Subscription popularity of site categories: how many users "
+                        + "actively subscribe each one (inherited categories are excluded, as are "
+                        + "records with the subscription turned off). Powers the \"discover\" page "
+                        + "ranking. Aggregated over all subscription records and cached for a few "
+                        + "minutes, so it is not real-time.")
+                    .tag(apiTag)
+                    .response(responseBuilder().implementation(
+                        pro.uhalo.uni.dto.DigestCategoryRankingDTO.class)))
             .GET(Constants.END_POINT_API_BASE_PATH + "/digest/my", this::myFeed,
                 builder -> builder
                     .operationId("GetMyDigestFeed")
@@ -219,6 +272,129 @@ public class DigestPublicEndpoint implements CustomEndpoint {
             });
     }
 
+    /**
+     * 首页内容流（并集）。
+     *
+     * <p>分类由服务端解析，客户端不能传——否则这个接口就成了「任意分类的通用查询」，
+     * 而它的取数是按分类逐个打 Halo 的，必须把可控的分类数量捏在服务端手里。</p>
+     */
+    private Mono<ServerResponse> homeFeed(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        var page = intParam(request, "page", 1);
+        var size = intParam(request, "size", 10);
+        var forceHot = "hot".equalsIgnoreCase(
+            request.queryParam("scope").orElse("").trim());
+        return quotaService.loadConfig().flatMap(config ->
+            digestSubscriptionService.load(openid).flatMap(subscription -> {
+                var effective = subscription.getEffectiveCategories() == null
+                    ? java.util.List.<String>of() : subscription.getEffectiveCategories();
+                var paused = subscription.getLimits() == null
+                    ? java.util.List.<String>of()
+                    : subscription.getLimits().getPausedCategories();
+                var ownCount = subscription.getPostCategories() == null
+                    ? 0 : subscription.getPostCategories().size();
+                var inheritedCount = subscription.getInheritedCategories() == null
+                    ? 0 : subscription.getInheritedCategories().size();
+                var pausedCount = paused == null ? 0 : paused.size();
+                if (!forceHot && !effective.isEmpty()) {
+                    return homeFeedService.feed(effective, config, page, size)
+                        .map(feed -> {
+                            feed.setScope("mine");
+                            feed.setPausedCategories(paused == null ? java.util.List.of() : paused);
+                            // 降级与提示统一由 HomeFeedHints 决定：口径只有一处，
+                            // 页面文案与测试不会再各写一套
+                            var decision = pro.uhalo.uni.utils.HomeFeedHints.decide("mine",
+                                ownCount, inheritedCount, pausedCount, feed.getItems().isEmpty());
+                            feed.setFallback(decision.fallback());
+                            feed.setHint(decision.hint());
+                            return feed;
+                        });
+                }
+                // 零订阅 / 游客 / 显式要人气：用热度最高的几个分类当内容源
+                return homeFeedService.hotCategories(config).flatMap(hot -> {
+                    if (hot.isEmpty()) {
+                        // 连人气分类都没有：把「为什么没内容」也交给同一个口径去说
+                        var decision = pro.uhalo.uni.utils.HomeFeedHints.decide("hot",
+                            ownCount, inheritedCount, 0, true);
+                        return Mono.just(pro.uhalo.uni.dto.HomeFeedDTO.builder()
+                            .items(java.util.List.of())
+                            .hasMore(false)
+                            .scope("hot")
+                            .fallback(decision.fallback())
+                            .categories(java.util.List.of())
+                            .pausedCategories(java.util.List.of())
+                            .hint(decision.hint())
+                            .page(Math.max(1, page))
+                            .size(size)
+                            .build());
+                    }
+                    return homeFeedService.feed(hot, config, page, size).map(feed -> {
+                        feed.setScope("hot");
+                        feed.setPausedCategories(java.util.List.of());
+                        var decision = pro.uhalo.uni.utils.HomeFeedHints.decide(
+                            forceHot ? "hot-forced" : "hot", ownCount, inheritedCount, 0,
+                            feed.getItems().isEmpty());
+                        feed.setFallback(decision.fallback());
+                        feed.setHint(decision.hint());
+                        return feed;
+                    });
+                });
+            }))
+            .flatMap(feed -> ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(feed))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Digest] 首页内容流加载失败 openid={}：{}",
+                    maskOpenid(openid), ex.toString());
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of("error", "首页内容加载失败，请稍后重试"));
+            });
+    }
+
+    /** 用积分解锁一份订阅额度 */
+    private Mono<ServerResponse> purchaseQuota(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        return request.bodyToMono(pro.uhalo.uni.dto.SubscribeQuotaRequest.class)
+            .defaultIfEmpty(new pro.uhalo.uni.dto.SubscribeQuotaRequest())
+            .flatMap(body -> pointsService.purchaseSubscribeQuota(openid, body.getCount()))
+            .flatMap(result -> quotaService.limitsOf(openid, java.util.List.of())
+                .map(limits -> {
+                    var payload = new java.util.LinkedHashMap<String, Object>();
+                    payload.put("balance", result.getBalance());
+                    payload.put("subscribeQuota", result.getSubscribeQuota());
+                    payload.put("message", result.getMessage());
+                    payload.put("limits", limits);
+                    return payload;
+                }))
+            .flatMap(payload -> ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(payload))
+            .onErrorResume(pro.uhalo.uni.exception.WxAuthException.class, ex ->
+                ServerResponse.status(org.springframework.http.HttpStatus.BAD_REQUEST)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of("error", ex.getReason())))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Subscription] 解锁订阅额度失败 openid={}：{}",
+                    maskOpenid(openid), ex.toString());
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of("error", "解锁失败，请稍后重试"));
+            });
+    }
+
+    private static int intParam(ServerRequest request, String name, int fallback) {
+        return request.queryParam(name)
+            .map(value -> {
+                try {
+                    return Integer.parseInt(value.trim());
+                } catch (NumberFormatException ex) {
+                    return fallback;
+                }
+            })
+            .orElse(fallback);
+    }
+
     private Mono<ServerResponse> subscribeFromShare(ServerRequest request) {
         var openid = resolveOpenid(request);
         if (!org.springframework.util.StringUtils.hasText(openid)) {
@@ -251,6 +427,26 @@ public class DigestPublicEndpoint implements CustomEndpoint {
             .onErrorResume(ex -> ServerResponse.status(500)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("error", "订阅内容加载失败，请稍后重试")));
+    }
+
+    /**
+     * 分类订阅热度榜（匿名可读）。
+     *
+     * <p>只涉及「每个分类有多少人订阅」这种聚合数字，不返回任何用户标识，
+     * 因此可以公开；聚合失败时 service 内部会回落（旧缓存或空榜），
+     * 这里再兜一层，最多让「发现」页少一个区块，不会整页报错。</p>
+     */
+    private Mono<ServerResponse> categoryRanking(ServerRequest request) {
+        return subscriptionStatsService.categoryRanking()
+            .flatMap(body -> ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Digest] 分类热度榜加载失败：{}", ex.toString());
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of("error", "分类热度加载失败，请稍后重试"));
+            });
     }
 
     private static String resolveOpenid(ServerRequest request) {

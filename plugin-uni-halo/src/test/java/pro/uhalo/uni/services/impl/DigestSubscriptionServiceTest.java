@@ -40,6 +40,10 @@ class DigestSubscriptionServiceTest {
     @Mock
     private ReactiveExtensionClient client;
 
+    /** 订阅额度：默认按免费额度 5 个，个别用例改成扩容/会员 */
+    @Mock
+    private SubscriptionQuotaService quotaService;
+
     @InjectMocks
     private DigestSubscriptionService service;
 
@@ -51,6 +55,16 @@ class DigestSubscriptionServiceTest {
         req.setKeywords(keywords);
         req.setSources(sources);
         return req;
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubQuota() {
+        lenient().when(quotaService.limitOf(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(Mono.just(5));
+        lenient().when(quotaService.limitsOf(
+            org.mockito.ArgumentMatchers.nullable(String.class), any()))
+            .thenReturn(Mono.just(pro.uhalo.uni.dto.SubscriptionLimitsDTO.builder()
+                .freeQuota(5).quotaPrice(50).maxQuota(10).limit(5).build()));
     }
 
     private void stubNoExisting() {
@@ -336,16 +350,138 @@ class DigestSubscriptionServiceTest {
         var own = List.of("a", "b", "c", "d", "e");
         var inherited = List.of("x", "y", "z", "w");
 
-        assertThat(DigestSubscriptionService.effectiveOf(own, inherited))
+        assertThat(DigestSubscriptionService.effectiveOf(own, inherited, 5))
             .as("自己 5 个占满后，继承项只补到总上限 8")
             .containsExactly("a", "b", "c", "d", "e", "x", "y", "z");
-        assertThat(DigestSubscriptionService.effectiveOf(List.of("a"), inherited))
+        assertThat(DigestSubscriptionService.effectiveOf(List.of("a"), inherited, 5))
             .containsExactly("a", "x", "y", "z");
-        assertThat(DigestSubscriptionService.effectiveOf(List.of("a", "b"), List.of("b", "c")))
+        assertThat(DigestSubscriptionService.effectiveOf(List.of("a", "b"), List.of("b", "c"), 5))
             .as("继承里已有的不重复加")
             .containsExactly("a", "b", "c");
-        assertThat(DigestSubscriptionService.effectiveOf(List.of(), List.of()))
+        assertThat(DigestSubscriptionService.effectiveOf(List.of(), List.of(), 5))
             .isEmpty();
+    }
+
+    /**
+     * 额度放开后，生效集合跟着放宽——但继承项仍然是「额外看到」，不占自己的额度。
+     *
+     * <p>这是「存进去了但首页不生效」那个坑的回归测试：只改保存上限而忘了改生效集合，
+     * 用户买的额度就白买了。</p>
+     */
+    @Test
+    void effectiveCategoriesShouldFollowTheQuota() {
+        var own = List.of("a", "b", "c", "d", "e", "f", "g");
+        var inherited = List.of("x", "y", "z");
+
+        // 免费 5：第 6、7 个进不了生效集合（它们只是暂停，记录还在）
+        assertThat(DigestSubscriptionService.effectiveOf(own, inherited, 5))
+            .startsWith("a", "b", "c", "d", "e")
+            .doesNotContain("f", "g");
+
+        // 买了 2 份额度：自己 7 个全部生效，继承项照旧补在后面（上限 = 7 + 3）
+        assertThat(DigestSubscriptionService.effectiveOf(own, inherited, 7))
+            .containsExactly("a", "b", "c", "d", "e", "f", "g", "x", "y", "z");
+
+        // 会员档：全部生效
+        assertThat(DigestSubscriptionService.effectiveOf(own, inherited, 30))
+            .containsExactly("a", "b", "c", "d", "e", "f", "g", "x", "y", "z");
+
+        // 配置被改坏（额度为 0 或负数）时至少要保证一个，不能把用户订阅全清空
+        assertThat(DigestSubscriptionService.effectiveOf(List.of("a"), List.of(), 0))
+            .containsExactly("a");
+    }
+
+    /**
+     * 清空订阅要连「继承来的推荐」一起清掉。
+     *
+     * <p>这是修一个真实反馈时加的：用户取消全部订阅后首页仍在按分类筛选——因为内容其实来自
+     * 邀请人的推荐（生效集合 = 自己 + 继承），而发现页只数自己的订阅、显示「还没订阅分类」，
+     * 两边对不上就变成了「取消没生效」。清空是用户明确的「首页不要个性化」，继承项也一并清掉。</p>
+     */
+    @Test
+    void clearingOwnCategoriesShouldAlsoClearInherited() {
+        var existing = new DigestSubscription();
+        var metadata = new run.halo.app.extension.Metadata();
+        metadata.setName(DigestSubscriptionService.resourceName(OPENID));
+        existing.setMetadata(metadata);
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("tech", "life"));
+        existing.setInheritedCategories(List.of("news"));
+        existing.setInheritedFrom("inviter-openid");
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+        when(client.update(any(DigestSubscription.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var req = request(true, List.of(), List.of(), List.of());
+        req.setPostCategories(List.of());
+
+        StepVerifier.create(service.save(OPENID, req))
+            .assertNext(dto -> {
+                assertThat(dto.getPostCategories()).isEmpty();
+                assertThat(dto.getInheritedCategories()).isEmpty();
+                assertThat(dto.getEffectiveCategories()).isEmpty();
+            })
+            .verifyComplete();
+    }
+
+    /** 还留着自己的订阅时，继承来的推荐照旧保留（与「额外看到」的设计一致） */
+    @Test
+    void keepingOwnCategoriesShouldKeepInherited() {
+        var existing = new DigestSubscription();
+        var metadata = new run.halo.app.extension.Metadata();
+        metadata.setName(DigestSubscriptionService.resourceName(OPENID));
+        existing.setMetadata(metadata);
+        existing.setWxOpenid(OPENID);
+        existing.setPostCategories(List.of("tech", "life"));
+        existing.setInheritedCategories(List.of("news"));
+        when(client.listAll(eq(DigestSubscription.class), any(ListOptions.class), any()))
+            .thenReturn(Flux.just(existing));
+        when(client.update(any(DigestSubscription.class)))
+            .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var req = request(true, List.of(), List.of(), List.of());
+        req.setPostCategories(List.of("tech"));
+
+        StepVerifier.create(service.save(OPENID, req))
+            .assertNext(dto -> {
+                assertThat(dto.getPostCategories()).containsExactly("tech");
+                assertThat(dto.getInheritedCategories()).containsExactly("news");
+                assertThat(dto.getEffectiveCategories()).containsExactly("tech", "news");
+            })
+            .verifyComplete();
+    }
+
+    /** 服务端仍然是权威：额度是 5 时第 6 个分类必须 400，不能靠客户端拦 */
+    @Test
+    void shouldRejectCategoriesBeyondTheQuota() {
+        var six = new ArrayList<String>();
+        for (var i = 0; i < 6; i++) {
+            six.add("cat" + i);
+        }
+        var req = request(true, List.of(), List.of(), List.of());
+        req.setPostCategories(six);
+
+        StepVerifier.create(service.save(OPENID, req))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage()).contains("最多选 5 项"))
+            .verify();
+    }
+
+    /** 买了额度 / 是会员时，同样的 6 个分类要能存下来 */
+    @Test
+    void shouldAcceptMoreCategoriesWhenQuotaUnlocked() {
+        stubNoExisting();
+        when(quotaService.limitOf(OPENID)).thenReturn(Mono.just(8));
+        var seven = new ArrayList<String>();
+        for (var i = 0; i < 7; i++) {
+            seven.add("cat" + i);
+        }
+        var req = request(true, List.of(), List.of(), List.of());
+        req.setPostCategories(seven);
+
+        StepVerifier.create(service.save(OPENID, req))
+            .assertNext(dto -> assertThat(dto.getPostCategories()).hasSize(7))
+            .verifyComplete();
     }
 
     /** 新用户还没有订阅记录时也要继承——不能只在已有记录上做，否则对新人永远不生效 */

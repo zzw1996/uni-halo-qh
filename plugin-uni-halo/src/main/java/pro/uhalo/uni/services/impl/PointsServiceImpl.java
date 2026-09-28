@@ -78,6 +78,9 @@ public class PointsServiceImpl implements PointsService {
     private static final String DRAW_COST_ACTION = "draw_cost";
     private static final String EXCHANGE_CONFIG_GROUP = "exchangeConfig";
     private static final String EXCHANGE_DASHBOARD = "dashboard_advanced";
+    /** 积分解锁订阅额度的流水动作码（客户端 utils/points.js 里有同名中文名） */
+    private static final String SUBSCRIBE_QUOTA_ACTION = "subscribe_quota";
+
     private static final String EXCHANGE_DASHBOARD_ACTION = "exchange_dashboard";
     /**
      * 虚拟支付道具直购发放数据看板高级版时写入的动作码。
@@ -117,6 +120,7 @@ public class PointsServiceImpl implements PointsService {
 
     private final PointsPersistence persistence;
     private final ReactiveSettingFetcher settingFetcher;
+    private final pro.uhalo.uni.services.impl.SubscriptionQuotaService subscriptionQuotaService;
     private final WxUserService wxUserService;
     private final PointsEvidenceService pointsEvidenceService;
     private final RateLimiter rateLimiter;
@@ -455,6 +459,77 @@ public class PointsServiceImpl implements PointsService {
                         });
                 });
             });
+    }
+
+    /**
+     * 用积分解锁「分类订阅额度」。
+     *
+     * <p>与积分兑换同一套骨架：<b>先写幂等流水，成功后才改账户</b>。幂等键用
+     * 「这次买完之后的总份数」当锚点（{@code quota-<owned+count>}）——同一份额度重复提交
+     * 会命中同一个资源名，第二次只会被告知「请勿重复提交」，而不会扣两次积分；
+     * 也不会出现「扣了积分却没涨额度」。</p>
+     *
+     * <p>额度是<b>容量</b>不是占用：买了就永久有效，取消某个订阅只腾出位置、不退还额度，
+     * 因此这里没有也不需要退款链路。</p>
+     */
+    @Override
+    public Mono<PointsExchangeResponse> purchaseSubscribeQuota(String openid, Integer count) {
+        return requireOpenid(openid).flatMap(id -> {
+            ensureRateLimit(id, "subscribe-quota", 10, "操作过于频繁，请稍后再试");
+            return subscriptionQuotaService.quotaStateOf(id).flatMap(state -> {
+                var config = state.config();
+                if (!config.isEnabled()) {
+                    return Mono.error(new WxAuthException("积分解锁订阅额度未开启"));
+                }
+                var buyCount = count == null || count <= 0 ? 1 : Math.min(count, config.getMaxQuota());
+                var owned = state.purchasedQuota();
+                if (owned + buyCount > config.getMaxQuota()) {
+                    return Mono.error(new WxAuthException(
+                        "订阅额度最多解锁 " + config.getMaxQuota() + " 份，你已解锁 " + owned + " 份"));
+                }
+                var cost = config.getQuotaPrice() * buyCount;
+                return persistence.getOrCreateAccount(id).flatMap(account -> {
+                    if (safeBalance(account) < cost) {
+                        return Mono.error(new WxAuthException("积分不足，需要 " + cost + " 积分"));
+                    }
+                    var newBalance = safeBalance(account) - cost;
+                    var earnKey = buildEarnKey(id, SUBSCRIBE_QUOTA_ACTION,
+                        "quota-" + (owned + buyCount));
+                    var record = persistence.newRecord(id, SUBSCRIBE_QUOTA_ACTION, -cost, newBalance,
+                        "解锁订阅额度 +" + buyCount, "分类订阅额度", earnKey, account.getWxUserId());
+                    return persistence.appendRecord(record)
+                        .onErrorResume(ex -> {
+                            if (isDuplicateNameError(ex)) {
+                                log.info("订阅额度流水已存在，跳过重复购买：earnKey={}", earnKey);
+                                return Mono.empty();
+                            }
+                            return Mono.error(ex);
+                        })
+                        .flatMap(saved -> {
+                            // 拿到幂等位后才改账户：扣积分 + 涨额度
+                            account.setBalance(newBalance);
+                            account.setSubscribeQuota(owned + buyCount);
+                            return persistence.saveAccount(account)
+                                .thenReturn(PointsExchangeResponse.builder()
+                                    .item(SUBSCRIBE_QUOTA_ACTION)
+                                    .points(cost)
+                                    .balance(newBalance)
+                                    .subscribeQuota(owned + buyCount)
+                                    .message("已解锁 " + buyCount + " 份订阅额度，现在最多可订阅 "
+                                        + config.limitFor(owned + buyCount) + " 个分类")
+                                    .build());
+                        })
+                        .switchIfEmpty(Mono.defer(() -> Mono.just(
+                            PointsExchangeResponse.builder()
+                                .item(SUBSCRIBE_QUOTA_ACTION)
+                                .points(0)
+                                .balance(safeBalance(account))
+                                .subscribeQuota(owned)
+                                .message("请勿重复提交")
+                                .build())));
+                });
+            });
+        });
     }
 
     @Override

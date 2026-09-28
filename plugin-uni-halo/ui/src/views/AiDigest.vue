@@ -33,6 +33,8 @@
       </div>
     </div>
 
+    <div v-if="historyCostText" class="cost-summary">💰 {{ historyCostText }}</div>
+
     <div class="toolbar">
       <button class="btn-primary" :disabled="busy || !overview?.enabled" @click="triggerRun(true)">
         ⚡ 立即生成并发布
@@ -63,6 +65,213 @@
       <div class="progress-meta">
         <span v-if="progressPercent !== null">{{ progressPercent }}%（{{ progressDone }}/{{ progressTotal }}）</span>
         <span v-else>处理中，请稍候…</span>
+      </div>
+    </div>
+
+    <!--
+      大模型通道：清单顺序即故障转移顺序，每条的开关决定它是否参与，
+      「测试」用一次极小的请求回答「这条通道到底通不通」。
+      清单留空时这里显示的是旧的主 / 兜底通道，点「导入现有通道」即可接管。
+    -->
+    <div class="table-card">
+      <div class="classify-head">
+        <div class="classify-title-box">
+          <span class="classify-title">🔌 大模型通道</span>
+          <span class="classify-summary">{{ modelSummary }}</span>
+        </div>
+        <div class="classify-ops">
+          <button class="btn-ghost" :disabled="modelBusy" @click="loadModels">刷新</button>
+          <button
+            class="btn-ghost"
+            :disabled="modelBusy || !canImportLegacy"
+            :title="canImportLegacy
+              ? '把旧的主 / 兜底通道搬进清单（保存后旧字段不再生效）'
+              : '清单非空时不需要导入：清空清单后这里会重新可用'"
+            @click="importLegacy"
+          >
+            导入现有通道
+          </button>
+          <button class="btn-ghost" :disabled="modelBusy || priceBusy" @click="refreshPrices">
+            {{ priceBusy ? "读取中…" : "🔄 从官网刷新单价" }}
+          </button>
+          <button class="btn-ghost" :disabled="modelBusy" @click="loadBalances">
+            {{ balanceBusy ? "查询中…" : "💰 查账户余额" }}
+          </button>
+          <button class="btn-ghost" :disabled="modelBusy || !modelRows.length" @click="testAllModels">
+            🩺 全部测试
+          </button>
+          <button class="btn-primary" :disabled="modelBusy || !modelDirty" @click="saveModels">
+            {{ modelBusy ? "处理中…" : "保存通道" }}
+          </button>
+        </div>
+      </div>
+
+      <p class="classify-hint" :class="{ 'hint-bad': !modelReady }">{{ modelHint }}</p>
+
+      <!--
+        任务生效表：勾选框表达的是「这条通道愿意干什么」，这一行表达的是「结果落在哪」。
+        没有它，站长就得自己在脑子里做一次匹配，很容易以为评分走的是便宜通道。
+      -->
+      <div v-if="modelTaskLines.length" class="model-taskbar">
+        <span
+          v-for="line in modelTaskLines"
+          :key="line.key"
+          class="model-task-chip"
+          :class="{ 'chip-bad': !line.usable, 'chip-warn': line.usable && line.fallback }"
+          :title="line.note"
+        >
+          {{ line.label }} →
+          <template v-if="line.usable">
+            {{ line.channel }}<span class="chip-model">· {{ line.model }}</span>
+          </template>
+          <template v-else>没有可用通道</template>
+          <template v-if="line.fallback">（回退）</template>
+        </span>
+      </div>
+
+      <div v-if="balances.length" class="model-balances">
+        <span v-for="item in balances" :key="item.key" class="model-balance">
+          <b>{{ item.label }}</b>
+          <template v-if="item.ok">
+            余额 {{ moneySymbol(item.currency) }}{{ item.totalBalance }}
+            <span v-if="item.grantedBalance !== '0.00'" class="model-balance-sub">
+              （赠送 {{ item.grantedBalance }} / 充值 {{ item.toppedUpBalance }}）
+            </span>
+          </template>
+          <span v-else class="msg-bad">{{ item.message }}</span>
+        </span>
+      </div>
+
+      <div v-if="modelPrices" class="model-prices">
+        <span class="model-prices-head">
+          单价：{{ modelPrices.source }}
+          <template v-if="modelPrices.fetchedAt">（读取于 {{ fetchedAtText(modelPrices.fetchedAt) }}）</template>
+        </span>
+        <span v-for="row in modelPrices.items" :key="row.model" class="model-price-chip" :title="row.description">
+          {{ row.model }}：{{ moneySymbol(row.currency) }}命中 {{ row.cacheHit }} / 未命中 {{ row.cacheMiss }} / 输出 {{ row.output }}
+          <span class="model-price-sub">空闲 ×{{ row.offPeakRatio }}</span>
+        </span>
+        <span class="model-price-sub">{{ modelPrices.peakRule }}</span>
+        <a :href="modelPrices.officialUrl" target="_blank" rel="noopener" class="link">官方价目表</a>
+      </div>
+
+      <ul v-if="modelHints.length" class="model-hints">
+        <li v-for="(hint, idx) in modelHints" :key="idx">{{ hint }}</li>
+      </ul>
+
+      <div class="classify-body">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>启用</th>
+              <th>用途（勾选后只接这些活）</th>
+              <th>显示名</th>
+              <th>API Base</th>
+              <th>模型</th>
+              <th>API Key</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!modelRows.length">
+              <td colspan="8" class="empty">
+                还没有通道：点下面的「＋ 添加通道」，或把旧的主 / 兜底通道导入进来
+              </td>
+            </tr>
+            <tr v-for="(row, idx) in modelRows" :key="row.rowId">
+              <td>
+                <input v-model="row.enabled" type="checkbox" @change="markModelDirty" />
+              </td>
+              <td>
+                <label
+                  v-for="task in taskOptions"
+                  :key="task.key"
+                  class="model-task"
+                  :title="task.hint"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="row.tasks.includes(task.key)"
+                    @change="toggleTask(row, task.key)"
+                  />
+                  {{ task.label }}
+                </label>
+                <span v-if="!row.tasks.length" class="model-task-none">全部</span>
+              </td>
+              <td>
+                <input
+                  v-model="row.label"
+                  class="model-input"
+                  placeholder="如 DeepSeek 主用"
+                  @input="markModelDirty"
+                />
+              </td>
+              <td>
+                <input
+                  v-model="row.apiBase"
+                  class="model-input model-input-wide"
+                  placeholder="https://api.deepseek.com/v1"
+                  @input="markModelDirty"
+                />
+              </td>
+              <td>
+                <input
+                  v-model="row.model"
+                  class="model-input"
+                  placeholder="deepseek-chat"
+                  @input="markModelDirty"
+                />
+              </td>
+              <td>
+                <input
+                  v-model="row.apiKeyInput"
+                  class="model-input model-input-wide"
+                  :placeholder="row.apiKeyMasked ? `${row.apiKeyMasked}（留空 = 不修改）` : 'sk-…'"
+                  @input="markModelDirty"
+                />
+              </td>
+              <td class="model-state">
+                <span class="pill" :class="rowStateClass(row)">{{ rowStateText(row) }}</span>
+                <span v-if="row.test" class="model-test-msg" :class="{ 'msg-bad': !row.test.ok }">
+                  {{ row.test.message }}
+                  <template v-if="row.test.ok && row.test.latencyMs">
+                    · {{ row.test.latencyMs }}ms
+                    <template v-if="row.test.servedModel">· {{ row.test.servedModel }}</template>
+                  </template>
+                </span>
+              </td>
+              <td class="ops">
+                <button class="btn-link" :disabled="idx === 0 || modelBusy" @click="moveModel(idx, -1)">
+                  上移
+                </button>
+                <button
+                  class="btn-link"
+                  :disabled="idx === modelRows.length - 1 || modelBusy"
+                  @click="moveModel(idx, 1)"
+                >
+                  下移
+                </button>
+                <button class="btn-link" :disabled="modelBusy || row.testing" @click="testModel(row)">
+                  {{ row.testing ? "测试中…" : "测试" }}
+                </button>
+                <button class="btn-link btn-link-danger" :disabled="modelBusy" @click="removeModel(idx)">
+                  删除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="model-foot">
+          <button class="btn-ghost" :disabled="modelBusy" @click="addModel">＋ 添加通道</button>
+          <span class="model-foot-tip">
+            顺序即优先级（第一条失败自动跳下一条）；关掉的通道不参与调用。
+            用途留空 = 什么活都接；某任务的通道全不可用时会回退到全部可用通道，并在上面标出来。
+            「测试」只发一次 8 token 的请求，会真实产生极少量费用。
+          </span>
+        </div>
+        <p v-if="modelLegacyNote" class="model-legacy">{{ modelLegacyNote }}</p>
       </div>
     </div>
 
@@ -178,14 +387,15 @@
             <th>发布</th>
             <th>精选</th>
             <th>耗时</th>
+            <th>花费</th>
             <th>文章</th>
             <th>未发布原因</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading"><td colspan="9" class="empty">⏳ 加载中…</td></tr>
-          <tr v-else-if="!history.length"><td colspan="9" class="empty">🎈 还没有运行记录，点「立即生成」试试</td></tr>
+          <tr v-if="loading"><td colspan="10" class="empty">⏳ 加载中…</td></tr>
+          <tr v-else-if="!history.length"><td colspan="10" class="empty">🎈 还没有运行记录，点「立即生成」试试</td></tr>
           <tr v-for="item in history" :key="item.name">
             <td class="time">{{ item.date }}</td>
             <td class="time">{{ triggerText(item.slot) }}</td>
@@ -197,6 +407,12 @@
             </td>
             <td>{{ item.articleCount ?? "-" }}</td>
             <td class="time">{{ item.durationMs ? Math.round(item.durationMs / 1000) + "s" : "-" }}</td>
+            <td
+              class="time"
+              :title="item.aiCostText || '这次运行没有采集到用量（1.0.165 之前的记录）'"
+            >
+              {{ item.aiCostText || "-" }}
+            </td>
             <td>
               <a v-if="primaryPostUrl(item)" :href="primaryPostUrl(item)" target="_blank" rel="noopener" class="link">打开</a>
               <span v-if="postsOf(item).length > 1" class="mono"> 共 {{ postsOf(item).length }} 篇</span>
@@ -246,6 +462,7 @@
         </div>
 
         <div v-if="detail.summary.error" class="error-banner">⚠️ {{ detail.summary.error }}</div>
+        <div v-if="missingCategoryText" class="warn-banner">⚠️ {{ missingCategoryText }}</div>
 
         <div v-if="detailPosts.length" class="post-list">
           <div class="post-list-title">发布明细（{{ detailPosts.length }} 篇）</div>
@@ -255,6 +472,47 @@
             <span v-else>{{ post.title || post.postName }}</span>
             <span v-if="post.message && post.state !== 'PUBLISHED'" class="post-msg">{{ post.message }}</span>
           </div>
+        </div>
+
+        <div v-if="detailCost" class="cost-block">
+          <div class="post-list-title">
+            💰 本轮 AI 花费（估算）
+            <span v-if="detailCostText" class="cost-total">{{ detailCostText }}</span>
+          </div>
+          <table class="tbl cost-tbl">
+            <thead>
+              <tr>
+                <th>任务</th>
+                <th>调用</th>
+                <th>输入 token</th>
+                <th>输出 token</th>
+                <th>金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in detailCost.tasks || []" :key="row.task">
+                <td>{{ row.label || row.task }}</td>
+                <td>{{ row.calls }}</td>
+                <td class="time">{{ row.inputTokens }}</td>
+                <td class="time">{{ row.outputTokens }}</td>
+                <td>
+                  <template v-if="row.priced">{{ moneySymbol(row.currency) }}{{ row.amount }}</template>
+                  <template v-else>未配置单价<span v-if="row.model" class="cost-note">（模型 {{ row.model }}）</span></template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-for="row in detailCost.channels || []" :key="row.key" class="cost-line">
+            <span class="mono">{{ row.label }}</span>
+            <span v-if="row.priced">估算 {{ moneySymbol(row.currency) }}{{ row.amount }} · {{ row.totalTokens }} token · {{ row.calls }} 次</span>
+            <span v-else>{{ row.totalTokens }} token · {{ row.calls }} 次（未配置单价）</span>
+            <span v-if="row.balanceBefore && row.balanceAfter" class="cost-balance">
+              余额 {{ row.balanceBefore }} → {{ row.balanceAfter }}
+              <b v-if="row.balanceDelta">（账号实际扣减 {{ moneySymbol(row.balanceCurrency) }}{{ row.balanceDelta }}）</b>
+            </span>
+            <span v-else-if="row.balanceNote" class="cost-note">{{ row.balanceNote }}</span>
+          </div>
+          <p class="cost-note">{{ detailCost.note }}</p>
         </div>
 
         <div v-if="statItems.length" class="stat-inline">
@@ -303,6 +561,52 @@ interface DigestSummary {
   startedAt: string | null;
   finishedAt: string | null;
   durationMs: number | null;
+  /** 本轮 AI 花费（按币种），老记录为空数组 */
+  aiCosts: Money[] | null;
+  /** 花费的一句话写法，如 ≈¥0.42；老记录为空串 */
+  aiCostText: string | null;
+}
+
+interface Money {
+  currency: string;
+  amount: string;
+}
+
+/** 一轮运行的花费块（后端 DigestAiCostDTO） */
+interface DigestAiCost {
+  tasks: Array<{
+    task: string;
+    label: string;
+    /** 实际用的模型名：缺价时要能说出是哪个模型没配价 */
+    model: string | null;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    amount: string | null;
+    currency: string;
+    priced: boolean;
+  }>;
+  channels: Array<{
+    key: string;
+    label: string;
+    model: string;
+    calls: number;
+    totalTokens: number;
+    amount: string | null;
+    currency: string;
+    priced: boolean;
+    balanceCurrency: string | null;
+    balanceBefore: string | null;
+    balanceAfter: string | null;
+    balanceDelta: string | null;
+    balanceNote: string | null;
+  }>;
+  totals: Money[];
+  calls: number;
+  unpricedCalls: number;
+  unknownUsageCalls: number;
+  note: string;
 }
 
 interface DigestOverview {
@@ -352,7 +656,106 @@ interface ClassifyCandidate {
   adopted: boolean;
 }
 
-const { apiGet, apiPost, apiDelete } = useConsoleApi();
+/** 一条通道（后端 DigestAiModelViewDTO.Row）；apiKey 只以掩码下发 */
+interface ModelRowView {
+  key: string;
+  label: string;
+  apiBase: string;
+  model: string;
+  enabled: boolean;
+  hasKey: boolean;
+  apiKeyMasked: string;
+  usable: boolean;
+  source: string;
+  /** 承担的任务标识；空 = 全部任务 */
+  tasks: string[];
+  message: string;
+}
+
+/** 当前生效的单价表（后端 DigestAiModelViewDTO.Prices）：只读展示，站长不必手填 */
+interface ModelPrices {
+  source: string;
+  fetchedAt: string | null;
+  officialUrl: string;
+  peakRule: string;
+  items: Array<{
+    model: string;
+    currency: string;
+    cacheHit: string;
+    cacheMiss: string;
+    output: string;
+    offPeakRatio: string;
+    description: string;
+  }>;
+}
+
+/** 「任务 → 生效通道」表的一行：勾选框表达意愿，这一行表达结果 */
+interface ModelTaskLine {
+  key: string;
+  label: string;
+  channel: string;
+  model: string;
+  fallback: boolean;
+  usable: boolean;
+  note: string;
+}
+
+/** 旧的主 / 兜底通道现状：面板顶部提示与「导入」按钮要用 */
+interface ModelLegacy {
+  apiBase: string;
+  model: string;
+  hasKey: boolean;
+  apiKeyMasked: string;
+  fallbackApiBase: string;
+  fallbackModel: string;
+  hasFallbackKey: boolean;
+  fallbackApiKeyMasked: string;
+  configured: boolean;
+}
+
+interface ModelView {
+  fromList: boolean;
+  summary: string;
+  providers: ModelRowView[];
+  channels: ModelRowView[];
+  active: string | null;
+  /** 每个任务最终会用哪条通道（含「没有通道勾选它，已回退」的结论） */
+  tasks: ModelTaskLine[];
+  /** 当前生效的单价表与来源 */
+  prices: ModelPrices | null;
+  legacy: ModelLegacy;
+  hints: string[];
+}
+
+interface ModelTestResult {
+  ok: boolean;
+  key: string | null;
+  label: string | null;
+  apiBase: string | null;
+  model: string | null;
+  status: number | null;
+  latencyMs: number | null;
+  reply: string | null;
+  servedModel: string | null;
+  totalTokens: number | null;
+  message: string;
+  detail: string | null;
+}
+
+/**
+ * 可编辑的通道行。
+ *
+ * apiKeyInput 只有「这次新填的 Key」才有值：留空表示沿用已保存的那把
+ * （后端按掩码规则处理），这样站长改个模型名不用重新粘贴密钥。
+ */
+interface EditableModelRow extends ModelRowView {
+  rowId: number;
+  apiKeyInput: string;
+  testing: boolean;
+  test: ModelTestResult | null;
+}
+
+const { apiGet, apiPost, apiPut, apiDelete } = useConsoleApi();
 
 const overview = ref<DigestOverview | null>(null);
 const history = ref<DigestSummary[]>([]);
@@ -367,6 +770,27 @@ const classifyStatus = ref<ClassifyStatus | null>(null);
 const classifyItems = ref<ClassifyCandidate[]>([]);
 const classifyResult = ref<any>(null);
 const classifyLoading = ref(false);
+
+// ── 大模型通道 ──
+
+/**
+ * 用途选项：与后端 DigestAiTask 一一对应（key 是存储值，改它等于让老配置失效）。
+ * hint 说明为什么值得分开——评分省钱、成稿看质量，这是「按任务绑定」的全部动机。
+ */
+const taskOptions = [
+  { key: "score", label: "评分", hint: "给候选文章打分选材：一轮要跑几十次、每次只回一小段，适合便宜模型" },
+  { key: "write", label: "成稿", hint: "逐篇写摘要与论点：一轮只跑两三次，但单次输出上千字、直接决定读者观感，建议留给强模型" },
+  { key: "overview", label: "看点", hint: "日报开头的今日看点与背景铺垫" },
+  { key: "classify", label: "归类", hint: "旧文章归类（人工点击触发）" },
+  { key: "content", label: "简报", hint: "付费「AI 定制内容」的简报导语与推荐理由" },
+];
+
+const modelView = ref<ModelView | null>(null);
+const modelRows = ref<EditableModelRow[]>([]);
+const modelDirty = ref(false);
+const modelBusy = ref(false);
+/** 行标识：给 v-for 用，与后端通道标识无关（草稿行还没有后端标识） */
+let modelRowSeq = 0;
 
 let timer: number | undefined;
 /** 触发生成/发布后的自动刷新截止时间：后台任务在跑，但 running 标记可能还没翻过来 */
@@ -421,6 +845,299 @@ const progressText = computed(() => {
   }
   return progress.message;
 });
+
+// ── 大模型通道 ──
+
+const modelSummary = computed(() => {
+  const view = modelView.value;
+  if (!view) return "读取中…";
+  if (!view.providers.length) {
+    return view.channels.length ? "当前离线：沿用旧的主 / 兜底通道" : "当前离线：还没有可用的通道";
+  }
+  return `清单 ${view.providers.length} 条，可用 ${view.providers.filter((row) => row.usable).length} 条`;
+});
+
+/** 顶层提示：服务端算好的结论 + 「有未保存的修改」这一句页面才知道的信息 */
+const modelHint = computed(() => {
+  const view = modelView.value;
+  if (!view) return "读取通道配置中…";
+  const saved = view.summary;
+  return modelDirty.value ? `${saved}（列表有未保存的修改，点「保存通道」后才会生效）` : saved;
+});
+
+const modelHints = computed(() => modelView.value?.hints || []);
+
+const modelTaskLines = computed(() => modelView.value?.tasks || []);
+
+const modelReady = computed(() => (modelView.value?.channels || []).some((row) => row.usable));
+
+/** 清单非空就没必要导入（导入会把清单整个替换掉，容易丢掉刚配好的几条） */
+const canImportLegacy = computed(
+  () => !!modelView.value?.legacy?.configured && !modelRows.value.length
+);
+
+const modelLegacyNote = computed(() => {
+  const legacy = modelView.value?.legacy;
+  if (!legacy?.configured) return "";
+  const parts: string[] = [];
+  if (legacy.hasKey) {
+    parts.push(`主：${legacy.apiBase || "（未填端点）"} / ${legacy.model || "（自动推断）"} / ${legacy.apiKeyMasked}`);
+  }
+  if (legacy.hasFallbackKey) {
+    parts.push(`兜底：${legacy.fallbackApiBase || "https://api.openai.com/v1"} / ${legacy.fallbackModel || "（自动推断）"} / ${legacy.fallbackApiKeyMasked}`);
+  }
+  if (!parts.length) return "";
+  const tail = modelView.value?.fromList
+    ? "（清单已生效，下面这些旧字段不再被使用）"
+    : "（清单为空时，实际调用走的就是这两条）";
+  return `旧的主 / 兜底通道：${parts.join("；")}${tail}`;
+});
+
+function toEditableRow(row: ModelRowView): EditableModelRow {
+  return {
+    ...row,
+    // 后端保证是数组；这里再兜一次，避免旧响应或缓存让 .includes 直接抛错
+    tasks: Array.isArray(row.tasks) ? [...row.tasks] : [],
+    rowId: ++modelRowSeq,
+    apiKeyInput: "",
+    testing: false,
+    test: null,
+  };
+}
+
+function applyModelView(view: ModelView) {
+  modelView.value = view;
+  modelRows.value = (view.providers || []).map(toEditableRow);
+  modelDirty.value = false;
+}
+
+function markModelDirty() {
+  modelDirty.value = true;
+}
+
+/** 勾/去掉一条通道的某个用途；勾空 = 什么活都接（与后端「空 = 全部任务」一致） */
+function toggleTask(row: EditableModelRow, key: string) {
+  const index = row.tasks.indexOf(key);
+  if (index >= 0) {
+    row.tasks.splice(index, 1);
+  } else {
+    row.tasks.push(key);
+  }
+  modelDirty.value = true;
+}
+
+function addModel() {
+  modelRows.value.push({
+    key: "",
+    label: "",
+    apiBase: "",
+    model: "",
+    enabled: true,
+    hasKey: false,
+    apiKeyMasked: "",
+    usable: false,
+    source: "list",
+    tasks: [],
+    message: "",
+    rowId: ++modelRowSeq,
+    apiKeyInput: "",
+    testing: false,
+    test: null,
+  });
+  modelDirty.value = true;
+}
+
+function removeModel(index: number) {
+  modelRows.value.splice(index, 1);
+  modelDirty.value = true;
+}
+
+function moveModel(index: number, delta: number) {
+  const target = index + delta;
+  if (target < 0 || target >= modelRows.value.length) return;
+  const rows = modelRows.value;
+  const [moved] = rows.splice(index, 1);
+  rows.splice(target, 0, moved);
+  modelDirty.value = true;
+}
+
+/** 导入旧的主 / 兜底通道：把服务端解析出的兼容通道转成可编辑的行（Key 用掩码占位，保存时不会被覆盖） */
+function importLegacy() {
+  const legacyChannels = (modelView.value?.channels || []).filter((row) => row.source === "legacy");
+  if (!legacyChannels.length) {
+    tip.value = "旧的通道里没有可导入的内容（至少要有 Key）";
+    return;
+  }
+  modelRows.value = legacyChannels.map(toEditableRow);
+  modelDirty.value = true;
+  tip.value = "已把旧的主 / 兜底通道填进清单，确认后点「保存通道」生效（保存后旧字段不再参与调用）";
+}
+
+function rowStateText(row: EditableModelRow): string {
+  if (row.testing) return "测试中";
+  if (row.test) return row.test.ok ? "连通" : "不通";
+  if (!row.enabled) return "已关闭";
+  if (!row.hasKey && !row.apiKeyInput.trim()) return "缺 Key";
+  if (!row.apiBase.trim()) return "缺端点";
+  return "已启用";
+}
+
+function rowStateClass(row: EditableModelRow): string {
+  if (row.test) return row.test.ok ? "pill-ok" : "pill-bad";
+  if (!row.enabled) return "pill-idle";
+  if (!row.hasKey && !row.apiKeyInput.trim()) return "pill-bad";
+  return "pill-ok";
+}
+
+async function loadModels() {
+  try {
+    applyModelView((await apiGet("/digest/models")) as ModelView);
+  } catch (err: any) {
+    // 通道读不到不该让整页不可用（运行历史仍要看），只在提示条里说明
+    tip.value = err?.message ? `通道配置读取失败：${err.message}` : "通道配置读取失败";
+  }
+}
+
+async function saveModels() {
+  modelBusy.value = true;
+  error.value = "";
+  try {
+    const payload = {
+      providers: modelRows.value.map((row) => ({
+        key: row.key,
+        label: row.label,
+        apiBase: row.apiBase,
+        // 留空 = 不修改已保存的 Key（后端按掩码规则处理）
+        apiKey: row.apiKeyInput.trim(),
+        model: row.model,
+        enabled: row.enabled,
+        // 用途必须带上：它是可编辑字段，漏传等于「保存一下勾选就没了」
+        tasks: [...row.tasks],
+      })),
+    };
+    const view = (await apiPut("/digest/models", payload)) as ModelView;
+    applyModelView(view);
+    tip.value = view.summary || "通道已保存";
+  } catch (err: any) {
+    error.value = err?.message || "保存通道失败";
+  } finally {
+    modelBusy.value = false;
+  }
+}
+
+const priceBusy = ref(false);
+
+const modelPrices = computed(() => modelView.value?.prices || null);
+
+/** 单价读取时间：解析失败就原样显示，不显示 Invalid Date */
+function fetchedAtText(value: string): string {
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? value : formatDateTime(date);
+}
+
+/**
+ * 从官网读一次单价。
+ *
+ * <p>官方不提供价格 API，只能读那份价目表页面。这不是「让站长填价格」的手动入口，
+ * 而是「价格涨了立刻同步」的按钮；内置表已经能开箱算钱。</p>
+ */
+async function refreshPrices() {
+  priceBusy.value = true;
+  error.value = "";
+  try {
+    const result: any = await apiPost("/digest/models/prices/refresh", {});
+    if (result?.prices && modelView.value) {
+      modelView.value = { ...modelView.value, prices: result.prices };
+    }
+    tip.value = result?.message || "已从官网刷新单价";
+  } catch (err: any) {
+    error.value = err?.message || "读取官网单价失败";
+  } finally {
+    priceBusy.value = false;
+  }
+}
+
+const balances = ref<
+  Array<{
+    key: string;
+    label: string;
+    ok: boolean;
+    currency: string | null;
+    totalBalance: string | null;
+    grantedBalance: string | null;
+    toppedUpBalance: string | null;
+    message: string;
+  }>
+>([]);
+const balanceBusy = ref(false);
+
+/**
+ * 查账户余额（DeepSeek 官方接口，不消耗 token）。
+ *
+ * <p>余额是账号级数据，用来校验详细报告里的估算；不支持的端点会在结果里写「不支持」。</p>
+ */
+async function loadBalances() {
+  balanceBusy.value = true;
+  try {
+    const result: any = await apiGet("/digest/models/balance");
+    balances.value = result?.items || [];
+    tip.value = result?.message || "";
+  } catch (err: any) {
+    error.value = err?.message || "余额查询失败";
+  } finally {
+    balanceBusy.value = false;
+  }
+}
+
+async function testModel(row: EditableModelRow) {
+  row.testing = true;
+  row.test = null;
+  try {
+    row.test = (await apiPost("/digest/models/test", {
+      key: row.key,
+      label: row.label,
+      apiBase: row.apiBase,
+      apiKey: row.apiKeyInput.trim(),
+      model: row.model,
+      enabled: row.enabled,
+      // 连通性与用途无关，带上只是为了让请求体与保存时保持同一形状
+      tasks: [...row.tasks],
+    })) as ModelTestResult;
+  } catch (err: any) {
+    row.test = {
+      ok: false,
+      key: row.key,
+      label: row.label,
+      apiBase: row.apiBase,
+      model: row.model,
+      status: null,
+      latencyMs: null,
+      reply: null,
+      servedModel: null,
+      totalTokens: null,
+      message: err?.message || "测试失败",
+      detail: null,
+    };
+  } finally {
+    row.testing = false;
+  }
+}
+
+/** 全部测试：串行跑，避免同时向多个端点发请求（也会让响应更难对上号） */
+async function testAllModels() {
+  modelBusy.value = true;
+  try {
+    for (const row of modelRows.value) {
+      await testModel(row);
+    }
+    const failed = modelRows.value.filter((row) => row.test && !row.test.ok).length;
+    tip.value = failed
+      ? `测试完成：${failed} 条不通（看每行状态列的结论）`
+      : `测试完成：${modelRows.value.length} 条通道都连通`;
+  } finally {
+    modelBusy.value = false;
+  }
+}
 
 // ── 旧文章归类 ──
 
@@ -576,15 +1293,84 @@ const progressPercent = computed(() => {
 
 const detailPosts = computed(() => (detail.value?.summary?.posts || []) as DigestPost[]);
 
+/** 详情里的花费块：老记录没有这个字段（显示空，而不是 0） */
+const detailCost = computed<DigestAiCost | null>(() => {
+  const cost = detail.value?.stats?.aiCost as DigestAiCost | undefined;
+  return cost && (cost.calls || 0) > 0 ? cost : null;
+});
+
+const detailCostText = computed(() => (detailCost.value ? formatMoney(detailCost.value.totals) : ""));
+
+/**
+ * 最近 30 次运行的合计花费。
+ *
+ * <p>在前端按已取回的列表求和：后端不必为此再加统计接口，列表里已经带了每次的币种金额。
+ * 老记录没有花费（1.0.165 之前），直接跳过。</p>
+ */
+const historyCostText = computed(() => {
+  const totals = new Map<string, number>();
+  for (const item of history.value) {
+    for (const money of item.aiCosts || []) {
+      const parsed = Number(money.amount);
+      if (!isNaN(parsed)) {
+        totals.set(money.currency, (totals.get(money.currency) || 0) + parsed);
+      }
+    }
+  }
+  if (!totals.size) return "";
+  const parts = [...totals.entries()].map(
+    ([currency, amount]) => `${moneySymbol(currency)}${round4(amount)}`
+  );
+  return `最近 ${history.value.length} 次运行合计 ≈${parts.join(" + ")}（估算，按设置里的模型单价）`;
+});
+
+function formatMoney(items?: Money[] | null): string {
+  if (!items?.length) return "";
+  return `≈${items.map((money) => `${moneySymbol(money.currency)}${money.amount}`).join(" + ")}`;
+}
+
+/** 币种符号：与后端 DigestAiCostDTO.symbol 保持同一口径 */
+function moneySymbol(currency?: string | null): string {
+  const value = (currency || "").trim().toUpperCase();
+  if (value === "CNY" || value === "RMB" || value === "¥") return "¥";
+  if (value === "USD" || value === "$") return "$";
+  return value ? `${value} ` : "";
+}
+
+function round4(value: number): string {
+  return String(Number(value.toFixed(4)));
+}
+
 const statItems = computed(() => {  const stats = detail.value?.stats;
   if (!stats) return [] as Array<{ label: string; value: string }>;
   const items: Array<{ label: string; value: string }> = [];
   if (stats.totalFeeds) items.push({ label: "扫描源", value: `${stats.successFeeds}/${stats.totalFeeds}` });
   if (stats.totalArticles) items.push({ label: "抓取文章", value: `${stats.totalArticles} 篇` });
+  if (stats.dedupedCount) items.push({ label: "去重", value: `-${stats.dedupedCount} 篇` });
   if (stats.selected) items.push({ label: "精选", value: `${stats.selected} 篇` });
+  if (stats.minPerCategory > 0 && stats.requiredCategories?.length) {
+    items.push({ label: "分类覆盖", value: coverageText(stats) });
+  }
+  if (stats.categorySummary) items.push({ label: "分类分布", value: stats.categorySummary });
+  if (stats.supplementCount) items.push({ label: "补位", value: `${stats.supplementCount} 篇` });
   if (stats.actualAvgWords) items.push({ label: "平均字数", value: `${stats.actualAvgWords} 字` });
   if (stats.imageCount !== undefined) items.push({ label: "配图", value: `${stats.imageCount} 张` });
+  if (stats.placeholderCoverCount) items.push({ label: "标题卡片", value: `${stats.placeholderCoverCount} 张` });
   return items;
+});
+
+/** 分类覆盖 X/Y：凑够「每个分类至少 N 篇」的分类数 */
+function coverageText(stats: any) {
+  const required = (stats.requiredCategories || []) as string[];
+  const missing = (stats.missingCategories || []) as string[];
+  return `${required.length - missing.length}/${required.length}`;
+}
+
+/** 本期没凑够篇数的分类（显示原始 key：清单是站长自己填的，他认得） */
+const missingCategoryText = computed(() => {
+  const stats = detail.value?.stats;
+  const missing = (stats?.missingCategories || []) as string[];
+  return missing.length ? `${missing.length} 个分类没凑够（${missing.join("、")}）` : "";
 });
 
 function formatDateTime(date: Date) {
@@ -833,6 +1619,8 @@ async function openDetail(name: string) {
 
 onMounted(() => {
   load();
+  // 通道配置只在进页面时读一次：定时刷新会把正在编辑的清单冲掉
+  loadModels();
   // 生成一次要 1-3 分钟、发布确认还可能更久，运行期间自动刷新，站长不用手动点
   timer = window.setInterval(() => {
     if (overview.value?.running || busy.value || Date.now() < graceUntil) {
@@ -876,6 +1664,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-link-danger { color: #d94a4a; }
 
 .error-banner { background: #ffefef; color: #e05555; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 13px; }
+.warn-banner { background: #fff8e6; color: #b8860b; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 13px; }
 
 .table-card { background: #fff; border-radius: 14px; box-shadow: 0 4px 18px rgba(30, 40, 90, 0.08); overflow-x: auto; margin-bottom: 16px; }
 .table-title { padding: 12px 14px 0; font-size: 14px; font-weight: 700; color: #3c4160; }
@@ -946,4 +1735,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .classify-post { max-width: 300px; }
 .classify-note { max-width: 260px; color: #b0b5c0; font-size: 12px; }
 .classify-result { padding: 4px 14px 14px; }
-</style>
+
+/* 大模型通道：表格里放输入框，所以要压住默认宽度，否则一整行会被撑得没法看 */
+.model-prices { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px 0; font-size: 12px; color: #6b7290; }
+.model-prices-head { font-weight: 600; color: #4c5480; }
+.model-price-chip { background: #f4f6ff; border-radius: 8px; padding: 3px 9px; }
+.model-price-sub { color: #aab0c0; }
+.model-balances { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 14px 0; font-size: 12.5px; color: #4c5480; }
+.model-balance { background: #f4f6ff; border-radius: 8px; padding: 4px 10px; }
+.model-balance-sub { color: #8b90a0; }
+.model-taskbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.model-task-chip { background: #eef1fb; color: #4c5480; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.model-task-chip .chip-model { color: #8b90a0; }
+/* 回退与无通道要一眼看出来：前者是「还能跑但花了不该花的钱」，后者是「这一步会失败」 */
+.model-task-chip.chip-warn { background: #fff8e6; color: #b8860b; }
+.model-task-chip.chip-bad { background: #ffefef; color: #d94a4a; }
+.model-task { display: inline-flex; align-items: center; gap: 3px; margin-right: 10px; font-size: 12px; color: #4c5480; cursor: pointer; white-space: nowrap; }
+.model-task input { cursor: pointer; }
+.model-task-none { font-size: 12px; color: #aab0c0; }
+.model-hints { margin: 6px 14px 0; padding-left: 18px; font-size: 12px; color: #9aa1b5; line-height: 1.7; }
+.model-input { width: 130px; padding: 5px 8px; border: 1px solid #e2e6f3; border-radius: 7px; font-size: 12.5px; color: #3c4160; outline: none; }
+.model-input:focus { border-color: #8a9cf0; box-shadow: 0 0 0 2px rgba(120, 140, 240, 0.14); }
+.model-input-wide { width: 210px; }
+.model-state { max-width: 260px; }
+.model-test-msg { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: #6b7290; word-break: break-word; }
+.model-foot { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.model-foot-tip { font-size: 12px; color: #9aa1b5; }
+.model-legacy { margin: 0; padding: 0 14px 14px; font-size: 12px; color: #8b90a0; line-height: 1.6; word-break: break-word; }
+
+/* AI 花费：历史合计一行 + 详情里的按任务表与余额差 */
+.cost-summary { margin: 0 0 10px; padding: 8px 12px; background: #fff8e6; color: #b8860b; border-radius: 10px; font-size: 12.5px; }
+.cost-block { background: #fbfcff; border: 1px solid #eef1fb; border-radius: 10px; padding: 10px 12px; }
+.cost-total { margin-left: 8px; color: #17a05e; font-weight: 600; }
+.cost-tbl { font-size: 12.5px; }
+.cost-tbl th { padding: 8px 10px; }
+.cost-tbl td { padding: 6px 10px; }
+.cost-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 4px 0; font-size: 12.5px; color: #4c5480; }
+.cost-balance { color: #17a05e; }
+.cost-note { margin: 6px 0 0; font-size: 11.5px; color: #9aa1b5; line-height: 1.7; }</style>

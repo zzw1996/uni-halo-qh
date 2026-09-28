@@ -1,0 +1,26 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-ai-content
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo AI 定制内容"
+    rbac.authorization.halo.run/display-name: "AI 定制内容接口（UniHalo）"
+rules:
+  # 「AI 定制内容」是小程序端的付费权益接口：匿名可读（未登录只会拿到「未开通」状态，
+  # 拿不到任何内容，也不会触发 AI 调用），写操作在服务端另过权益判定。
+  # openid 一律只从 Wechat-Session-Id 请求头取，绝不接受查询串或请求体里的身份。
+  #
+  # 路径比 plugins/ai 多一层，不同 Halo 版本对 resource 的推导粒度不同，
+  # 因此把常见形态都放行（与 role-digest-anonymous 同一思路）。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/ai"
+      - "plugins/ai/content"
+      - "plugins/ai/content/preference"
+      - "plugins/ai/content/feed"
+      - "plugins/ai/content/issues"
+      - "plugins/ai/*"
+    verbs: [ "get", "list", "create", "update" ]

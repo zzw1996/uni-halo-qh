@@ -20,5 +20,12 @@ rules:
       - "plugins/digest/shared"
       - "plugins/digest/shared/subscribe"
       - "plugins/digest/subscription"
+      # 首页内容流（并集）与订阅额度解锁：前者只返回已发布文章，
+      # 后者走积分扣减（匿名可调但必须带 Wechat-Session-Id 才能识别用户）
+      - "plugins/digest/feed"
+      - "plugins/digest/subscription/quota"
+      # 「发现」页的分类订阅热度榜：只有聚合数字，不含任何用户标识
+      - "plugins/digest/categories"
+      - "plugins/digest/categories/ranking"
       - "plugins/digest/*"
     verbs: [ "get", "list", "create", "update" ]

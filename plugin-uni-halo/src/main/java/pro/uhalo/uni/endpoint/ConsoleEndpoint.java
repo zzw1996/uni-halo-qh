@@ -21,6 +21,8 @@ import pro.uhalo.uni.dto.CommercialConfigSaveRequest;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.services.impl.CommercialConfigService;
 import pro.uhalo.uni.services.impl.PayStatsService;
+import pro.uhalo.uni.services.impl.PushDiagnoseService;
+import pro.uhalo.uni.services.impl.PushStatsService;
 import pro.uhalo.uni.utils.WxRequestParser;
 import pro.uhalo.uni.services.WxUserService;
 import reactor.core.publisher.Mono;
@@ -40,6 +42,8 @@ public class ConsoleEndpoint implements CustomEndpoint {
     private final InviteService inviteService;
     private final VirtualPayService virtualPayService;
     private final PayStatsService payStatsService;
+    private final PushStatsService pushStatsService;
+    private final PushDiagnoseService pushDiagnoseService;
     private final CommercialConfigService commercialConfigService;
 
     public ConsoleEndpoint(WxUserService wxUserService,
@@ -49,6 +53,8 @@ public class ConsoleEndpoint implements CustomEndpoint {
                            InviteService inviteService,
                            VirtualPayService virtualPayService,
                            PayStatsService payStatsService,
+                           PushStatsService pushStatsService,
+                           PushDiagnoseService pushDiagnoseService,
                            CommercialConfigService commercialConfigService) {
         this.wxUserService = wxUserService;
         this.userActivityService = userActivityService;
@@ -57,6 +63,8 @@ public class ConsoleEndpoint implements CustomEndpoint {
         this.inviteService = inviteService;
         this.virtualPayService = virtualPayService;
         this.payStatsService = payStatsService;
+        this.pushStatsService = pushStatsService;
+        this.pushDiagnoseService = pushDiagnoseService;
         this.commercialConfigService = commercialConfigService;
     }
 
@@ -237,6 +245,21 @@ public class ConsoleEndpoint implements CustomEndpoint {
                         + "(read-modify-write merge: other groups and unknown fields are preserved).")
                     .tag(apiTag);
             })
+            .GET("/pushDiagnose", this::pushDiagnose, builder -> {
+                builder.operationId("ConsoleDiagnosePush")
+                    .description("Step-by-step push self-check: config, reading subscriptions, "
+                        + "writing a subscription (create+delete probe), reading the scheduler "
+                        + "state and fetching a WeChat access token. Each step reports the raw "
+                        + "error message when it fails.")
+                    .tag(apiTag);
+            })
+            .GET("/pushStats", this::pushStats, builder -> {
+                builder.operationId("ConsoleGetPushStats")
+                    .description("Subscription-message dashboard: today's sent/failed counts, "
+                        + "failure reasons grouped by WeChat error code (with what to do about "
+                        + "each), and today's records.")
+                    .tag(apiTag);
+            })
             .GET("/payStats", this::payStats, builder -> {
                 builder.operationId("ConsoleGetPayStats")
                     .description("Payment dashboard: order counts by status, GMV of delivered "
@@ -292,6 +315,44 @@ public class ConsoleEndpoint implements CustomEndpoint {
                 return ServerResponse.status(500)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(java.util.Map.of("error", "保存商业化配置失败"));
+            });
+    }
+
+    /** 推送看板：今日发送/失败 + 按错误码分组的失败原因（含「该做什么」） */
+    /** 推送自检：一步一问 + 最近失败样本（失败时最有信息量） */
+    Mono<ServerResponse> pushDiagnose(ServerRequest request) {
+        return pushDiagnoseService.diagnose()
+            .flatMap(items -> pushDiagnoseService.recentFailures().map(failures -> {
+                var payload = new java.util.LinkedHashMap<String, Object>();
+                payload.put("items", items);
+                payload.put("failed", items.stream().filter(item -> !item.isOk()).count());
+                payload.put("recentFailures", failures.stream().map(record -> {
+                    var map = new java.util.LinkedHashMap<String, Object>();
+                    map.put("kind", record.getKind());
+                    map.put("status", record.getStatus());
+                    map.put("errorCode", record.getErrorCode());
+                    map.put("message", record.getMessage());
+                    return map;
+                }).toList());
+                return (Object) payload;
+            }))
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console pushDiagnose failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "推送自检失败"));
+            });
+    }
+
+    Mono<ServerResponse> pushStats(ServerRequest request) {
+        return pushStatsService.summary()
+            .flatMap(response -> jsonOk(response))
+            .onErrorResume(Exception.class, e -> {
+                log.warn("Console pushStats failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "推送统计查询失败"));
             });
     }
 

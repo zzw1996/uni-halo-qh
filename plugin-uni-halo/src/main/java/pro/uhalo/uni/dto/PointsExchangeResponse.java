@@ -29,6 +29,9 @@ public class PointsExchangeResponse {
     /** 兑换后的发布券余额（历史券种，保留兼容） */
     private Integer publishTickets;
 
+    /** 解锁后的订阅额度份数（仅「积分解锁订阅额度」会回传，其余为 null） */
+    private Integer subscribeQuota;
+
     /** 可兑换权益列表（含今日已兑换次数），由插件后台 exchangeConfig 配置 */
     private java.util.List<ExchangeItemDTO> items;
 

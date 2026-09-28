@@ -107,6 +107,25 @@ public class DigestHaloClient {
             .map(raw -> readTree(raw, path));
     }
 
+    /**
+     * 匿名读取（不带个人令牌）。
+     *
+     * <p>站点内容接口对游客开放，插件内部取首页内容流时不该因为它依赖令牌——
+     * 没配令牌的站点照样能用订阅功能。未登录访问受限的站点会返回 401/403，
+     * 由调用方降级（客户端会回落到全站最新列表）。</p>
+     */
+    public Mono<JsonNode> getAnonymous(String path, Duration timeout) {
+        return resolveBaseUrl()
+            .flatMap(baseUrl -> clientFor(baseUrl).get()
+                .uri(path)
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(timeout))
+            .defaultIfEmpty("")
+            .map(raw -> readTree(raw, path));
+    }
+
     public Mono<JsonNode> post(String path, Object body, Duration timeout) {
         return resolveBaseUrl().flatMap(baseUrl -> requireToken()
             .flatMap(token -> withCommonHeaders(clientFor(baseUrl).post()

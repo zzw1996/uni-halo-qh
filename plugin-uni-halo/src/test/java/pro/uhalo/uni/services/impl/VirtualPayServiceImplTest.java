@@ -14,12 +14,15 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
+import pro.uhalo.uni.dto.AiContentConfigDTO;
 import pro.uhalo.uni.dto.MemberConfigDTO;
+import pro.uhalo.uni.services.AiContentEntitlementService;
 import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.OwnedOutfitParser;
-import pro.uhalo.uni.utils.TokenManager;
+import pro.uhalo.uni.utils.WxAccessTokenProvider;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.plugin.ReactiveSettingFetcher;
@@ -34,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -61,13 +65,16 @@ class VirtualPayServiceImplTest {
     private WxUserService wxUserService;
 
     @Mock
-    private TokenManager tokenManager;
+    private WxAccessTokenProvider wxAccessTokenProvider;
 
     @Mock
     private TicketRewardService ticketRewardService;
 
     @Mock
     private MembershipService membershipService;
+
+    @Mock
+    private AiContentEntitlementService aiContentEntitlementService;
 
     @InjectMocks
     private VirtualPayServiceImpl virtualPayService;
@@ -654,6 +661,106 @@ class VirtualPayServiceImplTest {
         verify(pointsPersistence, never()).appendRecord(any());
     }
 
+    // ==================== AI 定制内容（单次购买的有效期权益） ====================
+
+    private static PayOrder aiContentOrder(int days) {
+        var order = PayOrderPersistence.newOrder("o1", "wx-user-1", "OT1234567890abcdefg",
+            "g_ai_content", "AI 定制内容", 990L, 1, 0, "OT1234567890abcdefg");
+        order.setGoodsType("ai_content");
+        order.setGoodsValue(days);
+        return order;
+    }
+
+    private void stubAiContentConfig(boolean enabled) {
+        when(aiContentEntitlementService.loadConfig()).thenReturn(Mono.just(
+            AiContentConfigDTO.builder().enabled(enabled).aiIntroEnabled(true).build()));
+    }
+
+    /** 发货：按商品填的天数延长权益到期时间。 */
+    @Test
+    void deliverShouldExtendAiContentExpiry() throws Exception {
+        stubNoTicketReward();
+        stubAiContentConfig(true);
+        var account = stubDelivery(new UserPoints());
+
+        StepVerifier.create(virtualPayService.doDeliver(aiContentOrder(30), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        var expected = Instant.now().plus(30, ChronoUnit.DAYS);
+        assertThat(account.getAiContentExpireAt()).isNotNull();
+        assertThat(account.getAiContentExpireAt()).isBetween(
+            expected.minusSeconds(60), expected.plusSeconds(60));
+    }
+
+    /** 续费叠加：与会员卡同一口径，不能白吃用户剩余天数。 */
+    @Test
+    void deliverShouldStackAiContentOnExistingExpiry() throws Exception {
+        stubNoTicketReward();
+        stubAiContentConfig(true);
+        var account = new UserPoints();
+        account.setAiContentExpireAt(Instant.now().plus(10, ChronoUnit.DAYS));
+        stubDelivery(account);
+
+        StepVerifier.create(virtualPayService.doDeliver(aiContentOrder(30), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        var expected = Instant.now().plus(40, ChronoUnit.DAYS);
+        assertThat(account.getAiContentExpireAt()).isBetween(
+            expected.minusSeconds(60), expected.plusSeconds(60));
+    }
+
+    /** 道具数量填 0 = 永久买断：用远期时间表示，权益判定与会员共用一套。 */
+    @Test
+    void deliverWithZeroDaysShouldGrantPermanentAiContent() throws Exception {
+        stubNoTicketReward();
+        stubAiContentConfig(true);
+        var account = stubDelivery(new UserPoints());
+
+        StepVerifier.create(virtualPayService.doDeliver(aiContentOrder(0), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        assertThat(account.getAiContentExpireAt())
+            .isEqualTo(pro.uhalo.uni.utils.AiContentConfigHelper.PERMANENT_EXPIRE_AT);
+    }
+
+    /** 配置未开启：宁可转人工退款，也不能让用户付了钱什么都没有。 */
+    @Test
+    void deliverShouldMarkNeedsRefundWhenAiContentDisabled() {
+        stubNoTicketReward();
+        stubAiContentConfig(false);
+        stubDeliverBase();
+
+        StepVerifier.create(virtualPayService.doDeliver(aiContentOrder(30), remotePaid()))
+            .assertNext(updated -> {
+                assertThat(updated.getStatus()).isEqualTo("needs_refund");
+                assertThat(updated.getRemark()).contains("人工退款");
+            })
+            .verifyComplete();
+
+        verify(pointsPersistence, never()).appendRecord(any());
+    }
+
+    /** 幂等：流水已存在（重复推送/轮询）时不再叠加天数。 */
+    @Test
+    void deliverShouldBeIdempotentForAiContent() throws Exception {
+        stubNoTicketReward();
+        // 注意：switchIfEmpty 的参数是「先构造、后订阅」，所以发货分支的 Mono 一定会被构造，
+        // 里面第一步读配置就必须有桩（真实 bean 不会返回 null，只有 mock 会）。
+        stubAiContentConfig(true);
+        when(pointsPersistence.findRecordByEarnKey(anyString()))
+            .thenReturn(Mono.just(new PointsRecord()));
+        when(payOrderPersistence.update(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(virtualPayService.doDeliver(aiContentOrder(30), remotePaid()))
+            .assertNext(updated -> assertThat(updated.getStatus()).isEqualTo("delivered"))
+            .verifyComplete();
+
+        verify(pointsPersistence, never()).saveAccount(any());
+    }
+
     // ==================== 套餐（一条商品含多种权益） ====================
 
     /** 套餐发货：每个子项各自发放，券与会员天数都要到账。 */
@@ -802,5 +909,105 @@ class VirtualPayServiceImplTest {
                 assertThat(goods.getPromoEndsAt()).isEqualTo(expectedEnd);
             })
             .verifyComplete();
+    }
+
+    // ==================== 待支付订单的有效期（15 分钟） ====================
+    //
+    // 用户侧「我的订单」此前会把很久以前没付款的测试单一直显示成「待支付」，
+    // 看起来像一直挂着没完成。规则：超过有效期未付款即「已失效」。
+    //
+    // 关键设计：失效状态**只在下发时派生、不落库**——用户可能在有效期内付了款、
+    // 而微信的发货推送迟到几分钟才到，把库里改成终态就可能让那笔权益发不出去。
+
+    private static PayOrder order(String status, Instant createTime) {
+        var order = new PayOrder();
+        order.setOpenid("openid-1");
+        order.setOutTradeNo("OT-1");
+        order.setGoodsId("g_ticket");
+        order.setGoodsName("阅读券 x5");
+        order.setPrice(600L);
+        order.setQuantity(1);
+        order.setGoodsType("content_ticket");
+        order.setStatus(status);
+        order.setDelivered(false);
+        order.setCreateTime(createTime);
+        order.setUpdateTime(createTime);
+        return order;
+    }
+
+    /** 刚下单 1 分钟、以及刚好在有效期内（第 14 分钟）的都还算待支付。 */
+    @Test
+    void pendingOrderShouldStayPendingWithinValidity() {
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("pending", Instant.now().minus(1, ChronoUnit.MINUTES)))).isFalse();
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("pending", Instant.now().minus(14, ChronoUnit.MINUTES)))).isFalse();
+    }
+
+    /** 超过有效期（第 16 分钟）即失效。 */
+    @Test
+    void pendingOrderShouldExpireAfterValidity() {
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("pending", Instant.now().minus(16, ChronoUnit.MINUTES)))).isTrue();
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("pending", Instant.now().minus(3, ChronoUnit.DAYS)))).isTrue();
+    }
+
+    /** 终态订单不受时间影响；没有创建时间的旧订单按「不失效」处理（不凭空空判死）。 */
+    @Test
+    void expiryShouldNotAffectTerminalOrLegacyOrders() {
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("delivered", Instant.now().minus(3, ChronoUnit.DAYS)))).isFalse();
+        assertThat(VirtualPayServiceImpl.isPendingExpired(
+            order("needs_refund", Instant.now().minus(3, ChronoUnit.DAYS)))).isFalse();
+        assertThat(VirtualPayServiceImpl.isPendingExpired(order("pending", null))).isFalse();
+        assertThat(VirtualPayServiceImpl.isPendingExpired(null)).isFalse();
+    }
+
+    /** 列表里：过期的待支付显示「已失效」，未过期的照旧「待支付」，已到账的不受影响。 */
+    @Test
+    void myOrdersShouldMarkStalePendingAsExpired() {
+        when(payOrderPersistence.listByOpenid("openid-1")).thenReturn(Flux.just(
+            order("pending", Instant.now().minus(30, ChronoUnit.MINUTES)),
+            order("pending", Instant.now().minus(2, ChronoUnit.MINUTES)),
+            order("delivered", Instant.now().minus(3, ChronoUnit.DAYS))));
+
+        StepVerifier.create(virtualPayService.listMyOrders("openid-1", 0, 20))
+            .assertNext(res -> {
+                assertThat(res.getItems()).hasSize(3);
+                // 按创建时间倒序：最新的在前
+                assertThat(res.getItems().get(0).getStatus()).isEqualTo("pending");
+                assertThat(res.getItems().get(0).getStatusLabel()).contains("15 分钟");
+                assertThat(res.getItems().get(1).getStatus()).isEqualTo("expired");
+                assertThat(res.getItems().get(1).getStatusLabel()).contains("已失效");
+                assertThat(res.getItems().get(2).getStatus()).isEqualTo("delivered");
+                assertThat(res.getItems().get(2).getStatusLabel()).isEqualTo("已到账");
+            })
+            .verifyComplete();
+    }
+
+    /**
+     * 单笔查单遇到过期订单：直接返回已失效，且**不去微信查单**——
+     * 那张单早已不能用，白跑一次接口还会让用户白等。
+     */
+    @Test
+    void queryExpiredOrderShouldNotHitWechat() {
+        var stale = order("pending", Instant.now().minus(30, ChronoUnit.MINUTES));
+        when(payOrderPersistence.findByOutTradeNo("OT-1")).thenReturn(Mono.just(stale));
+
+        var request = new QueryPayOrderRequest();
+        request.setOutTradeNo("OT-1");
+
+        StepVerifier.create(virtualPayService.queryOrder("openid-1", request))
+            .assertNext(res -> {
+                assertThat(res.getStatus()).isEqualTo("expired");
+                assertThat(res.getMessage()).contains("已失效");
+                assertThat(res.getDelivered()).isFalse();
+                assertThat(res.getGoodsName()).isEqualTo("阅读券 x5");
+            })
+            .verifyComplete();
+
+        // 完全没碰 token provider = 没走远程查单（查单第一步就要取 token）
+        verifyNoInteractions(wxAccessTokenProvider);
     }
 }

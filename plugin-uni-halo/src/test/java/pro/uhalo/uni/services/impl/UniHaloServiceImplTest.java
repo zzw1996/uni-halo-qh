@@ -8,7 +8,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import pro.uhalo.uni.services.QRCodeInfoService;
-import pro.uhalo.uni.utils.TokenManager;
+import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.core.extension.service.AttachmentService;
@@ -42,7 +42,7 @@ class UniHaloServiceImplTest {
     private ReactiveSettingFetcher settingFetcher;
 
     @Mock
-    private TokenManager tokenManager;
+    private WxAccessTokenProvider wxAccessTokenProvider;
 
     @Mock
     private AttachmentService attachmentService;
@@ -109,9 +109,69 @@ class UniHaloServiceImplTest {
         assertThat(original.has("offerId")).isTrue();
     }
 
+    /**
+     * 大模型 Key 同样不能下发：它与其它密钥一样只在服务端使用，
+     * 而下发接口是匿名的——拿到它就能直接消费站长的 AI 额度。
+     */
     @Test
-    void getAllConfigsShouldKeepOtherGroupsUntouched() {
-        var other = MAPPER.createObjectNode();
+    void getAllConfigsShouldStripAiDigestSecrets() {
+        var node = MAPPER.createObjectNode();
+        node.put("enabled", true);
+        node.put("aiApiBase", "https://api.deepseek.com/v1");
+        node.put("aiApiKey", "sk-legacy-secret");
+        node.put("fallbackApiKey", "sk-fallback-secret");
+        node.put("topN", 15);
+        var providers = node.putArray("aiProviders");
+        var provider = providers.addObject();
+        provider.put("key", "ds");
+        provider.put("label", "DeepSeek 主用");
+        provider.put("apiBase", "https://api.deepseek.com/v1");
+        provider.put("apiKey", "sk-provider-secret");
+        provider.put("model", "deepseek-chat");
+        provider.putArray("tasks").add("score").add("write");
+
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("aiDigestConfig", node);
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var aiDigest = (ObjectNode) result.get("aiDigestConfig");
+                assertThat(aiDigest.toString()).doesNotContain("sk-legacy-secret")
+                    .doesNotContain("sk-fallback-secret")
+                    .doesNotContain("sk-provider-secret");
+                // 非密钥字段照旧下发（小程序会用它们渲染入口）
+                assertThat(aiDigest.get("enabled").asBoolean()).isTrue();
+                assertThat(aiDigest.get("topN").asInt()).isEqualTo(15);
+                assertThat(aiDigest.get("aiProviders")).hasSize(1);
+                assertThat(aiDigest.get("aiProviders").get(0).get("model").asText())
+                    .isEqualTo("deepseek-chat");
+                // 用途不是密钥，照常下发（面板要靠它渲染勾选框）
+                assertThat(aiDigest.get("aiProviders").get(0).get("tasks")).hasSize(2);
+                assertThat(aiDigest.get("aiProviders").get(0).get("tasks").get(0).asText())
+                    .isEqualTo("score");
+            })
+            .verifyComplete();
+
+        // 服务端自身仍要能读到完整配置（调用模型时要用明文 Key）
+        assertThat(node.get("aiApiKey").asText()).isEqualTo("sk-legacy-secret");
+        assertThat(node.get("aiProviders").get(0).get("apiKey").asText())
+            .isEqualTo("sk-provider-secret");
+    }
+
+    @Test
+    void getConfigsByGroupNameShouldStripAiDigestSecrets() {
+        var node = MAPPER.createObjectNode();
+        node.put("aiApiKey", "sk-legacy-secret");
+        when(settingFetcher.get("aiDigestConfig")).thenReturn(Mono.just(node));
+
+        StepVerifier.create(uniHaloService.getAppConfigsByGroupName("aiDigestConfig"))
+            .assertNext(result -> assertThat(result.has("aiApiKey")).isFalse())
+            .verifyComplete();
+    }
+
+    @Test
+    void getAllConfigsShouldKeepOtherGroupsUntouched() {        var other = MAPPER.createObjectNode();
         other.put("enabled", true);
         other.put("rewardPoints", 30);
         var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();

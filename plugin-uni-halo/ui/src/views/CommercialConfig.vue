@@ -115,7 +115,7 @@ interface ConfigCheck {
 
 /** 按业务把分组归到三个页签：互相关联的配置在同一屏 */
 const TAB_DEFS = [
-  { key: "commerce", label: "权益与定价", groups: ["payConfig", "memberConfig", "contentConfig", "ticketConfig"] },
+  { key: "commerce", label: "权益与定价", groups: ["payConfig", "aiContentConfig", "memberConfig", "contentConfig", "ticketConfig"] },
   { key: "points", label: "积分经济", groups: ["pointsConfig", "dailyTaskConfig", "mallConfig"] },
   { key: "level", label: "装扮与等级", groups: ["levelConfig"] },
 ];

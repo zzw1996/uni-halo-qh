@@ -36,7 +36,14 @@ import static org.mockito.Mockito.mock;
 class UniHaloPluginTest {
 
     /** 应当注册的扩展类型数量：新增类型时这个数字要跟着改（曾经就是两份清单错位） */
-    private static final int EXPECTED_TYPE_COUNT = 10;
+    /**
+     * 必须注册（也必须能摘掉）的扩展类型数量。
+     *
+     * <p>加了新 scheme 就要同步这个数字，并在下面的「注册/摘除」用例里补上断言——
+     * 这个数字存在的意义是「注册了 N 种就必须能摘掉 N 种」，漏摘会让索引永远建不起来。
+     * 1.0.171 加的是 {@code UserAppSettings}（应用设置跟账号走）。</p>
+     */
+    private static final int EXPECTED_TYPE_COUNT = 16;
 
     @Mock
     private SchemeManager schemeManager;

@@ -71,6 +71,9 @@
       <button onclick="triggerRun(true)" id="btnRunPublish">⚡ 立即生成并发布</button>
       <button class="ghost" onclick="triggerRun(false)" id="btnRunDraft">📝 只生成不发布</button>
       <button class="ghost" onclick="runPreflight()" id="btnPreflight">🩺 发布环境自检</button>
+      <button class="ghost" onclick="loadCategories()" id="btnCategories">🏷 日报分类</button>
+      <button class="ghost" onclick="loadModels()" id="btnModels">🔌 大模型通道</button>
+      <button class="ghost" onclick="loadPushStats()" id="btnPushTop">📣 消息推送</button>
       <button class="ghost" onclick="cleanupResidues()" id="btnCleanup">🧹 清理残留文章</button>
     </div>
     <p class="tip">生成一次约需 1-3 分钟，正文较长时发布确认还要更久；触发后页面会自动刷新，不用手动点。Token 需要是超级管理员令牌。注意：「发布」只会发出这一期在生成时就已经固化的文章（逐篇模式下为 N 篇独立文章）；早期生成的记录里没有逐篇内容，只能整体补发一篇日报。若某一期是「只生成不发布」，点「发布」即可把它备好的文章写入 Halo；已建过稿的篇目只会重新触发发布，不会重复建稿。</p>
@@ -92,6 +95,54 @@
     <div style="font-size:14px;font-weight:700;color:#3c4160;margin-bottom:6px">🩺 发布环境自检结果</div>
     <div id="preflight"></div>
     <p class="tip">自检只读取信息、不会发布任何内容；不通过的项按提示改完再点「发布」。</p>
+  </div>
+
+  <div class="card" id="categoryCard" style="display:none">
+    <div style="font-size:14px;font-weight:700;color:#3c4160;margin-bottom:6px">🏷 日报分类（AI 只能从这份清单里选）</div>
+    <div id="categoryView"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="ghost" onclick="listAutoCategories()" id="btnAutoCategories">🔍 查看插件自动创建的分类</button>
+      <button class="ghost" onclick="purgeAutoCategories()" id="btnPurgeCategories">🧽 清理没有文章引用的自动分类</button>
+    </div>
+    <div id="autoCategoryView" style="margin-top:10px"></div>
+    <p class="tip">清单在「插件设置 - AI 日报 - 日报分类」里维护：留空 = 用内置六类（与升级前完全一致）；
+      「落库方式」决定分类不存在时是自动创建、只复用已有、还是按映射指定。
+      reuse / map 模式下匹配不上的行会被静默跳过（不会自动创建分类），所以这类行在下面标红列出。
+      清理只删除带 uni.uhalo.pro/auto-generated 标签、且没有任何文章引用的分类。</p>
+  </div>
+
+  <div class="card" id="modelCard" style="display:none">
+    <div style="font-size:14px;font-weight:700;color:#3c4160;margin-bottom:6px">🔌 大模型通道（顺序即优先级）</div>
+    <div id="modelSummary" class="tip" style="margin-bottom:6px"></div>
+    <div id="modelTaskbar" style="margin-bottom:6px"></div>
+    <div id="modelPrices" style="margin-bottom:6px;font-size:12px;color:#6b7290"></div>
+    <div id="modelBalances" style="margin-bottom:6px;font-size:12.5px;color:#4c5480"></div>
+    <div id="modelHints" class="tip" style="margin-bottom:8px"></div>
+    <div style="overflow-x:auto"><table id="modelTable"></table></div>
+    <div class="row" style="margin-top:12px">
+      <button class="ghost" onclick="addModelRow()" id="btnAddModel">＋ 添加通道</button>
+      <button class="ghost" onclick="importLegacyChannels()" id="btnImportModel">导入现有通道</button>
+      <button class="ghost" onclick="refreshPrices()" id="btnPrices">🔄 从官网刷新单价</button>
+      <button class="ghost" onclick="loadBalances()" id="btnBalances">💰 查账户余额</button>
+      <button class="ghost" onclick="testAllModels()" id="btnTestAllModel">🩺 全部测试</button>
+      <button onclick="saveModels()" id="btnSaveModel">保存通道</button>
+    </div>
+    <p class="tip">第一条调用失败会自动跳到下一条；关掉的通道不参与调用。清单留空时沿用旧的主 / 兜底通道
+      （也就是「插件设置 → AI 日报」里那组兼容字段）；点「导入现有通道」可以把它们搬进清单。
+      「测试」只发一次 8 token 的极小请求，会真实产生极少量费用；API Key 一律以掩码显示，留空即表示不修改。<br>
+      用途留空 = 什么活都接；某任务的通道全不可用时（例如只勾了「评分」的便宜通道被关掉）会回退到全部可用通道，
+      并在上方标出「回退」，不会让整轮日报失败。</p>
+  </div>
+
+  <div class="card" id="pushCard" style="display:none">
+    <div style="font-size:14px;font-weight:700;color:#3c4160;margin-bottom:6px">📣 消息推送（微信订阅消息）</div>
+    <div id="pushStats"></div>
+    <p class="tip">开关与模板 ID 在「插件设置 → 消息推送」里配置。普通类目只能用一次性订阅：<b>用户点一次授权，只能发一条</b>——授权额度存在插件里（微信不提供查询），所以「额度用尽（43101）」多说明用户需要再点一次小程序里的「开启更新提醒」。<br/>失败的完整记录在 Halo 控制台的扩展列表里搜 <code>PushRecord</code> 也能看到。</p>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" onclick="loadPushStats()" id="btnPushStats">🔄 刷新推送统计</button>
+      <button class="ghost" onclick="runPushDiagnose()" id="btnPushDiagnose">🩺 推送自检</button>
+    </div>
+    <div id="pushDiagnose"></div>
   </div>
 
   <div class="card">
@@ -215,6 +266,164 @@
       btn.disabled = false;
     }
   }
+  // 推送自检：逐步验证（配置 / 读订阅 / 写订阅 / 调度状态 / 微信令牌），失败带原始错误
+  async function runPushDiagnose() {
+    var btn = document.getElementById('btnPushDiagnose');
+    btn.disabled = true;
+    try {
+      var data = await request('/pushDiagnose');
+      var items = (data && data.items) || [];
+      var html = '';
+      items.forEach(function (item) {
+        html += '<div class="pf-item">' +
+          '<span class="pf-flag ' + (item.ok ? 'pf-ok' : 'pf-bad') + '">' + (item.ok ? '✔' : '✘') + '</span>' +
+          '<span class="pf-name">' + esc(item.step) + '</span>' +
+          '<span class="pf-msg' + (item.ok ? '' : ' pf-msg-bad') + '">' + esc(item.message) + '</span>' +
+          '</div>';
+      });
+      var failures = (data && data.recentFailures) || [];
+      if (failures.length) {
+        html += '<p class="tip" style="margin-top:8px">最近失败样本</p>' +
+          '<table><thead><tr><th>类型</th><th>状态</th><th>错误码</th><th>原因</th></tr></thead><tbody>';
+        failures.forEach(function (item) {
+          html += '<tr><td>' + esc(item.kind || '') + '</td><td>' + esc(item.status || '') +
+            '</td><td class="mono">' + (item.errorCode == null ? '' : item.errorCode) + '</td>' +
+            '<td class="reason">' + esc(item.message || '') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      document.getElementById('pushDiagnose').innerHTML = html;
+      document.getElementById('pushCard').style.display = 'block';
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // 消息推送统计：今日发送/失败 + 按微信错误码分组的失败原因（含「该做什么」）
+  async function loadPushStats() {
+    var btn = document.getElementById('btnPushStats');
+    if (btn) btn.disabled = true;
+    try {
+      var data = await request('/pushStats');
+      var html = '<div class="pf-item"><span class="tag ' + (data.todayFailed ? 'bad' : 'ok') + '">今日发送 ' +
+        (data.todaySent || 0) + '</span><span class="tag ' + (data.todayFailed ? 'bad' : 'idle') + '">失败 ' +
+        (data.todayFailed || 0) + '</span><span class="tag idle">累计记录 ' + (data.totalRecords || 0) + '</span>' +
+        '<span class="tag idle">新文章 ' + (data.newPostSent || 0) + ' / 简报 ' + (data.aiDigestSent || 0) + '</span></div>';
+      var reasons = data.failureReasons || [];
+      if (!reasons.length) {
+        html += '<p class="tip">还没有失败记录。若一条都没发出去，请确认：① 推送总开关已打开 ② 模板已启用并绑定服务类目 ③ 有用户授权过。</p>';
+      } else {
+        html += '<table><thead><tr><th>错误码</th><th>次数</th><th>含义与处理</th></tr></thead><tbody>';
+        reasons.forEach(function (item) {
+          html += '<tr><td class="mono">' + item.errorCode + '</td><td>' + item.count + '</td>' +
+            '<td class="reason">' + esc(item.meaning || '') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      var samples = data.todaySamples || [];
+      if (samples.length) {
+        html += '<p class="tip" style="margin-top:10px">今日最近记录</p>' +
+          '<table><thead><tr><th>时间</th><th>类型</th><th>状态</th><th>错误码</th><th>目标</th></tr></thead><tbody>';
+        samples.forEach(function (item) {
+          html += '<tr><td class="mono">' + esc(item.sentAt || '') + '</td><td>' + esc(item.kind || '') +
+            '</td><td>' + esc(item.status || '') + '</td><td class="mono">' +
+            (item.errorCode == null ? '' : item.errorCode) + '</td><td class="mono">' + esc(item.page || '') +
+            '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      document.getElementById('pushStats').innerHTML = html;
+      document.getElementById('pushCard').style.display = 'block';
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // 日报分类：当前生效清单 + 每一行发布时会落到哪里
+  async function loadCategories() {
+    var btn = document.getElementById('btnCategories');
+    btn.disabled = true;
+    try {
+      var view = await request('/digest/categories');
+      var items = (view && view.items) || [];
+      var html = '<div class="pf-item" style="flex-wrap:wrap">' +
+        '<span class="tag ' + (view.fromConfig ? 'ok' : 'idle') + '">' +
+        esc(view.fromConfig ? '后台配置的清单' : '内置六类（清单留空）') + '</span>' +
+        '<span class="tag idle">落库方式：' + esc(view.modeLabel || '-') + '</span>' +
+        '<span class="tag ' + (view.problemCount ? 'bad' : 'ok') + '">共 ' + (view.count || 0) +
+        ' 个分类' + (view.problemCount ? '，' + view.problemCount + ' 行需处理' : '') + '</span></div>';
+      html += '<p class="' + (view.problemCount ? 'fail-reason' : 'tip') + '" style="margin:6px 0 10px">' +
+        esc(view.message || '') + '</p>';
+      html += '<table><thead><tr><th>key</th><th>分类名</th><th>给 AI 的判定说明</th>' +
+        '<th>映射目标</th><th>发布时会怎样</th></tr></thead><tbody>';
+      items.forEach(function (i) {
+        html += '<tr' + (i.problem ? ' style="background:#fff7f7"' : '') + '>' +
+          '<td class="mono">' + esc(i.key) + '</td>' +
+          '<td>' + esc(i.emoji || '') + ' ' + esc(i.label) + '</td>' +
+          '<td class="reason">' + esc(i.description || '') + '</td>' +
+          '<td>' + (i.targetCategory ? esc(i.targetCategory) : '<span class="tip">—</span>') + '</td>' +
+          '<td class="' + (i.problem ? 'fail-reason' : 'reason') + '">' + esc(i.message) + '</td>' +
+          '</tr>';
+      });
+      document.getElementById('categoryView').innerHTML = html + '</tbody></table>';
+      document.getElementById('categoryCard').style.display = 'block';
+      if (view.problemCount) {
+        showMsg('分类清单有 ' + view.problemCount + ' 行发布时会被跳过，请看「日报分类」面板', false);
+      }
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // 插件自动创建的分类：列出引用情况（0 篇的才能清理）
+  async function listAutoCategories() {
+    var btn = document.getElementById('btnAutoCategories');
+    btn.disabled = true;
+    try {
+      var data = await request('/digest/categories/auto-created');
+      var items = (data && data.items) || [];
+      var html = '<p class="tip">' + esc((data && data.message) || '') + '</p>';
+      if (items.length) {
+        html += '<table><thead><tr><th>分类名</th><th>引用文章数</th><th>结论</th></tr></thead><tbody>';
+        items.forEach(function (i) {
+          html += '<tr>' +
+            '<td>' + esc(i.displayName || i.name) + ' <span class="mono">' + esc(i.name) + '</span></td>' +
+            '<td>' + (i.postCount || 0) + '</td>' +
+            '<td class="' + (i.postCount ? 'reason' : 'pf-ok') + '">' + esc(i.message || '') + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      document.getElementById('autoCategoryView').innerHTML = html;
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // 清理自动创建、且没有文章引用的分类（有引用的会被跳过）
+  async function purgeAutoCategories() {
+    if (!confirm('确认清理没有文章引用的自动分类？有文章在用的会被跳过，站长自己建的分类不会被删。')) return;
+    var btn = document.getElementById('btnPurgeCategories');
+    btn.disabled = true;
+    try {
+      var data = await request('/digest/categories/auto-created', 'DELETE');
+      showMsg((data && data.message) || '清理完成', true);
+      listAutoCategories();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function primaryPostUrl(item) {
     var list = postsOf(item);
     for (var i = 0; i < list.length; i++) {
@@ -238,14 +447,20 @@
     document.getElementById('btnRunDraft').disabled = busy;
   }
 
-  async function request(path, method) {
+  async function request(path, method, body) {
     var t = token();
     if (!t) throw new Error('请先输入 Personal Token');
+    var verb = method || 'GET';
+    // 带 body 的调用（保存通道清单）走 payload 分支；其余 POST 沿用空对象，
+    // 因为有些网关对没有 body 的 POST 会直接拒绝
+    var payload = (body !== undefined) ? JSON.stringify(body) : (verb === 'POST' ? '{}' : undefined);
+    var headers = { 'Authorization': 'Bearer ' + t };
+    if (payload !== undefined) headers['Content-Type'] = 'application/json';
     var res = await fetch(api(path), {
-      method: method || 'GET',
+      method: verb,
       cache: 'no-store',
-      headers: Object.assign({ 'Authorization': 'Bearer ' + t }, method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
-      body: method === 'POST' ? '{}' : undefined
+      headers: headers,
+      body: payload
     });
     if (res.status === 401 || res.status === 403) throw new Error('鉴权失败：Token 无效或权限不足（需要超级管理员令牌）');
     var text = await res.text();
@@ -253,6 +468,314 @@
     try { data = text ? JSON.parse(text) : {}; } catch (e) {}
     if (!res.ok) throw new Error(data.error || ('请求失败：HTTP ' + res.status + ' ' + text));
     return data;
+  }
+
+  // ── 大模型通道 ──
+
+  var modelView = null;
+  var modelRows = [];
+  var modelDirty = false;
+
+  /**
+   * 用途选项：与后端 DigestAiTask 一一对应。
+   * 分开的动机是省钱与质量：评分一轮几十次只回一小段，便宜模型足够；
+   * 成稿一轮两三次但单次上千字、直接决定读者观感，建议留给强模型。
+   */
+  var MODEL_TASKS = [
+    { key: 'score', label: '评分', hint: '给候选文章打分选材：一轮几十次、每次只回一小段，适合便宜模型' },
+    { key: 'write', label: '成稿', hint: '逐篇写摘要与论点：一轮两三次，单次上千字，建议强模型' },
+    { key: 'overview', label: '看点', hint: '日报开头的今日看点与背景铺垫' },
+    { key: 'classify', label: '归类', hint: '旧文章归类（人工点击触发）' },
+    { key: 'content', label: '简报', hint: '付费「AI 定制内容」的简报导语与推荐理由' }
+  ];
+
+  function modelRowStateText(row) {
+    if (row.test) return row.test.ok ? '连通' : '不通';
+    if (!row.enabled) return '已关闭';
+    if (!row.hasKey && !(row.apiKey || '').trim()) return '缺 Key';
+    if (!(row.apiBase || '').trim()) return '缺端点';
+    return '已启用';
+  }
+
+  function modelRowStateHtml(row) {
+    var cls = row.test ? (row.test.ok ? 'ok' : 'bad')
+      : (!row.enabled ? 'idle' : ((!row.hasKey && !(row.apiKey || '').trim()) ? 'bad' : 'ok'));
+    var extra = '';
+    if (row.test) {
+      extra = '<div style="font-size:11.5px;line-height:1.5;margin-top:3px;color:'
+        + (row.test.ok ? '#6b7290' : '#d94a4a') + '">' + esc(row.test.message)
+        + (row.test.ok && row.test.latencyMs
+          ? ' · ' + row.test.latencyMs + 'ms' + (row.test.servedModel ? ' · ' + esc(row.test.servedModel) : '')
+          : '')
+        + '</div>';
+    }
+    return '<span class="tag ' + cls + '">' + modelRowStateText(row) + '</span>' + extra;
+  }
+
+  function modelRowOf(raw) {
+    return Object.assign({}, raw, {
+      apiKey: '',
+      test: null,
+      // 后端保证是数组；旧响应或缓存里可能没有，兜一次免得 .indexOf 直接抛错
+      tasks: (raw && raw.tasks) ? raw.tasks.slice() : []
+    });
+  }
+
+  async function loadModels() {
+    if (!token()) { showMsg('请先输入 Personal Token', false); return; }
+    try {
+      modelView = await request('/digest/models');
+      modelRows = (modelView.providers || []).map(modelRowOf);
+      modelDirty = false;
+      document.getElementById('modelCard').style.display = 'block';
+      renderModels();
+    } catch (err) {
+      showMsg('通道配置读取失败：' + (err.message || err), false);
+    }
+  }
+
+  function renderModels() {
+    var view = modelView || {};
+    document.getElementById('modelSummary').textContent = view.summary || '';
+    var hints = view.hints || [];
+    document.getElementById('modelHints').innerHTML = hints.length
+      ? '<ul style="padding-left:18px">' + hints.map(function (hint) { return '<li>' + esc(hint) + '</li>'; }).join('') + '</ul>'
+      : '';
+    // 任务生效表：勾选框表达「愿意干什么」，这一行表达「结果落在哪」
+    var tasks = view.tasks || [];
+    document.getElementById('modelTaskbar').innerHTML = tasks.map(function (line) {
+      var cls = !line.usable ? 'tag bad' : (line.fallback ? 'tag run' : 'tag idle');
+      var text = line.usable
+        ? line.channel + ' · ' + line.model + (line.fallback ? '（回退）' : '')
+        : '没有可用通道';
+      return '<span class="' + cls + '" title="' + esc(line.note) + '">' + esc(line.label) + ' → ' + esc(text) + '</span>';
+    }).join(' ');
+
+    renderPrices(view.prices);
+
+    var html = '<thead><tr><th>启用</th><th>用途（勾选后只接这些活）</th><th>显示名</th><th>API Base</th><th>模型</th><th>API Key</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+    if (!modelRows.length) {
+      html += '<tr><td colspan="8" class="empty">还没有通道：点「添加通道」，或把旧的主 / 兜底通道导入进来</td></tr>';
+    }
+    modelRows.forEach(function (row, i) {
+      var taskKeys = row.tasks || [];
+      var taskHtml = MODEL_TASKS.map(function (task) {
+        return '<label style="display:inline-flex;align-items:center;gap:3px;margin-right:9px;font-size:12px;white-space:nowrap" title="'
+          + esc(task.hint) + '"><input type="checkbox" ' + (taskKeys.indexOf(task.key) >= 0 ? 'checked' : '')
+          + ' onchange="toggleModelTask(' + i + ',\'' + task.key + '\')">' + esc(task.label) + '</label>';
+      }).join('');
+      if (!taskKeys.length) taskHtml += '<span style="font-size:12px;color:#aab0c0">全部</span>';
+      html += '<tr>'
+        + '<td><input type="checkbox" ' + (row.enabled ? 'checked' : '')
+        + ' onchange="setModelField(' + i + ',\'enabled\',this.checked)"></td>'
+        + '<td>' + taskHtml + '</td>'
+        + '<td><input style="width:130px" value="' + esc(row.label) + '" placeholder="如 DeepSeek 主用"'
+        + ' oninput="setModelField(' + i + ',\'label\',this.value)"></td>'
+        + '<td><input style="width:200px" value="' + esc(row.apiBase) + '" placeholder="https://api.deepseek.com/v1"'
+        + ' oninput="setModelField(' + i + ',\'apiBase\',this.value)"></td>'
+        + '<td><input style="width:130px" value="' + esc(row.model) + '" placeholder="deepseek-chat"'
+        + ' oninput="setModelField(' + i + ',\'model\',this.value)"></td>'
+        + '<td><input style="width:200px" value="" placeholder="'
+        + esc(row.apiKeyMasked ? row.apiKeyMasked + '（留空 = 不修改）' : 'sk-…')
+        + '" oninput="setModelField(' + i + ',\'apiKey\',this.value)"></td>'
+        + '<td id="modelState' + i + '" style="max-width:260px">' + modelRowStateHtml(row) + '</td>'
+        + '<td style="white-space:nowrap">'
+        + '<button class="ghost" onclick="moveModelRow(' + i + ',-1)">上移</button> '
+        + '<button class="ghost" onclick="moveModelRow(' + i + ',1)">下移</button> '
+        + '<button class="ghost" onclick="testModelRow(' + i + ')">测试</button> '
+        + '<button class="ghost" onclick="removeModelRow(' + i + ')">删除</button>'
+        + '</td></tr>';
+    });
+    html += '</tbody>';
+    document.getElementById('modelTable').innerHTML = html;
+    document.getElementById('btnSaveModel').disabled = !modelDirty;
+    document.getElementById('btnImportModel').disabled =
+      !(view.legacy && view.legacy.configured) || modelRows.length > 0;
+  }
+
+  /** 勾/去掉某个用途（setModelField 只能改标量，数组要单独走这里） */
+  function toggleModelTask(index, taskKey) {
+    var row = modelRows[index];
+    if (!row) return;
+    row.tasks = row.tasks || [];
+    var at = row.tasks.indexOf(taskKey);
+    if (at >= 0) row.tasks.splice(at, 1); else row.tasks.push(taskKey);
+    modelDirty = true;
+    renderModels();
+  }
+
+  /** 输入框的改动只更新状态，不重画整表——重画会把焦点从正在输入的框里踢出去 */
+  function setModelField(index, field, value) {
+    if (!modelRows[index]) return;
+    modelRows[index][field] = value;
+    modelDirty = true;
+    document.getElementById('btnSaveModel').disabled = false;
+    var cell = document.getElementById('modelState' + index);
+    if (cell) cell.innerHTML = modelRowStateHtml(modelRows[index]);
+  }
+
+  function addModelRow() {
+    modelRows.push(modelRowOf({ key: '', label: '', apiBase: '', model: '', enabled: true,
+      hasKey: false, apiKeyMasked: '', usable: false, source: 'list', tasks: [], message: '' }));
+    modelDirty = true;
+    renderModels();
+  }
+
+  function removeModelRow(index) {
+    modelRows.splice(index, 1);
+    modelDirty = true;
+    renderModels();
+  }
+
+  function moveModelRow(index, delta) {
+    var target = index + delta;
+    if (target < 0 || target >= modelRows.length) return;
+    var moved = modelRows.splice(index, 1)[0];
+    modelRows.splice(target, 0, moved);
+    modelDirty = true;
+    renderModels();
+  }
+
+  /** 把旧的主 / 兜底通道搬进清单：Key 用掩码占位，保存时后端按标识回查、不会被掩码覆盖 */
+  function importLegacyChannels() {
+    var legacy = ((modelView && modelView.channels) || []).filter(function (row) { return row.source === 'legacy'; });
+    if (!legacy.length) { showMsg('旧通道里没有可导入的内容（至少要有 Key）', false); return; }
+    modelRows = legacy.map(modelRowOf);
+    modelDirty = true;
+    renderModels();
+    showMsg('已把旧的主 / 兜底通道填进清单，确认后点「保存通道」生效', true);
+  }
+
+  async function testModelRow(index) {
+    var row = modelRows[index];
+    if (!row) return;
+    var cell = document.getElementById('modelState' + index);
+    if (cell) cell.innerHTML = '<span class="tag run">测试中…</span>';
+    try {
+      row.test = await request('/digest/models/test', 'POST', {
+        key: row.key, label: row.label, apiBase: row.apiBase,
+        apiKey: (row.apiKey || '').trim(), model: row.model, enabled: row.enabled,
+        // 连通性与用途无关，带上只为与保存请求保持同一形状
+        tasks: row.tasks || []
+      });
+    } catch (err) {
+      row.test = { ok: false, message: err.message || String(err) };
+    }
+    if (cell) cell.innerHTML = modelRowStateHtml(row);
+  }
+
+  /** 单价表：来源 + 每行价格（只读展示，站长不必手填；价格涨了点这个按钮同步） */
+  function renderPrices(prices) {
+    var el = document.getElementById('modelPrices');
+    if (!prices) { el.innerHTML = ''; return; }
+    var fetched = prices.fetchedAt ? '（读取于 ' + esc(String(prices.fetchedAt).slice(0, 16).replace('T', ' ')) + '）' : '';
+    var html = '<span style="font-weight:600;color:#4c5480">单价：' + esc(prices.source) + fetched + '</span> ';
+    (prices.items || []).forEach(function (row) {
+      html += '<span style="display:inline-block;background:#f4f6ff;border-radius:8px;padding:3px 9px;margin:0 6px 4px 0" title="'
+        + esc(row.description) + '">' + esc(row.model) + '：' + sym(row.currency) + '命中 ' + esc(row.cacheHit)
+        + ' / 未命中 ' + esc(row.cacheMiss) + ' / 输出 ' + esc(row.output)
+        + ' <span style="color:#aab0c0">空闲 ×' + esc(row.offPeakRatio) + '</span></span>';
+    });
+    html += '<div class="tip" style="margin-top:2px">' + esc(prices.peakRule || '')
+      + '　<a href="' + esc(prices.officialUrl) + '" target="_blank" rel="noopener">官方价目表</a></div>';
+    el.innerHTML = html;
+  }
+
+  /** 从官网读一次单价（官方不提供价格 API，只能读那份价目表页面） */
+  async function refreshPrices() {
+    if (!token()) { showMsg('请先输入 Personal Token', false); return; }
+    document.getElementById('btnPrices').disabled = true;
+    try {
+      var result = await request('/digest/models/prices/refresh', 'POST');
+      if (result && result.prices) {
+        if (!modelView) modelView = {};
+        modelView.prices = result.prices;
+        renderPrices(result.prices);
+      }
+      showMsg((result && result.message) || '已从官网刷新单价', true);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      document.getElementById('btnPrices').disabled = false;
+    }
+  }
+
+  /**
+   * 查账户余额（DeepSeek 官方 /user/balance，不消耗 token）。
+   * 余额是账号级数据，用来校验报告里的估算；不支持的端点会显示「不支持」，属正常现象。
+   */
+  async function loadBalances() {
+    if (!token()) { showMsg('请先输入 Personal Token', false); return; }
+    document.getElementById('btnBalances').disabled = true;
+    try {
+      var result = await request('/digest/models/balance');
+      var items = (result && result.items) || [];
+      document.getElementById('modelBalances').innerHTML = items.map(function (item) {
+        var body = item.ok
+          ? '余额 ' + sym(item.currency) + esc(item.totalBalance)
+            + (item.message ? '（' + esc(item.message) + '）' : '')
+          : '<span style="color:#d94a4a">' + esc(item.message || '查询失败') + '</span>';
+        return '<span style="display:inline-block;background:#f4f6ff;border-radius:8px;padding:3px 9px;margin:0 6px 4px 0">'
+          + '<b>' + esc(item.label) + '</b> ' + body + '</span>';
+      }).join('');
+      showMsg((result && result.message) || '余额查询完成', true);
+    } catch (err) {
+      showMsg('余额查询失败：' + (err.message || err), false);
+    } finally {
+      document.getElementById('btnBalances').disabled = false;
+    }
+  }
+
+  function sym(currency) {
+    var value = String(currency || '').trim().toUpperCase();
+    if (value === 'CNY' || value === 'RMB' || value === '¥') return '¥';
+    if (value === 'USD' || value === '$') return '$';
+    return value ? value + ' ' : '';
+  }
+
+  async function testAllModels() {
+    if (!modelRows.length) return;
+    document.getElementById('btnTestAllModel').disabled = true;
+    try {
+      for (var i = 0; i < modelRows.length; i++) {
+        await testModelRow(i);
+      }
+      var failed = modelRows.filter(function (row) { return row.test && !row.test.ok; }).length;
+      showMsg(failed ? '测试完成：' + failed + ' 条不通（看每行状态列的结论）'
+        : '测试完成：' + modelRows.length + ' 条通道都连通', !failed);
+    } finally {
+      document.getElementById('btnTestAllModel').disabled = false;
+    }
+  }
+
+  async function saveModels() {
+    if (!modelDirty) { showMsg('没有需要保存的修改', false); return; }
+    document.getElementById('btnSaveModel').disabled = true;
+    try {
+      var view = await request('/digest/models', 'PUT', {
+        providers: modelRows.map(function (row) {
+          return {
+            key: row.key || '',
+            label: row.label || '',
+            apiBase: row.apiBase || '',
+            // 留空 = 不修改已保存的 Key
+            apiKey: (row.apiKey || '').trim(),
+            model: row.model || '',
+            enabled: !!row.enabled,
+            // 用途必须带上：漏传等于「保存一下勾选就没了」
+            tasks: (row.tasks || []).slice()
+          };
+        })
+      });
+      modelView = view;
+      modelRows = (view.providers || []).map(modelRowOf);
+      modelDirty = false;
+      renderModels();
+      showMsg(view.summary || '通道已保存', true);
+    } catch (err) {
+      showMsg('保存通道失败：' + (err.message || err), false);
+      document.getElementById('btnSaveModel').disabled = false;
+    }
   }
 
   async function load() {
@@ -333,7 +856,7 @@
       return;
     }
     var html = '<table><thead><tr><th>日期</th><th>触发</th><th>状态</th><th>发布</th><th>精选</th><th>耗时</th>' +
-      '<th>文章</th><th>说明</th><th>操作</th></tr></thead><tbody>';
+      '<th>花费</th><th>文章</th><th>说明</th><th>操作</th></tr></thead><tbody>';
     items.forEach(function (it) {
       var url = primaryPostUrl(it);
       var count = postsOf(it).length;
@@ -347,6 +870,7 @@
         '<td><span class="tag ' + publishClass(it.publishState, window.__running) + '">' + publishText(it.publishState, window.__running) + '</span></td>' +
         '<td>' + (it.articleCount == null ? '-' : esc(it.articleCount)) + '</td>' +
         '<td>' + (it.durationMs ? Math.round(it.durationMs / 1000) + 's' : '-') + '</td>' +
+        '<td title="估算：按设置里的模型单价 × 实际 token">' + (it.aiCostText ? esc(it.aiCostText) : '<span class="mono">-</span>') + '</td>' +
         '<td>' + link + '</td>' +
         '<td style="max-width:300px" class="reason">' + (it.error ? '<span class="fail-reason" title="' + esc(it.error) + '">' + esc(it.error) + '</span>' : '<span class="mono">-</span>') + '</td>' +
         '<td><button class="ghost" onclick="openDetail(\'' + esc(it.name) + '\')">详情</button> ' +
@@ -396,9 +920,18 @@
       var chips = [];
       if (s.totalFeeds) chips.push('扫描源 ' + s.successFeeds + '/' + s.totalFeeds);
       if (s.totalArticles) chips.push('抓取 ' + s.totalArticles + ' 篇');
+      if (s.dedupedCount) chips.push('去重 -' + s.dedupedCount + ' 篇');
       if (s.selected) chips.push('精选 ' + s.selected + ' 篇');
+      var required = s.requiredCategories || [];
+      var missing = s.missingCategories || [];
+      if (s.minPerCategory > 0 && required.length) {
+        chips.push('分类覆盖 ' + (required.length - missing.length) + '/' + required.length);
+      }
+      if (s.categorySummary) chips.push('分类分布 ' + s.categorySummary);
+      if (s.supplementCount) chips.push('补位 ' + s.supplementCount + ' 篇');
       if (s.actualAvgWords) chips.push('平均 ' + s.actualAvgWords + ' 字');
       if (s.imageCount != null) chips.push('配图 ' + s.imageCount + ' 张');
+      if (s.placeholderCoverCount) chips.push('标题卡片 ' + s.placeholderCoverCount + ' 张');
 
       var posts = postsOf(d.summary);
       var postsHtml = '';
@@ -416,8 +949,15 @@
         postsHtml += '</div>';
       }
 
+      var costHtml = costBlockHtml(s.aiCost);
+
+      var gapHtml = (missing.length && s.minPerCategory > 0)
+        ? '<p class="tip" style="color:#b8860b">⚠️ ' + missing.length + ' 个分类没凑够 ' +
+          s.minPerCategory + ' 篇（' + esc(missing.join('、')) + '）</p>'
+        : '';
+
       var body = head + (chips.length ? '<p class="tip">' + esc(chips.join(' | ')) + '</p>' : '') +
-        postsHtml + '<pre class="md">' + esc(d.markdown || '（没有正文）') + '</pre>';
+        costHtml + gapHtml + postsHtml + '<pre class="md">' + esc(d.markdown || '（没有正文）') + '</pre>';
       var el = document.getElementById('detail');
       el.innerHTML = body;
       el.style.display = 'block';
@@ -425,6 +965,45 @@
     } catch (err) {
       showMsg(err.message || String(err), false);
     }
+  }
+
+  /** 本轮 AI 花费：按任务拆解 + 各通道余额前后 + 口径说明 */
+  function costBlockHtml(cost) {
+    if (!cost || !cost.calls) return '';
+    var html = '<div style="background:#fbfcff;border:1px solid #eef1fb;border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+      + '<div style="font-size:12.5px;font-weight:700;color:#3c4160;margin-bottom:6px">💰 本轮 AI 花费（估算）';
+    if (cost.totals && cost.totals.length) {
+      html += ' <span style="color:#17a05e">≈' + cost.totals.map(function (m) {
+        return sym(m.currency) + esc(m.amount);
+      }).join(' + ') + '</span>';
+    }
+    html += '</div>';
+
+    (cost.tasks || []).forEach(function (row) {
+      html += '<div style="font-size:12.5px;color:#4c5480;padding:2px 0">' +
+        esc(row.label || row.task) + '：' + row.calls + ' 次 · 输入 ' + row.inputTokens +
+        ' / 输出 ' + row.outputTokens + ' token · ' +
+        (row.priced ? sym(row.currency) + esc(row.amount)
+          : '<span style="color:#b8860b">未配置单价' + (row.model ? '（模型 ' + esc(row.model) + '）' : '') + '</span>') +
+        '</div>';
+    });
+
+    (cost.channels || []).forEach(function (row) {
+      var balance = '';
+      if (row.balanceBefore && row.balanceAfter) {
+        balance = ' · 余额 ' + esc(row.balanceBefore) + ' → ' + esc(row.balanceAfter) +
+          (row.balanceDelta ? '（账号实际扣减 ' + sym(row.balanceCurrency) + esc(row.balanceDelta) + '）' : '');
+      } else if (row.balanceNote) {
+        balance = ' · <span style="color:#b0b5c0">' + esc(row.balanceNote) + '</span>';
+      }
+      html += '<div class="tip" style="margin:2px 0">通道 ' + esc(row.label) + ' · ' + row.calls +
+        ' 次 · ' + row.totalTokens + ' token' + balance + '</div>';
+    });
+
+    if (cost.note) {
+      html += '<p class="tip" style="margin:4px 0 0">' + esc(cost.note) + '</p>';
+    }
+    return html + '</div>';
   }
 
   function closeDetail() {

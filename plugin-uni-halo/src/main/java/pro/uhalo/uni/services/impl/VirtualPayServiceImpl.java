@@ -33,14 +33,16 @@ import pro.uhalo.uni.infra.PayOrderPersistence;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.AiContentEntitlementService;
 import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.TicketRewardService;
 import pro.uhalo.uni.services.VirtualPayService;
 import pro.uhalo.uni.services.WxUserService;
+import pro.uhalo.uni.utils.AiContentConfigHelper;
 import pro.uhalo.uni.utils.LevelConfigHelper;
 import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.utils.OwnedOutfitParser;
-import pro.uhalo.uni.utils.TokenManager;
+import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import pro.uhalo.uni.utils.WxRequestParser;
 import pro.uhalo.uni.utils.WxUserIds;
 import pro.uhalo.uni.utils.WxUserLookup;
@@ -50,6 +52,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -113,6 +116,19 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private static final String STATUS_DELIVERED = "delivered";
     private static final String STATUS_CLOSED = "closed";
     /**
+     * 失效状态：待支付订单超过有效期后的展示状态。
+     *
+     * <p><b>只在下发时派生，不落库</b>：用户可能在有效期最后一分钟付款、而微信的发货推送
+     * 迟到几分钟才到——如果把订单在库里改成终态，那笔钱对应的权益就可能发不出去。
+     * 派生状态不会影响发货链路（发货只按 outTradeNo 找订单，不看这个展示状态），
+     * 迟到的推送照样能把订单补成「已到账」。</p>
+     */
+    static final String STATUS_EXPIRED = "expired";
+
+    /** 待支付订单的有效期：超过这个时间未付款即视为已失效（前端文案与此保持一致） */
+    static final Duration PENDING_EXPIRE = Duration.ofMinutes(15);
+
+    /**
      * 终态：已支付但权益不可发放（重复购买），需站长人工退款。
      *
      * <p>与 {@link #STATUS_PENDING} 分开是为了让兜底查单（按 status=pending 筛选）
@@ -122,6 +138,9 @@ public class VirtualPayServiceImpl implements VirtualPayService {
 
     /** 会员卡发货的流水动作码：与 purchase_content_ticket 区分，便于对账时识别会员收入 */
     static final String PURCHASE_MEMBERSHIP_ACTION = "purchase_membership";
+
+    /** AI 定制内容发货的流水动作码（同样是为了对账时能按收入类型拆开） */
+    static final String PURCHASE_AI_CONTENT_ACTION = "purchase_ai_content";
     private static final String NEEDS_REFUND_REMARK_PREFIX = "重复购买：权益已拥有，未重复发放，需人工退款";
 
     /** 后台订单列表每页最大条数（防止一次拉爆内存） */
@@ -152,9 +171,10 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private final PayOrderPersistence payOrderPersistence;
     private final PointsPersistence pointsPersistence;
     private final WxUserService wxUserService;
-    private final TokenManager tokenManager;
+    private final WxAccessTokenProvider wxAccessTokenProvider;
     private final TicketRewardService ticketRewardService;
     private final MembershipService membershipService;
+    private final AiContentEntitlementService aiContentEntitlementService;
 
     /**
      * 同一订单的在途发货任务。
@@ -436,6 +456,19 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 if (!normalizedOpenid.equals(order.getOpenid())) {
                     return Mono.error(new WxAuthException("无权查询该订单"));
                 }
+                if (isPendingExpired(order)) {
+                    // 已过有效期：不必再去微信查单（那张单早已不能用），直接告诉前端已失效。
+                    // 注意：这只是展示口径——若用户其实在有效期内付了款、发货推送迟到，
+                    // 推送链路仍会把订单补成「已到账」（发货只看 outTradeNo，不看这个状态）。
+                    return Mono.just(QueryPayOrderResponse.builder()
+                        .outTradeNo(order.getOutTradeNo())
+                        .status(STATUS_EXPIRED)
+                        .delivered(false)
+                        .goodsType(order.getGoodsType())
+                        .goodsName(order.getGoodsName())
+                        .message("订单已失效（超过 " + PENDING_EXPIRE.toMinutes() + " 分钟未支付）")
+                        .build());
+                }
                 if (STATUS_PENDING.equals(order.getStatus())) {
                     // 前端轮询时顺带做一次查单兜底，推送丢失也能尽快到账
                     return syncAndDeliver(order)
@@ -682,11 +715,12 @@ public class VirtualPayServiceImpl implements VirtualPayService {
             case "content_ticket" -> grantContentTickets(order, earnKey, wxUserId);
             case "outfit" -> grantOutfit(order, earnKey, wxUserId, order.getGoodsStyle());
             case "membership" -> grantMembership(order, earnKey, wxUserId);
+            case "ai_content" -> grantAiContent(order, earnKey, wxUserId);
             case "bundle" -> grantBundle(order, earnKey, wxUserId);
             default -> {
                 log.error("虚拟支付发货跳过：订单 {} 道具类型非法或缺失：{}（可配置类型为 "
-                        + "content_ticket/outfit/membership/bundle；dashboard 与 publish_ticket 已下架，"
-                        + "仅用于历史订单履约）",
+                        + "content_ticket/outfit/membership/ai_content/bundle；dashboard 与 "
+                        + "publish_ticket 已下架，仅用于历史订单履约）",
                     order.getOutTradeNo(), type.isEmpty() ? "(未填写)" : type);
                 // 未知类型同样属于「重试不会成功」，转终态而不是无限重试
                 yield Mono.error(new NonDeliverableOrderException(
@@ -774,6 +808,64 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 return Mono.just(0);
             })
             .then();
+    }
+
+    /**
+     * AI 定制内容：一次性买断 + 有效期（与会员卡同构）。
+     *
+     * <p>发货只做一件事——延长 {@code UserPoints.aiContentExpireAt}：用户能配什么、
+     * 简报怎么生成，全部由他自己的偏好与站长配置决定，不在这里写死。
+     * 天数取商品「道具数量」，填 0 表示永久买断（用远期时间表示，见
+     * {@code AiContentConfigHelper.PERMANENT_EXPIRE_AT}）。</p>
+     */
+    private Mono<Void> grantAiContent(PayOrder order, String earnKey, String wxUserId) {
+        return aiContentEntitlementService.loadConfig()
+            .flatMap(config -> {
+                if (!config.isEnabled()) {
+                    log.error("AI 定制内容发货失败：订单 {} 使用了 ai_content 类型，"
+                            + "但「AI 定制内容」配置未开启（请先在插件设置中开启，"
+                            + "否则用户付钱后拿不到权益）",
+                        order.getOutTradeNo());
+                    return Mono.error(new NonDeliverableOrderException(
+                        "AI 定制内容功能未开启：请在插件设置中开启后重试发货"));
+                }
+                var days = order.getGoodsValue() == null ? 0 : order.getGoodsValue();
+                return pointsPersistence.getOrCreateAccount(order.getOpenid())
+                    .flatMap(account -> {
+                        var record = pointsPersistence.newRecord(order.getOpenid(),
+                            PURCHASE_AI_CONTENT_ACTION, 0, safeBalance(account),
+                            "道具直购 · AI 定制内容 " + (days > 0 ? days + " 天" : "永久"),
+                            order.getGoodsId(), earnKey, wxUserId);
+                        // 幂等闸门：先写流水，成功后改账户（与其它发货分支同一顺序）
+                        return pointsPersistence.appendRecord(record)
+                            .then(pointsPersistence.getOrCreateAccount(order.getOpenid()))
+                            .flatMap(latest -> {
+                                if (StringUtils.hasText(wxUserId)
+                                    && !wxUserId.equals(latest.getWxUserId())) {
+                                    latest.setWxUserId(wxUserId);
+                                }
+                                latest.setAiContentExpireAt(
+                                    AiContentConfigHelper.extend(latest.getAiContentExpireAt(),
+                                        days));
+                                return pointsPersistence.saveAccount(latest)
+                                    .doOnNext(saved -> log.info(
+                                        "AI 定制内容权益已发放：outTradeNo={}, 购买 {} 天, 到期={}",
+                                        order.getOutTradeNo(),
+                                        days > 0 ? String.valueOf(days) : "永久",
+                                        AiContentConfigHelper.formatExpireAt(
+                                            saved.getAiContentExpireAt())))
+                                    .then();
+                            })
+                            .onErrorResume(ex -> {
+                                if (isDuplicateNameError(ex)) {
+                                    log.info("虚拟支付 AI 定制内容流水已存在，跳过重复发放：earnKey={}",
+                                        earnKey);
+                                    return Mono.empty();
+                                }
+                                return Mono.error(ex);
+                            });
+                    });
+            });
     }
 
     /**
@@ -1247,6 +1339,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private static MyPayOrderItemDTO toMyOrderItem(PayOrder order) {
         var quantity = order.getQuantity() == null ? 1 : Math.max(1, order.getQuantity());
         var price = order.getPrice() == null ? 0L : Math.max(0L, order.getPrice());
+        // 待支付超过有效期的订单，在下发时改写成「已失效」（库里保持 pending，见 STATUS_EXPIRED 注释）
+        var expired = isPendingExpired(order);
         return MyPayOrderItemDTO.builder()
             .outTradeNo(order.getOutTradeNo())
             .goodsName(StringUtils.hasText(order.getGoodsName()) ? order.getGoodsName() : "权益道具")
@@ -1255,7 +1349,7 @@ public class VirtualPayServiceImpl implements VirtualPayService {
             .price(price)
             .quantity(quantity)
             .amount(price * quantity)
-            .status(order.getStatus())
+            .status(expired ? STATUS_EXPIRED : order.getStatus())
             .statusLabel(statusLabelOf(order))
             .paidTime(formatOrderTime(order.getPaidTime()))
             .createTime(formatOrderTime(order.getCreateTime()))
@@ -1271,10 +1365,27 @@ public class VirtualPayServiceImpl implements VirtualPayService {
      * <p>文案取向：告诉用户「现在该怎么办」，而不是只报一个状态名。
      * 尤其 pending 必须说清「已扣款会补发」——小程序支付回调丢失时用户最慌的就是这个。</p>
      */
+    /**
+     * 待支付订单是否已过有效期。
+     *
+     * <p>只对 pending 生效：已到账/需退款/已关闭都是终态，不受时间影响。
+     * 没有创建时间的旧订单按「不失效」处理——宁可多显示一条待支付，也不要凭空空判死一笔订单。</p>
+     */
+    static boolean isPendingExpired(PayOrder order) {
+        if (order == null || !STATUS_PENDING.equals(order.getStatus())) {
+            return false;
+        }
+        var createTime = order.getCreateTime();
+        return createTime != null && createTime.plus(PENDING_EXPIRE).isBefore(Instant.now());
+    }
+
     private static String statusLabelOf(PayOrder order) {
+        if (isPendingExpired(order)) {
+            return "已失效（超过 " + PENDING_EXPIRE.toMinutes() + " 分钟未支付，可重新下单）";
+        }
         var status = order.getStatus() == null ? "" : order.getStatus();
         return switch (status) {
-            case STATUS_PENDING -> "待支付（若已扣款请稍候，系统会自动补发到账）";
+            case STATUS_PENDING -> "待支付（" + PENDING_EXPIRE.toMinutes() + " 分钟内有效；若已扣款请稍候，系统会自动补发到账）";
             case STATUS_DELIVERED -> "已到账";
             case STATUS_CLOSED -> "已关闭";
             case STATUS_NEEDS_REFUND -> "需人工处理（该笔权益未发放，请联系站长退款）";
@@ -1444,35 +1555,16 @@ public class VirtualPayServiceImpl implements VirtualPayService {
         return false;
     }
 
+    /**
+     * 取 access_token。
+     *
+     * <p>缓存与换取交给 {@link WxAccessTokenProvider}（全插件共用一份，避免多处缓存互相挤掉）；
+     * 错误类型保持 {@code WxAuthException}，支付接口对外的错误语义不变。</p>
+     */
     private Mono<String> ensureAccessToken() {
-        var token = tokenManager.getToken();
-        if (StringUtils.hasText(token)) {
-            return Mono.just(token);
-        }
-        return loadWxAppConfig()
-            .flatMap(config -> {
-                if (!StringUtils.hasText(config.appId()) || !StringUtils.hasText(config.appSecret())) {
-                    return Mono.error(new WxAuthException("微信小程序 AppID 或 AppSecret 未配置"));
-                }
-                var url = TOKEN_URL + "?grant_type=client_credential&appid=" + config.appId()
-                    + "&secret=" + config.appSecret();
-                // String + 手动解析，避开部分 Spring/Jackson 组合下 bodyToMono(JsonNode.class) 的
-                // "Type definition error: [simple type, class com.fasterxml.jackson.databind.JsonNode]" 崩溃
-                return WEB_CLIENT.get().uri(url).retrieve().bodyToMono(String.class)
-                    .map(this::parseJsonNode)
-                    .flatMap(body -> {
-                        if (body.hasNonNull("errcode") && body.get("errcode").asInt() != 0) {
-                            return Mono.error(new WxAuthException("微信 access_token 获取失败："
-                                + body.path("errmsg").asText("请检查 appId/AppSecret 配置")));
-                        }
-                        var accessToken = body.path("access_token").asText("");
-                        if (!StringUtils.hasText(accessToken)) {
-                            return Mono.error(new WxAuthException("微信 access_token 为空，请检查 appId/AppSecret 配置"));
-                        }
-                        tokenManager.setToken(accessToken, body.path("expires_in").asInt(7200));
-                        return Mono.just(accessToken);
-                    });
-            });
+        return wxAccessTokenProvider.token()
+            .onErrorMap(IllegalStateException.class,
+                ex -> new WxAuthException(ex.getMessage()));
     }
 
     private Mono<WxAppContext> loadWxAppConfig() {
@@ -1517,6 +1609,7 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 //   content_ticket 阅读券（解锁付费文章）
                 //   outfit         装扮（一次性拥有或限时）
                 //   membership     会员卡（单次购买的有效期权益，官方适用场景明确包含）
+                //   ai_content     AI 定制内容（单次购买的有效期权益：用户自配偏好 → 每日简报）
                 //   bundle         套餐（一条商品含多种权益，子项逐个发放）
                 //
                 // 已下架但 grantGoods 仍保留发货分支的类型（仅用于历史订单履约，
@@ -1525,7 +1618,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                 //   publish_ticket 发布券 —— 普通用户不能发表瞬间（仅博主可发），
                 //                            该券没有任何消费点，卖出去用户也用不上，故下架
                 var isGoods = "content_ticket".equals(type) || "outfit".equals(type)
-                    || "membership".equals(type) || "bundle".equals(type);
+                    || "membership".equals(type) || "ai_content".equals(type)
+                    || "bundle".equals(type);
                 if (valid && isGoods) {
                     var items = "bundle".equals(type) ? parseGoodsItems(item) : List.<PayGoodsItemDTO>of();
                     var typeValid = switch (type) {
@@ -1553,7 +1647,7 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                     }
                 } else if (valid) {
                     log.warn("虚拟支付商品被忽略：goodsId={}, type={}（可配置类型为 "
-                            + "content_ticket/outfit/membership/bundle；"
+                            + "content_ticket/outfit/membership/ai_content/bundle；"
                             + "数据看板高级版已改为纯积分兑换权益，发布券已下架，且不支持积分充值）",
                         goodsId, type.isEmpty() ? "(未填写)" : type);
                 }

@@ -67,6 +67,9 @@ public class PayStatsDTO {
 
     private long contentTicketOrders;
 
+    /** 已售「AI 定制内容」数量（付费权益：用户自配关注方向 → 每日简报） */
+    private long aiContentSold;
+
     /** 近 14 天趋势（含今天，升序） */
     private List<PayStatsTrendItemDTO> trend;
 

@@ -20,6 +20,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -199,6 +201,122 @@ class DigestPostWriterTest {
         // 而且分类与标签是「不存在就创建」，不是忽略
         assertThat(createdCategoryNames).containsExactly("ai-ml");
         assertThat(createdTagNames).containsExactly("llm", "transformer");
+    }
+
+    /**
+     * map 模式：AI 的分类 key 按站长配置的映射换成站点分类名，只匹配不创建。
+     *
+     * <p>这条路径串起了「配置 → DTO → 发布器 → spec.categories」，
+     * 是「分类不再由 AI 直接决定站点分类」这个能力的落点。</p>
+     */
+    @Test
+    void shouldMapAiCategoryToConfiguredSiteCategory() {
+        var capturedPost = new java.util.concurrent.atomic.AtomicReference<Post>();
+        var updatedPost = new java.util.concurrent.atomic.AtomicReference<Post>();
+        var draftCategories = new java.util.concurrent.atomic.AtomicReference<java.util.List<String>>();
+        when(client.create(any(Post.class))).thenAnswer(invocation -> {
+            Post draft = invocation.getArgument(0);
+            capturedPost.set(draft);
+            draftCategories.set(draft.getSpec().getCategories());
+            return Mono.just(draft);
+        });
+        when(client.create(any(Snapshot.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        lenient().when(client.fetch(eq(Post.class), anyString())).thenAnswer(invocation -> {
+            Post post = capturedPost.get();
+            var status = new Post.PostStatus();
+            status.setPhase(Post.PostPhase.PUBLISHED.name());
+            post.setStatus(status);
+            return Mono.just(post);
+        });
+        lenient().when(client.update(any(Post.class))).thenAnswer(invocation -> {
+            updatedPost.set(invocation.getArgument(0));
+            return Mono.just(invocation.getArgument(0));
+        });
+        // 站点上已有「技术」这个分类（name=tech），但没有任何叫 engineering 的分类
+        lenient().when(client.listAll(any(), any(), any())).thenReturn(
+            reactor.core.publisher.Flux.just(category("tech", "技术", "tech")));
+
+        var catalog = pro.uhalo.uni.utils.DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("engineering", "工程", "⚙️", "工程相关",
+                "技术")));
+        var dto = HaloPostPublishDTO.builder()
+            .title("单篇精选")
+            .slug("single-post")
+            .markdown("# 标题\n\n正文一段")
+            .owner("lxfzzw")
+            .cover("")
+            .categoryNames(List.of())
+            .tagNames(List.of())
+            .aiCategories(List.of("engineering"))
+            .catalog(catalog)
+            .categoryMode("map")
+            .build();
+
+        writer.writeAndPublish(dto).as(StepVerifier::create)
+            .assertNext(result -> assertThat(result.getState()).isEqualTo("PUBLISHED"))
+            .verifyComplete();
+
+        assertThat(draftCategories.get()).containsExactly("tech");
+        verify(client, never()).create(any(run.halo.app.core.extension.content.Category.class));
+        assertThat(updatedPost.get()).isNotNull();
+    }
+
+    /** reuse 模式：站点上没有的 key 直接不打分类，也不会创建。 */
+    @Test
+    void shouldSkipUnknownCategoryInReuseMode() {
+        var capturedPost = new java.util.concurrent.atomic.AtomicReference<Post>();
+        when(client.create(any(Post.class))).thenAnswer(invocation -> {
+            Post draft = invocation.getArgument(0);
+            capturedPost.set(draft);
+            return Mono.just(draft);
+        });
+        when(client.create(any(Snapshot.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        lenient().when(client.fetch(eq(Post.class), anyString())).thenAnswer(invocation -> {
+            Post post = capturedPost.get();
+            var status = new Post.PostStatus();
+            status.setPhase(Post.PostPhase.PUBLISHED.name());
+            post.setStatus(status);
+            return Mono.just(post);
+        });
+        lenient().when(client.update(any(Post.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        lenient().when(client.listAll(any(), any(), any())).thenReturn(
+            reactor.core.publisher.Flux.just(category("tech", "技术", "tech")));
+
+        var dto = HaloPostPublishDTO.builder()
+            .title("单篇精选")
+            .slug("single-post")
+            .markdown("# 标题\n\n正文一段")
+            .owner("lxfzzw")
+            .cover("")
+            .categoryNames(List.of())
+            .tagNames(List.of())
+            .aiCategories(List.of("brand-new"))
+            .categoryMode("reuse")
+            .build();
+
+        writer.writeAndPublish(dto).as(StepVerifier::create)
+            .assertNext(result -> assertThat(result.getState()).isEqualTo("PUBLISHED"))
+            .verifyComplete();
+
+        // 分类空着总好过凭空造一个：这正是站长选「只复用已有」时想要的
+        assertThat(capturedPost.get().getSpec().getCategories()).isEmpty();
+        verify(client, never()).create(any(run.halo.app.core.extension.content.Category.class));
+    }
+
+    private static run.halo.app.core.extension.content.Category category(String name,
+        String displayName, String slug) {
+        var category = new run.halo.app.core.extension.content.Category();
+        var metadata = new run.halo.app.extension.Metadata();
+        metadata.setName(name);
+        category.setMetadata(metadata);
+        var spec = new run.halo.app.core.extension.content.Category.CategorySpec();
+        spec.setDisplayName(displayName);
+        spec.setSlug(slug);
+        category.setSpec(spec);
+        return category;
     }
 
     @Test

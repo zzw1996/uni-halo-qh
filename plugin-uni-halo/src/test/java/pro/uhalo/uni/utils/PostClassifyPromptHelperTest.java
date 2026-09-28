@@ -161,4 +161,33 @@ class PostClassifyPromptHelperTest {
         assertThat(PostClassifyPromptHelper.normalizeCategory("nope")).isEmpty();
         assertThat(PostClassifyPromptHelper.normalizeCategory("Engineering")).isEqualTo("engineering");
     }
+
+    /**
+     * 清单换成站长自己那套后，主题列表与校验口径都要跟着换。
+     *
+     * <p>「AI 说了个清单外的分类」仍然判为未给出有效主题（返回空串）而不是悄悄塞进 other：
+     * 预览页要把它显示出来让站长手工处理，否则他会以为已经归好类了。</p>
+     */
+    @Test
+    void catalogShouldDriveThemeListAndValidation() {
+        var catalog = DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("wechat", "微信生态", "💬",
+                "小程序、公众号、微信支付相关", ""),
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("other", "其他", "📝", "都不太适合的", "")));
+
+        var prompt = PostClassifyPromptHelper.buildPrompt(List.of(candidate("标题", "", null)),
+            catalog);
+        assertThat(prompt).contains("## 主题（必须从以下选一个）");
+        assertThat(prompt).contains("- wechat: 小程序、公众号、微信支付相关");
+        assertThat(prompt).doesNotContain("ai-ml");
+        assertThat(prompt).contains("\"category\": \"wechat\"");
+
+        assertThat(PostClassifyPromptHelper.normalizeCategory("wechat", catalog)).isEqualTo("wechat");
+        assertThat(PostClassifyPromptHelper.normalizeCategory("ai-ml", catalog)).isEmpty();
+        assertThat(PostClassifyPromptHelper.normalizeCategory("nonsense", catalog)).isEmpty();
+
+        var verdicts = PostClassifyPromptHelper.parse("""
+            {"results":[{"index":0,"category":"ai-ml","keywords":["Rust"]}]}""", 1, catalog);
+        assertThat(verdicts.get(0).hasCategory()).as("清单外的主题按「未判定」处理").isFalse();
+    }
 }

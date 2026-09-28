@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import pro.uhalo.uni.constants.Constants;
+import pro.uhalo.uni.dto.DigestCategoryViewDTO;
 import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.dto.DigestPreflightItemDTO;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
@@ -16,7 +17,9 @@ import pro.uhalo.uni.services.DigestMarkdownRenderer;
 import pro.uhalo.uni.services.DigestPostWriter;
 import pro.uhalo.uni.services.DigestTaxonomyService;
 import pro.uhalo.uni.services.HaloPostPublisher;
+import pro.uhalo.uni.utils.DigestCategoryCatalog;
 import pro.uhalo.uni.utils.DigestConfigHelper;
+import pro.uhalo.uni.utils.DigestCoverGenerator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -258,8 +261,34 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
                 items.add(tuple.getT2());
                 items.addAll(tuple.getT3());
                 items.add(tuple.getT4());
+                items.add(checkCoverFallback(config));
                 return items;
             });
+    }
+
+    /**
+     * 配图兜底自检：生成的标题卡片用的哪个字体。
+     *
+     * <p>中文字体是内置的（{@code digest/cover-font.otf}），所以正常情况下一定是 ✔；
+     * 这里报出来是为了让站长知道卡片上的中文靠谁渲染——真出问题时（例如发行包少了资源）
+     * 也能一眼看出是字体没加载上，而不是去猜图片为什么没字。</p>
+     */
+    private DigestPreflightItemDTO checkCoverFallback(DigestConfigDTO config) {
+        if (!config.isImageEnabled() || !config.isRequireImage()) {
+            return preflightItem("配图兜底", true, "未开启「只发布带封面图的文章」，用不到兜底封面");
+        }
+        var mode = config.getCoverFallbackMode();
+        if (!DigestConfigHelper.COVER_FALLBACK_PLACEHOLDER.equals(mode)) {
+            return preflightItem("配图兜底", true,
+                "配不到原文头图时按设置处理：" + DigestConfigHelper.coverFallbackLabel(mode));
+        }
+        return DigestCoverGenerator.cjkAvailable()
+            ? preflightItem("配图兜底", true, "配不到头图时生成标题卡片封面，字体："
+                + DigestCoverGenerator.fontSourceLabel())
+            : preflightItem("配图兜底", false,
+                "内置中文字体没能加载，且服务器上也没有中文字体：生成的标题卡片不会包含中文标题"
+                    + "（日期与来源仍会显示）。请确认发行包里带着 digest/cover-font.otf，"
+                    + "或在服务器安装 fonts-noto-cjk 后重启 Halo。");
     }
 
     /**
@@ -338,25 +367,57 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
         var tags = DigestConfigHelper.splitNames(config.getPostTags());
         return Mono.zip(
                 taxonomy.resolveExistingCategories(categories),
-                taxonomy.resolveExistingTags(tags))
+                taxonomy.resolveExistingTags(tags),
+                taxonomy.categoryMatchNames())
             .map(tuple -> List.of(
                 refItem("额外附加分类", categories, tuple.getT1()),
                 refItem("额外附加标签", tags, tuple.getT2()),
-                autoRefItem(config)))
+                autoRefItem(config),
+                categoryCatalogItem(config, tuple.getT3())))
             .defaultIfEmpty(List.of());
+    }
+
+    /**
+     * 分类清单自检项。
+     *
+     * <p>把「清单里每一行发布时会落到哪里」的结论直接摆进自检：reuse / map 模式下
+     * 匹配不上的行是静默跳过的，不提示就等于让站长以为配置已经生效了。</p>
+     */
+    private static DigestPreflightItemDTO categoryCatalogItem(DigestConfigDTO config,
+        java.util.Set<String> existingNames) {
+        var view = DigestCategoryViewDTO.of(
+            DigestCategoryCatalog.from(config.getDigestCategories()),
+            config.getCategoryMode(), config.getUnknownCategoryPolicy(), existingNames);
+        var message = new StringBuilder(view.source()).append(" · ").append(view.modeLabel())
+            .append(" · 共 ").append(view.count()).append(" 个分类")
+            .append(DigestConfigHelper.UNKNOWN_CATEGORY_DROP.equalsIgnoreCase(
+                view.unknownCategoryPolicy())
+                ? "；AI 给出清单外的分类时不打分类"
+                : "；AI 给出清单外的分类时归入兜底分类");
+        if (view.problemCount() == 0) {
+            return preflightItem("日报分类", true, message.toString());
+        }
+        var problems = view.items().stream()
+            .filter(DigestCategoryViewDTO.Item::problem)
+            .map(item -> item.key() + "（" + item.message() + "）")
+            .toList();
+        return preflightItem("日报分类", false, message.append("。其中 ").append(view.problemCount())
+            .append(" 行发布时会被跳过：").append(String.join("；", problems))
+            .append("。可在「日报分类」面板查看完整清单").toString());
     }
 
     /**
      * 自动打标的说明项。
      *
      * <p>早前自检会告诉你「哪些名字匹配不到、发布时会被忽略」，言下之意是「你得先去后台把
-     * 分类标签建好」。现在主题分类与关键词标签由插件自动创建，无需预建——自检要把这层
-     * 变化讲清楚，否则站长还会以为要手工配。</p>
+     * 分类标签建好」。现在主题分类与关键词标签由插件自动创建（可按配置改成只复用或映射），
+     * 无需预建——自检要把这层变化讲清楚，否则站长还会以为要手工配。</p>
      */
     private static DigestPreflightItemDTO autoRefItem(DigestConfigDTO config) {
         var parts = new ArrayList<String>();
         if (config.isAutoCategoryEnabled()) {
-            parts.add("按文章主题自动归入站点分类（不存在则创建）");
+            parts.add("按文章主题自动归入站点分类（"
+                + DigestConfigHelper.categoryModeLabel(config.getCategoryMode()) + "）");
         }
         if (config.isAutoTagEnabled()) {
             parts.add("把一轮里出现 ≥" + config.getAutoTagMinCount() + " 次的关键词建成标签");
@@ -737,12 +798,15 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
      * 否则会出现「一边把分类建出来了、另一边还在静默忽略」的分裂行为。</p>
      *
      * <p>两类名字的处理方式刻意不同：手填的「额外附加」只匹配已有（手误不该造出分类），
-     * 而 AI 判定出来的分类与关键词会<b>不存在则自动创建</b>，这才是「不需要站长手工配置」。</p>
+     * 而 AI 判定出来的分类与关键词<b>不存在则自动创建</b>，这才是「不需要站长手工配置」；
+     * 自动分类是否允许创建、是否按清单映射，由 {@link HaloPostPublishDTO#getCategoryMode()} 决定
+     * （{@code DigestTaxonomyService#resolveAiCategories}）。</p>
      */
     private Mono<ResolvedRefs> resolveRefs(HaloPostPublishDTO post) {
         return Mono.zip(
                 merge(taxonomy.resolveExistingCategories(post.getCategoryNames()),
-                    taxonomy.resolveOrCreateCategories(post.getAiCategories())),
+                    taxonomy.resolveAiCategories(post.getAiCategories(), post.getCatalog(),
+                        post.getCategoryMode())),
                 merge(taxonomy.resolveExistingTags(post.getTagNames()),
                     taxonomy.resolveOrCreateTags(post.getKeywords())))
             .map(tuple -> new ResolvedRefs(tuple.getT1(), tuple.getT2()));

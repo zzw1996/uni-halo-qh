@@ -39,6 +39,13 @@ public interface PointsService {
     /** 积分兑换：item = publish_ticket | dashboard_advanced，扣除积分并发放权益 */
     Mono<PointsExchangeResponse> exchange(String openid, String item);
 
+    /**
+     * 用积分解锁分类订阅额度（永久、可累计）。
+     *
+     * @param count 本次购买份数；null/非法按 1 份，超过配置上限直接报错
+     */
+    Mono<PointsExchangeResponse> purchaseSubscribeQuota(String openid, Integer count);
+
     /** 兑换中心余额/今日状态查询 */
     Mono<PointsExchangeResponse> exchangeStatus(String openid);
 

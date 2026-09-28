@@ -32,6 +32,9 @@ public final class CommercialConfigChecks {
 
     public static final String GROUP_PAY = "payConfig";
     public static final String GROUP_MEMBER = "memberConfig";
+
+    /** AI 定制内容（付费权益：用户自配偏好 → 每日简报） */
+    public static final String GROUP_AI_CONTENT = "aiContentConfig";
     public static final String GROUP_CONTENT = "contentConfig";
     public static final String GROUP_TICKET = "ticketConfig";
     public static final String GROUP_POINTS = "pointsConfig";
@@ -41,7 +44,7 @@ public final class CommercialConfigChecks {
 
     /** 本页面接管的分组，顺序即页面展示顺序 */
     public static final List<String> MANAGED_GROUPS = List.of(
-        GROUP_PAY, GROUP_MEMBER, GROUP_CONTENT, GROUP_TICKET,
+        GROUP_PAY, GROUP_AI_CONTENT, GROUP_MEMBER, GROUP_CONTENT, GROUP_TICKET,
         GROUP_POINTS, GROUP_DAILY_TASK, GROUP_MALL, GROUP_LEVEL);
 
     /** 支持的任务类型 → pointsConfig.rules 里对应的字段名 */

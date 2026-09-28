@@ -60,6 +60,13 @@ class DigestServiceImplTest {
     @Mock
     private DigestAiClient aiClient;
 
+    /**
+     * 日报只会在开头「顺手」触发一次官网单价读取：桩成空 Mono 即可，
+     * 流水线本身不依赖它的结果（本次运行用内置价目表）。
+     */
+    @Mock
+    private DigestAiModelService aiModelService;
+
     @Mock
     private DigestAssetUploader assetUploader;
 
@@ -74,7 +81,7 @@ class DigestServiceImplTest {
     void setUp() throws Exception {
         progressTracker = new DigestProgressTracker();
         service = new DigestServiceImpl(settingFetcher, persistence, feedService, aiClient,
-            new DigestRenderer(), assetUploader, publisher, progressTracker);
+            aiModelService, new DigestRenderer(), assetUploader, publisher, progressTracker);
         when(settingFetcher.get("aiDigestConfig")).thenReturn(Mono.just(MAPPER.readTree("""
             {"enabled":true,"publishMode":"per-article","publishEnabled":true,
              "postOwner":"admin","postTitleTemplate":"AI 日报 · {date}","publishWaitSeconds":600}

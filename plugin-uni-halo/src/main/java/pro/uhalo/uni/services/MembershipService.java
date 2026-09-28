@@ -31,6 +31,7 @@ public class MembershipService {
 
     private final PointsPersistence pointsPersistence;
     private final ReactiveSettingFetcher settingFetcher;
+    private final pro.uhalo.uni.services.impl.SubscriptionQuotaService quotaService;
 
     /** 读取会员配置；读取失败按关闭处理（宁可少给权益，不可误拦用户）。 */
     public Mono<MemberConfigDTO> loadConfig() {
@@ -50,20 +51,22 @@ public class MembershipService {
      * 未登录用户看到「未开通会员」比看到一个错误页合理得多。</p>
      */
     public Mono<MembershipStatusDTO> getStatus(String openid) {
-        return loadConfig().flatMap(config -> {
+        // 订阅额度配置与会员配置一起读：权益文案里要写清「订阅上限提到多少」，
+        // 而这个数字来自 subscriptionConfig（买会员最直观的价值之一）
+        return loadConfig().flatMap(config -> quotaService.loadConfig().flatMap(subscriptionConfig -> {
             if (!Boolean.TRUE.equals(config.isEnabled())) {
                 return Mono.just(disabledStatus(config));
             }
             if (!StringUtils.hasText(openid)) {
-                return Mono.just(statusOf(config, null));
+                return Mono.just(statusOf(config, subscriptionConfig, null));
             }
             return pointsPersistence.getOrCreateAccount(openid.trim())
-                .map(account -> statusOf(config, account))
+                .map(account -> statusOf(config, subscriptionConfig, account))
                 .onErrorResume(ex -> {
                     log.warn("读取会员状态失败，按未开通展示: openid={}, {}", openid, ex.getMessage());
-                    return Mono.just(statusOf(config, null));
+                    return Mono.just(statusOf(config, subscriptionConfig, null));
                 });
-        });
+        }));
     }
 
     /**
@@ -94,7 +97,8 @@ public class MembershipService {
             .build();
     }
 
-    private static MembershipStatusDTO statusOf(MemberConfigDTO config, UserPoints account) {
+    private static MembershipStatusDTO statusOf(MemberConfigDTO config,
+        pro.uhalo.uni.dto.SubscriptionConfigDTO subscriptionConfig, UserPoints account) {
         var expireAt = account == null ? null : account.getMemberExpireAt();
         var active = MemberConfigHelper.isActive(expireAt);
         return MembershipStatusDTO.builder()
@@ -105,7 +109,7 @@ public class MembershipService {
             .expireAtEpoch(expireAt == null ? 0L : expireAt.getEpochSecond())
             .daysRemaining(MemberConfigHelper.daysRemaining(expireAt))
             .bonusTickets(config.getBonusTickets())
-            .benefits(benefitsOf(config))
+            .benefits(benefitsOf(config, subscriptionConfig))
             .build();
     }
 
@@ -114,13 +118,21 @@ public class MembershipService {
      *
      * <p>只列真正生效的权益——把没开启的权益也写上去，用户开通后会认为被骗。</p>
      */
-    private static List<String> benefitsOf(MemberConfigDTO config) {
+    private static List<String> benefitsOf(MemberConfigDTO config,
+        pro.uhalo.uni.dto.SubscriptionConfigDTO subscriptionConfig) {
         var benefits = new ArrayList<String>();
         if (config.isFreeContent()) {
             benefits.add("会员期内全站付费文章免券阅读");
         }
         if (config.getBonusTickets() > 0) {
             benefits.add("开通即赠 " + config.getBonusTickets() + " 张阅读券");
+        }
+        // 分类订阅上限：免费用户只能订 freeQuota 个，会员期内放宽到 memberMaxQuota
+        // （对普通站点等于「不限量」，但硬顶仍要写在文案里，避免用户以为真的无限）
+        if (subscriptionConfig != null
+            && subscriptionConfig.getMemberMaxQuota() > subscriptionConfig.getFreeQuota()) {
+            benefits.add("分类订阅上限从 " + subscriptionConfig.getFreeQuota()
+                + " 个提升到 " + subscriptionConfig.getMemberMaxQuota() + " 个");
         }
         return List.copyOf(benefits);
     }

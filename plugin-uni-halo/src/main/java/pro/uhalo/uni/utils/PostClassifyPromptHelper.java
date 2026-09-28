@@ -13,8 +13,8 @@ import java.util.Locale;
  * 「旧文章归类」的提示词与响应解析。
  *
  * <p>和日报流水线里的 {@link DigestAiHelper} 是同一套约定的复用：
- * 主题仍是那六个固定 key，关键词仍然要求英文简短，返回仍然必须是纯 JSON——
- * 这样旧文章和新日报进的是同一个分类体系，不会出现两套口径。</p>
+ * 主题清单与日报同源（{@link DigestCategoryCatalog}），关键词仍然要求英文简短，
+ * 返回仍然必须是纯 JSON——这样旧文章和新日报进的是同一个分类体系，不会出现两套口径。</p>
  *
  * <p>与评分提示词的关键差别：<b>这里不做筛选</b>。日报要从几百篇里挑出 5 篇，
  * 所以让 AI 打三个维度的分；旧文章归类只是「这篇属于哪一类」，
@@ -40,6 +40,19 @@ public final class PostClassifyPromptHelper {
      * 它多半该进 engineering 而不是 tools）。</p>
      */
     public static String buildPrompt(List<PostClassifyCandidateDTO> batch) {
+        return buildPrompt(batch, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /**
+     * 组装批量判定提示词（按站长配置的分类清单）。
+     *
+     * <p>拼接处行尾的 {@code \} 是文本块的续行转义，去掉它会让示例 JSON 里多出一个换行、断成两行。</p>
+     *
+     * @param catalog 分类目录：提示词里的主题清单与后续校验都以它为准
+     */
+    public static String buildPrompt(List<PostClassifyCandidateDTO> batch,
+        DigestCategoryCatalog catalog) {
+        var directory = catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
         var builder = new StringBuilder();
         for (var i = 0; i < batch.size(); i++) {
             var article = batch.get(i);
@@ -65,12 +78,7 @@ public final class PostClassifyPromptHelper {
             请为每一篇文章判定它属于哪个主题，并提取 2-4 个关键词。
 
             ## 主题（必须从以下选一个）
-            - ai-ml: AI、机器学习、LLM、深度学习相关
-            - security: 安全、隐私、漏洞、加密相关
-            - engineering: 软件工程、架构、编程语言、系统设计
-            - tools: 开发工具、开源项目、新发布的库/框架
-            - opinion: 行业观点、个人思考、职业发展、文化评论
-            - other: 确实不属于以上任何一类时才选
+            """ + directory.promptSection() + """
 
             ## 判定要求
             - 每篇文章都必须给出一个主题，不要跳过、不要返回 null
@@ -89,7 +97,9 @@ public final class PostClassifyPromptHelper {
               "results": [
                 {
                   "index": 0,
-                  "category": "engineering",
+                  "category": "\
+            """ + directory.sampleKey() + """
+            ",
                   "keywords": ["Rust", "compiler"]
                 }
               ]
@@ -106,6 +116,17 @@ public final class PostClassifyPromptHelper {
      * @param batchSize 本批文章数，用于挡掉越界的 index
      */
     public static List<PostClassifyVerdict> parse(String aiText, int batchSize) {
+        return parse(aiText, batchSize, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /**
+     * 解析批量判定结果（按站长配置的分类清单校验主题）。
+     *
+     * @param catalog 分类目录：清单外的主题会被判为「未给出有效主题」
+     */
+    public static List<PostClassifyVerdict> parse(String aiText, int batchSize,
+        DigestCategoryCatalog catalog) {
+        var directory = catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
         var json = DigestAiHelper.parseJson(aiText);
         var results = json.path("results");
         if (!results.isArray()) {
@@ -120,9 +141,8 @@ public final class PostClassifyPromptHelper {
             if (index < 0 || index >= batchSize) {
                 continue;
             }
-            var existing = verdicts.get(index);
             verdicts.set(index, new PostClassifyVerdict(index,
-                normalizeCategory(node.path("category").asText("")),
+                normalizeCategory(node.path("category").asText(""), directory),
                 normalizeKeywords(node.path("keywords"))));
         }
         return List.copyOf(verdicts);
@@ -137,7 +157,7 @@ public final class PostClassifyPromptHelper {
     }
 
     /**
-     * 主题归一化。
+     * 主题归一化（按内置清单）。
      *
      * <p>与 {@link DigestAiHelper#normalizeCategory} 不同：那里把无法识别的值回落到 {@code other}，
      * 因为日报总得有个分类来分组；这里返回空串，因为「AI 说了个不存在的类别」
@@ -145,11 +165,15 @@ public final class PostClassifyPromptHelper {
      * 悄悄塞进 other 会让人以为已经归好类了。</p>
      */
     public static String normalizeCategory(String category) {
-        if (!StringUtils.hasText(category)) {
+        return normalizeCategory(category, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /** 主题归一化（按站长配置的分类清单）：清单外的分类一律返回空串。 */
+    public static String normalizeCategory(String category, DigestCategoryCatalog catalog) {
+        if (!StringUtils.hasText(category) || catalog == null) {
             return "";
         }
-        var key = category.trim().toLowerCase(Locale.ROOT);
-        return DigestAiHelper.VALID_CATEGORIES.contains(key) ? key : "";
+        return catalog.normalize(category);
     }
 
     /** 关键词清理：去空去重、去重时忽略大小写（保留首次出现的写法）、限长限量。 */

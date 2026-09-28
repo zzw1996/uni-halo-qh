@@ -1,0 +1,23 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-app-settings
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 应用设置同步"
+    rbac.authorization.halo.run/display-name: "应用设置接口（UniHalo）"
+rules:
+  # 「应用设置跟账号走」：小程序端用户自己的设置副本（底栏显示项、外观模式、首页布局、卡片样式等）。
+  # 匿名可读写——身份只认 Wechat-Session-Id 请求头，未登录（没有该头）只会拿到空视图，
+  # 写入则直接被拒。写入内容必须通过服务端白名单，客户端原文不会落库。
+  #
+  # 路径比 plugins/app 多一级，不同 Halo 版本对 resource 的推导粒度不同，
+  # 因此把常见形态都放行（与 role-ai-content-anonymous、role-digest-anonymous 同一思路）。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/app"
+      - "plugins/app/settings"
+      - "plugins/app/*"
+    verbs: [ "get", "list", "create", "update" ]

@@ -1,0 +1,22 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-post-relation
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 文章关系"
+    rbac.authorization.halo.run/display-name: "文章上下篇接口（UniHalo）"
+rules:
+  # 文章详情页底部的「上一篇 / 下一篇」：未登录访客也要能看，因此必须匿名放行。
+  #
+  # 与 points / userPublish 模板同一处理方式：resource 的推导粒度随 Halo 版本不同，
+  # 把「去掉插件名」与「带插件名」两种形态、常见深度都列出来，避免被安全层 302 到 /login。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/posts"
+      - "plugins/posts/neighbors"
+      - "plugins/plugin-uni-halo/posts"
+      - "plugins/plugin-uni-halo/posts/neighbors"
+    verbs: [ "get", "list" ]

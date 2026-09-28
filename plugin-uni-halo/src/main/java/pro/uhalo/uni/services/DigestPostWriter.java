@@ -127,13 +127,15 @@ public class DigestPostWriter {
      * 把「手填的」与「AI 判定的」两类分类/标签解析成分类与标签的 metadata.name。
      *
      * <p>两者处理方式刻意不同：手填的只匹配已有（站长手误写错一个名字，不该在站点上
-     * 偷偷多出一个分类）；AI 判定出来的不存在则自动创建——这才是「不需要站长手工配置」。
+     * 偷偷多出一个分类）；AI 判定出来的按 {@code categoryMode} 处理——默认不存在则自动创建，
+     * 也可配置成「只复用已有」或「按清单映射」。
      * 与 HTTP 路径（{@code HaloPostPublisherImpl#resolveRefs}）保持同一套逻辑。</p>
      */
     private Mono<Refs> resolveRefs(HaloPostPublishDTO post) {
         return Mono.zip(
                 merge(taxonomy.resolveExistingCategories(post.getCategoryNames()),
-                    taxonomy.resolveOrCreateCategories(post.getAiCategories())),
+                    taxonomy.resolveAiCategories(post.getAiCategories(), post.getCatalog(),
+                        post.getCategoryMode())),
                 merge(taxonomy.resolveExistingTags(post.getTagNames()),
                     taxonomy.resolveOrCreateTags(post.getKeywords())))
             .map(tuple -> new Refs(tuple.getT1(), tuple.getT2()));

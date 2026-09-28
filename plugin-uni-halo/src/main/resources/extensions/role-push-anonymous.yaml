@@ -1,0 +1,25 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: plugin-uni-halo-anonymous-role-push
+  labels:
+    halo.run/role-template: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+  annotations:
+    rbac.authorization.halo.run/module: "UniHalo 消息推送"
+    rbac.authorization.halo.run/display-name: "消息推送接口（UniHalo）"
+rules:
+  # 微信订阅消息的额度与开关：匿名可读写，但只能操作「自己」的记录——
+  # openid 一律只从 Wechat-Session-Id 请求头取（绝不接受参数里的身份，否则可以给别人刷额度）。
+  # 读接口在未登录时返回「未开通/额度 0」，不会泄露任何人的数据。
+  #
+  # 路径比 plugins/push 多一层，不同 Halo 版本对 resource 的推导粒度不同，
+  # 因此把常见形态都放行（与 role-digest-anonymous 同一思路）。
+  - apiGroups: [ "api.uni.uhalo.pro" ]
+    resources:
+      - "plugins/push"
+      - "plugins/push/status"
+      - "plugins/push/quota"
+      - "plugins/push/setting"
+      - "plugins/push/*"
+    verbs: [ "get", "list", "create", "update" ]

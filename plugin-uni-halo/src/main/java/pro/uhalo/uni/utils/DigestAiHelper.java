@@ -15,6 +15,12 @@ import java.util.List;
  */
 public final class DigestAiHelper {
 
+    /**
+     * 内置分类清单（改造前的六类）。
+     *
+     * <p>现在分类清单由站长在后台上配置、运行期统一走 {@link DigestCategoryCatalog}；
+     * 这里保留常量只为兼容旧调用与「清单留空时的兜底」判断，新代码不要再直接用它。</p>
+     */
     public static final List<String> VALID_CATEGORIES =
         List.of("ai-ml", "security", "engineering", "tools", "opinion", "other");
 
@@ -29,6 +35,18 @@ public final class DigestAiHelper {
     // ── 评分 ──
 
     public static String buildScoringPrompt(List<DigestArticleDTO> batch, int startIndex) {
+        return buildScoringPrompt(batch, startIndex, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /**
+     * 评分提示词。
+     *
+     * <p>分类清单来自 {@code catalog}：清单里有几类就只让 AI 选几类（这是「站长可配分类」的落点），
+     * JSON 示例里的 category 也取清单第一项，保证示例一定是合法值。
+     * 拼接处行尾的 {@code \} 是文本块的续行转义，去掉它会让示例 JSON 里多出一个换行、断成两行。</p>
+     */
+    public static String buildScoringPrompt(List<DigestArticleDTO> batch, int startIndex,
+                                            DigestCategoryCatalog catalog) {
         var builder = new StringBuilder();
         for (var i = 0; i < batch.size(); i++) {
             var article = batch.get(i);
@@ -68,13 +86,7 @@ public final class DigestAiHelper {
             - 1-3: 过时或无时效价值
 
             ## 分类标签（必须从以下选一个）
-            - ai-ml: AI、机器学习、LLM、深度学习相关
-            - security: 安全、隐私、漏洞、加密相关
-            - engineering: 软件工程、架构、编程语言、系统设计
-            - tools: 开发工具、开源项目、新发布的库/框架
-            - opinion: 行业观点、个人思考、职业发展、文化评论
-            - other: 以上都不太适合的
-
+            """ + catalog.promptSection() + """
             ## 关键词提取
             提取 2-4 个最能代表文章主题的关键词（用英文，简短，如 "Rust", "LLM", "database", "performance"）
 
@@ -90,7 +102,9 @@ public final class DigestAiHelper {
                   "relevance": 8,
                   "quality": 7,
                   "timeliness": 9,
-                  "category": "engineering",
+                  "category": "\
+            """ + catalog.sampleKey() + """
+            ",
                   "keywords": ["Rust", "compiler", "performance"]
                 }
               ]
@@ -238,8 +252,26 @@ public final class DigestAiHelper {
     }
 
     public static String normalizeCategory(String category) {
-        // VALID_CATEGORIES 是不可变列表，contains(null) 会抛 NPE，所以先挡 null
-        return category != null && VALID_CATEGORIES.contains(category) ? category : "other";
+        return normalizeCategory(category, DigestCategoryCatalog.defaultCatalog(),
+            DigestConfigHelper.UNKNOWN_CATEGORY_OTHER);
+    }
+
+    /**
+     * 把 AI 给出的分类归一到清单内的 key。
+     *
+     * <p>清单外的值按 {@code unknownCategoryPolicy} 处理：{@code other} → 落到清单里的
+     * 「其他」（清单没有它就等于不打分类）；{@code drop} → 返回空串。</p>
+     */
+    public static String normalizeCategory(String category, DigestCategoryCatalog catalog,
+                                            String unknownCategoryPolicy) {
+        var key = catalog.normalize(category);
+        if (!key.isEmpty()) {
+            return key;
+        }
+        // 空值 / 清单外：按策略兜底。注意不能用 VALID_CATEGORIES.contains(null)（不可变列表会抛 NPE），
+        // 所以统一走 catalog.normalize（内部先规范化再查表）。
+        return DigestConfigHelper.UNKNOWN_CATEGORY_OTHER.equalsIgnoreCase(unknownCategoryPolicy)
+            ? catalog.fallbackKey() : "";
     }
 
     /**

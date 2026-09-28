@@ -663,7 +663,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "小程序底部导航默认是「首页 / 分类 / 瞬间 / 榜单 / 我的」5 项，由微信原生渲染。微信原生底栏不支持运行时增删项，所以开启本组配置后，小程序会隐藏原生底栏并改用自绘底栏，这样就能按开关决定显示哪几项。显示数量限制在 3~5 项（微信原生底栏最多 5 项；最少 3 项是本站口径）：不足 3 项会按「分类 → 瞬间 → 榜单 → 图库 → 小店」补齐，超过 5 项会按相反顺序裁掉。首页与「我的」是固定项，不提供开关。关闭本组开关时行为与现在完全一致，可随时回退。"
+          innerHTML: "小程序底部导航默认是「首页 / 发现 / 瞬间 / 榜单 / 我的」5 项，由微信原生渲染。微信原生底栏不支持运行时增删项，所以开启本组配置后，小程序会隐藏原生底栏并改用自绘底栏，这样就能按开关决定显示哪几项。显示数量限制在 3~5 项（微信原生底栏最多 5 项；最少 3 项是本站口径）：不足 3 项会按「分类 → 瞬间 → 榜单 → 图库 → 小店」补齐，超过 5 项会按相反顺序裁掉。首页与「我的」是固定项，不提供开关。关闭本组开关时行为与现在完全一致，可随时回退。"
         - $formkit: switch
           name: enabled
           id: tabbarEnabled
@@ -675,7 +675,7 @@ spec:
         - $formkit: switch
           if: "$get(tabbarEnabled).value === true"
           name: showCategory
-          label: 显示「分类」
+          label: 显示「发现」
           value: true
           onValue: true
           offValue: false
@@ -1610,16 +1610,18 @@ spec:
                   label: 装扮（在身份中心穿戴）
                 - value: membership
                   label: 会员卡（单次购买的有效期权益）
+                - value: ai_content
+                  label: AI 定制内容（用户自配偏好，每日简报）
                 - value: bundle
                   label: 套餐（一条商品含多种权益）
               validation: required
-              help: 仅限以上权益直购类型，不支持积分充值。数据看板高级版已改为纯积分兑换权益（见「积分商城」分组）；发布券已下架——普通用户当前不能发表瞬间（仅博主可发），该券没有消费点，卖出去用户也用不上，故不再作为付费道具售卖；类型非法或缺失的商品不会下发。<br /><b>membership</b>：需先在「会员卡」分组开启会员，道具数量填天数（会员期内付费文章免券）。<br /><b>bundle</b>：在下方「套餐子项」里配置包含的权益，子项会逐个发放；套餐里的装扮子项与单卖装扮走同一套校验（未登记或已拥有都会拒绝下单，避免付了套餐钱却产生退款纠纷）。
+              help: 仅限以上权益直购类型，不支持积分充值。数据看板高级版已改为纯积分兑换权益（见「积分商城」分组）；发布券已下架——普通用户当前不能发表瞬间（仅博主可发），该券没有消费点，卖出去用户也用不上，故不再作为付费道具售卖；类型非法或缺失的商品不会下发。<br /><b>membership</b>：需先在「会员卡」分组开启会员，道具数量填天数（会员期内付费文章免券）。<br /><b>ai_content</b>：需先在「AI 定制内容」分组开启该功能，道具数量填有效天数（<b>填 0 = 永久买断</b>）。购买后用户可在小程序里自行勾选主题分类/来源/关键词，服务端据此从已生成的日报内容里筛出他的每日简报。<br /><b>bundle</b>：在下方「套餐子项」里配置包含的权益，子项会逐个发放；套餐里的装扮子项与单卖装扮走同一套校验（未登记或已拥有都会拒绝下单，避免付了套餐钱却产生退款纠纷）。
             - $formkit: number
               name: value
               label: 道具数量
               value: 1
               min: 1
-              help: 阅读券 = 发放的券张数（如买 5 张填 5）；会员卡 = 会员天数；装扮保持 1 即可。某条商品配了「套餐子项」时会忽略本字段（以子项配置为准）。
+              help: 阅读券 = 发放的券张数（如买 5 张填 5）；会员卡 = 会员天数；AI 定制内容 = 有效天数（0 = 永久）；装扮保持 1 即可。某条商品配了「套餐子项」时会忽略本字段（以子项配置为准）。
             - $formkit: repeater
               name: items
               label: 套餐子项（仅类型为「套餐」时填写）
@@ -1756,6 +1758,76 @@ spec:
           value: 30
           min: 1
           help: 当「积分商城 → 兑换权益」里没有 content_ticket 这一项时，插件会自动补一条内置的阅读券兑换项并使用该定价。若你已在积分商城里手工配了 content_ticket，则以你的配置为准，本字段不生效。
+    - group: subscriptionConfig
+      label: 分类订阅额度
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "「发现」页的分类订阅：每位用户有<b>免费额度</b>，超出后可以用积分解锁更多额度（永久、可累计），或者购买会员卡把上限提到会员档。<br /><b>额度是容量不是占用</b>：取消某个订阅只腾出位置，已买的额度不会消失也不退款。<br />会员到期后，超出额度的订阅会<b>暂停</b>（记录与顺序都保留），续费或积分解锁后自动恢复——这是为了不让「买一次会员」变成永久权益。"
+        - $formkit: switch
+          name: enabled
+          id: subscriptionQuotaEnabled
+          label: 允许用积分解锁订阅额度
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时用户只有免费额度，客户端也不会显示解锁入口。价格与开关是运营决策，默认关闭——没配价之前不该出现一个能花积分的入口。
+        - $formkit: number
+          name: freeQuota
+          label: 免费额度（个）
+          value: 5
+          min: 1
+          max: 200
+          validation: required
+          help: 不花积分就能订阅的分类数。原来写死的 5 就是它；改大只会让用户受益，改小会让已有用户超出额度（超出部分暂停）。
+        - $formkit: number
+          name: quotaPrice
+          label: 每份额度的积分价格
+          value: 50
+          min: 1
+          validation: required
+          help: 用户点「解锁」时扣掉的积分。额度永久有效、可累计。
+        - $formkit: number
+          name: maxQuota
+          label: 最多可解锁几份
+          value: 10
+          min: 0
+          max: 200
+          validation: required
+          help: 防止无限扩容。用户最终能订阅的分类数 = 免费额度 + 已解锁份数。
+        - $formkit: number
+          name: memberMaxQuota
+          label: 会员期内的订阅上限（个）
+          value: 30
+          min: 1
+          max: 200
+          validation: required
+          help: 会员有效期内放宽到这个上限（对多数站点等于不限量）。仍要有硬顶：首页要按订阅的分类取内容，一个人订光全站会把首页拖成几十路请求。
+        - $formkit: number
+          name: homeFeedPerCategory
+          label: 首页每个分类取几条
+          value: 20
+          min: 5
+          max: 100
+          validation: required
+          help: 首页内容流（并集接口）内部按分类各取这么多条再合并。调大首页更全但内部请求更重。
+        - $formkit: number
+          name: hotCategoryCount
+          label: 零订阅时推荐几个人气分类
+          value: 3
+          min: 1
+          max: 10
+          validation: required
+          help: 新用户与游客还没订阅任何分类时，首页用订阅热度最高的这几个分类的内容当推荐；一片空白比推荐错更糟。
+        - $formkit: number
+          name: homeFeedCacheSeconds
+          label: 首页内容流缓存秒数
+          value: 60
+          min: 0
+          max: 3600
+          validation: required
+          help: 同一批分类在这段时间内只取一次。0 = 不缓存（每次请求都去取，订阅多时首页会变慢）。
     - group: memberConfig
       label: 会员卡
       formSchema:
@@ -1790,6 +1862,68 @@ spec:
           value: 0
           min: 0
           help: 每次开通或续费成功额外赠送的阅读券张数，填 0 表示不送。用于促单，也可让用户即使不常看付费文章也能感受到会员的价值。
+    - group: aiContentConfig
+      label: AI 定制内容
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "用户购买「<b>AI 定制内容</b>」（虚拟支付 → 权益道具，类型选 <code>ai_content</code>）后，可以在小程序里自行勾选<b>主题分类 / 来源站点 / 关键词</b>，服务端据此从<b>你已生成的 AI 日报内容</b>里筛出属于他的每日简报，并用一次 AI 调用写导语与推荐理由。<br /><b>与「分类订阅」的区别</b>：分类订阅是免费的，管的是首页与分类页按分类筛站点文章；本功能是付费的独立链路，产出的是「我的简报」这一份个人内容。<br /><b>成本边界</b>：每位有效用户<b>每天最多 1 次 AI 调用</b>（当天简报已生成即复用，反复打开不重复调用）；把下面「生成 AI 导语」关掉即退化为零 AI 成本的纯筛选。<br /><b>合规说明</b>：与会员卡一样是「单次购买 + 有效期」的道具，<b>不做自动续费订阅</b>；文案请避免使用「包月 / 订阅」字样。"
+        - $formkit: switch
+          name: enabled
+          label: 开启 AI 定制内容
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时小程序不显示入口、接口一律拒绝、也不允许发货 ai_content 类型的商品。请先配好商品与 AI 通道再开启。
+        - $formkit: switch
+          name: aiIntroEnabled
+          label: 生成 AI 导语与推荐理由
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启时，用户打开简报会用一次 AI 调用写导语、微调排序并给每篇一句推荐理由。关闭后只做纯筛选（按主题/来源/关键词打分排序），零 AI 成本、打开即秒开——AI 额度紧张或用户量上来后可以先关掉它。
+        - $formkit: number
+          name: maxCategories
+          label: 用户最多勾选几个主题分类
+          value: 5
+          min: 1
+          help: 可选范围来自「AI 日报 → 分类清单」，用户只能在你配置的分类里选。填太大会让简报失去聚焦，建议 3-5。
+        - $formkit: number
+          name: maxSources
+          label: 用户最多勾选几个来源站点
+          value: 5
+          min: 1
+          help: 可选范围来自最近日报里<b>实际出现过</b>的来源，用户不会配到一个从来没有内容的来源。
+        - $formkit: number
+          name: maxKeywords
+          label: 用户最多填几个关键词
+          value: 10
+          min: 0
+          help: 填 0 表示关掉这个维度（用户端不再显示关键词输入框）。
+        - $formkit: number
+          name: maxItems
+          label: 一份简报最多几条内容
+          value: 10
+          min: 1
+          help: 简报是「今日份」的，条数太多就不再是精选。建议 5-10。
+        - $formkit: number
+          name: windowDays
+          label: 从最近几天的日报里筛
+          value: 7
+          min: 1
+          help: 只回看最近这些天已发布的日报内容。窗口太小（如 1 天）会让偏好较窄的用户经常看到空简报。
+        - $formkit: number
+          name: introWords
+          label: AI 导语字数上限
+          value: 200
+          min: 50
+          help: 导语是简报开头那段「今天为你挑了什么」，太长会占满首屏。
+        - $formkit: text
+          name: benefitNote
+          label: 权益说明文案（未开通页展示）
+          value: ""
+          help: 留空则用通用文案。可以写成一行一条，例如「每天一份按你兴趣挑的精选｜可随时调整关注主题｜有效期内不限次查看」。价格由商品配置决定，不在这里填。
     - group: rankConfig
       label: 榜单
       formSchema:
@@ -1865,6 +1999,82 @@ spec:
           value: 20
           min: 0
           help: 每往后一名少发多少积分（第 2 名 = 第 1 名 - 递减值，依此类推），减到 0 为止。
+    - group: pushConfig
+      label: 消息推送（微信订阅消息）
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "用户订阅了分类后，该分类有新文章时给他发一条<b>微信服务通知</b>；付费「AI 定制内容」的简报就绪时也提醒一条。<br /><b>必须先知道微信的规则</b>：普通类目只能用「<b>一次性订阅消息</b>」——用户点一次授权，只能发一条（可累积）。长期订阅只对政务民生/医疗/交通/金融/教育等类目开放，本站拿不到。小程序的做法：用户同意一次之后，在他读文章、点分类这些本来就要做的动作里自动续上额度（微信允许在用户点击后调用；勾过「总是保持以上选择」就不会再弹窗），不需要他反复回来点授权，页面上也不再显示「剩余几条」。<br /><b>准备工作</b>：① 在小程序后台「订阅消息」里选好模板并<b>绑定服务类目</b>（类目不符会报 43102，通知发不出去）；② 把模板 ID 填到下面。默认已填好「内容更新通知」模板。<br /><b>合规红线</b>：订阅消息不得用于营销/广告，也不得诱导订阅（「订阅送积分」这类玩法违规），请只用于真实的内容更新提醒。"
+        - $formkit: switch
+          name: enabled
+          label: 开启消息推送
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭时不检查、不发送，小程序也不显示推送入口。请先把模板配好再打开。
+        - $formkit: text
+          name: templateId
+          label: 新文章提醒模板 ID
+          value: "wTqRnFopbwyBQU_8gJvPdTpOLzS2h9xgikQxcSuUf4k"
+          help: 在小程序后台「订阅消息 → 我的模板」里复制。模板字段必须是：文章标题 / 文章摘要 / 发布时间 / 文章来源 / 温馨提示（对应 thing4 / thing6 / time3 / thing7 / thing5）。字段不同会在下发时报 47003。
+        - $formkit: text
+          name: aiDigestTemplateId
+          label: 简报提醒模板 ID（可留空）
+          value: ""
+          help: 留空表示复用上面的新文章模板（简报会用不同文案：「今日精选 · N 篇」）。以后单独申请了模板再填这里。
+        - $formkit: switch
+          name: newPostEnabled
+          label: 订阅分类有新文章时提醒
+          value: true
+          onValue: true
+          offValue: false
+          help: 只推给「订阅了该分类」且还有提醒额度的用户；每人每天最多一条（当天的多篇更新合并成一条）。
+        - $formkit: switch
+          name: aiDigestEnabled
+          label: AI 简报就绪时提醒（付费权益）
+          value: true
+          onValue: true
+          offValue: false
+          help: 只推给「AI 定制内容」权益仍在有效期内的用户。文案里的「N 篇命中你的关注方向」用纯筛选算出，不额外消耗 AI 额度。
+        - $formkit: number
+          name: checkIntervalMinutes
+          label: 检查间隔（分钟）
+          value: 5
+          min: 1
+          help: 每隔这么久检查一次「有没有新文章 / 今天的日报是否已发布」。调小只会让提醒更及时，不会增加推送条数（每人每天每类仍然最多一条）。
+        - $formkit: number
+          name: maxItemsPerMessage
+          label: 一条消息里最多提几篇
+          value: 3
+          min: 1
+          help: 超过这个数量只报总数（如「共 8 篇新文章」），避免标题字段被塞满。
+        - $formkit: number
+          name: dailySendLimit
+          label: 整站每日发送上限
+          value: 500
+          min: 1
+          help: 保护性上限：当天发满这么多条就停止发送并记日志。防止间隔配得太小、或用户量突增时把微信接口打爆。
+        - $formkit: number
+          name: lookbackHours
+          label: 停机后的回看窗口（小时）
+          value: 24
+          min: 1
+          help: 插件停机（或没开机）期间发布的新文章，重启后按这个窗口补推，不会漏掉。填太大会在重启后一次补推很多。
+        - $formkit: select
+          name: miniprogramState
+          label: 点击通知跳转的小程序版本
+          value: formal
+          options:
+            - label: 正式版（线上）
+              value: formal
+            - label: 体验版（测试用）
+              value: trial
+            - label: 开发版
+              value: developer
+          validation: required
+          help: 用体验版测试推送时必须改成「体验版」，否则用户点开跳到线上正式版、看不到新页面，会误以为推送坏了。上线前记得改回「正式版」。
+
     - group: aiDigestConfig
       label: AI 日报
       formSchema:
@@ -1875,7 +2085,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "当前插件版本：<b>1.0.124</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
+          innerHTML: "当前插件版本：<b>1.0.170</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；大模型通道的开关、排序与连通性测试就在该页面的「大模型通道」面板里。若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
         - $formkit: switch
           name: enabled
           id: aiDigestEnabled
@@ -1906,41 +2116,129 @@ spec:
           value: "Asia/Shanghai"
           validation: required
           help: 执行时刻按该时区计算，填错会退回 Asia/Shanghai。
+        - $formkit: repeater
+          if: "$get(aiDigestEnabled).value === true"
+          name: aiProviders
+          label: 大模型通道清单（顺序即优先级）
+          value: []
+          help: "要接多家大模型、或想让某条通道只当备用，就填这张清单：<b>数组顺序即调用顺序</b>，第一条失败自动跳下一条；每条的<b>启用</b>开关关掉后它既不参与调用也不参与转移。<b>清单一填，下面那组「兼容通道」就不再生效</b>；清单留空则行为与升级前完全一样（主通道 + 兜底通道）。最多 10 条。<br>每条的<b>用途</b>决定它接什么活：评分一轮要跑几十次、只要便宜模型；成稿一轮只跑两三次但单次上千字、直接决定读者观感，建议留给强模型（例如便宜通道填 <code>score,overview,classify,content</code>，强通道填 <code>write</code>）。留空 = 什么活都接（与升级前一致）。<br>更顺手的管理方式（开关 + 用途勾选 + 排序 + <b>逐条测试连通性</b>）在控制台页面：<b>UniHalo → AI 日报 → 大模型通道</b>。"
+          children:
+            - $formkit: switch
+              name: enabled
+              label: 启用这条通道
+              value: true
+              onValue: true
+              offValue: false
+            - $formkit: text
+              name: label
+              label: 显示名（如 DeepSeek 主用）
+              value: ""
+            - $formkit: text
+              name: apiBase
+              label: API Base
+              value: ""
+              help: 需兼容 OpenAI 的 chat/completions 协议，一般以 /v1 结尾。DeepSeek 填 https://api.deepseek.com/v1，通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1。
+            - $formkit: password
+              name: apiKey
+              label: API Key
+              value: ""
+            - $formkit: text
+              name: model
+              label: 模型名
+              value: ""
+              help: 留空时按端点推断（含 deepseek 用 deepseek-chat，否则用 gpt-4o-mini）。
+            - $formkit: text
+              name: tasks
+              label: 用途（逗号分隔，留空 = 全部用途）
+              value: ""
+              help: "可填：<code>score</code> 评分（一轮几十次，适合便宜模型）、<code>write</code> 成稿（单次输出上千字，建议强模型）、<code>overview</code> 日报看点与背景、<code>classify</code> 旧文章归类、<code>content</code> 付费简报。例：<code>score,overview,classify,content</code>。写错或留空都不会出错——认不出来的标识会被忽略。<br>某条通道的用法被别的通道顶替时（例如只勾了「评分」的便宜通道被关掉），插件会<b>回退</b>到全部可用通道并在日志与后台面板里写明，不会让整轮日报失败。"
+            - $formkit: text
+              name: key
+              label: 通道标识（留空会自动生成，一般不用改）
+              value: ""
+              help: 后台「测试连通性」按它找到这条通道已保存的 Key，因此不要在已有通道上随意改这个值。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: balanceCheckEnabled
+          label: 运行前后查询账户余额
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，每次生成会在开始与结束时各查一次各通道的账户余额（DeepSeek 官方 <code>GET /user/balance</code> 接口，不消耗 token），报告里给出「余额 X → Y（实际扣减 Z）」。它用来校验上面的估算准不准；注意余额是<b>账号级</b>数据，同一账号下别的应用/别的 Key 的消耗也会算进这个差值。非 DeepSeek 的端点会自动跳过并在面板上标明「不支持」。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: priceAutoRefreshEnabled
+          label: 自动读取官网单价
+          value: true
+          onValue: true
+          offValue: false
+          help: "开启后：不填下面的单价表也能算花费——插件内置了官方价目表（DeepSeek 当前在售模型），并会在价格表为空时自动去官网读一次，之后按官网的算。<br>读不到（页面改版、服务器出网受限）就继续用内置表，只记一条日志——<b>绝不猜数字</b>。控制台「AI 日报 → 大模型通道」里有「🔄 从官网刷新单价」按钮可以随时手动读。"
+        - $formkit: repeater
+          if: "$get(aiDigestEnabled).value === true"
+          name: aiPrices
+          label: 模型单价（一般不用填）
+          value: []
+          help: "通常<b>留空即可</b>：留空时用内置/官网读取的价目表（DeepSeek 官方价，已按高峰/空闲双价折算）。<br>需要手填的只有两种情况：① 用了别的供应商（OpenAI、通义千问等），内置表里没有；② 你走的是中转站、结算价与官方不同。<br>填的都是<b>高峰时段</b>的价（每百万 token），空闲时段按下面的折扣折算——官方口径是空闲 = 高峰的一半。<br>匹配规则：先精确匹配模型名，再按<b>最长的包含匹配</b>，所以填一条 <code>deepseek</code> 就能覆盖同族新模型。<br>口径提醒：<b>缓存命中输入价常是未命中价的几十分之一</b>，而日报评分的提示词前缀固定、极易命中前缀缓存，所以两者要分开填（官方命中 0.02 元 vs 未命中 1 元）。"
+          children:
+            - $formkit: text
+              name: model
+              label: 模型匹配串（如 deepseek、gpt-4o-mini）
+              value: ""
+            - $formkit: text
+              name: currency
+              label: 币种（CNY / USD）
+              value: ""
+            - $formkit: text
+              name: cacheHit
+              label: 高峰价 · 缓存命中输入
+              value: ""
+            - $formkit: text
+              name: cacheMiss
+              label: 高峰价 · 缓存未命中输入
+              value: ""
+            - $formkit: text
+              name: output
+              label: 高峰价 · 输出
+              value: ""
+            - $formkit: text
+              name: offPeakRatio
+              label: 空闲时段折扣（默认 0.5）
+              value: ""
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: aiApiBase
-          label: 主模型 API Base
+          label: 兼容通道：主模型 API Base
           value: "https://api.deepseek.com/v1"
           validation: required
-          help: 需要兼容 OpenAI 的 chat/completions 协议。DeepSeek 填 https://api.deepseek.com/v1，通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1。
+          help: 这组「主 / 兜底」字段是升级前的老配置，只在上面那张通道清单留空时生效。需要兼容 OpenAI 的 chat/completions 协议。DeepSeek 填 https://api.deepseek.com/v1，通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1。
         - $formkit: password
           if: "$get(aiDigestEnabled).value === true"
           name: aiApiKey
-          label: 主模型 API Key
+          label: 兼容通道：主模型 API Key
           value: ""
           validation: required
           help: 仅保存在服务端、不会下发到小程序。DeepSeek 可在 platform.deepseek.com 创建。
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: aiModel
-          label: 主模型名称
+          label: 兼容通道：主模型名称
           value: "deepseek-chat"
           validation: required
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: fallbackApiBase
-          label: 兜底 API Base（可选）
+          label: 兼容通道：兜底 API Base（可选）
           value: ""
           help: 主模型调用失败时自动切换，留空则不启用兜底。同样需要兼容 OpenAI 协议。
         - $formkit: password
           if: "$get(aiDigestEnabled).value === true"
           name: fallbackApiKey
-          label: 兜底 API Key（可选）
+          label: 兼容通道：兜底 API Key（可选）
           value: ""
         - $formkit: text
           if: "$get(aiDigestEnabled).value === true"
           name: fallbackModel
-          label: 兜底模型名称（可选）
+          label: 兼容通道：兜底模型名称（可选）
           value: ""
           help: 留空时按兜底端点自动推断（含 deepseek 用 deepseek-chat，否则用 gpt-4o-mini）。
         - $formkit: number
@@ -1960,7 +2258,51 @@ spec:
           min: 1
           max: 50
           validation: required
-          help: AI 评分后保留的篇数，10 篇偏精简、20 篇偏扩展。
+          help: AI 评分后保留的篇数，10 篇偏精简、20 篇偏扩展。这是本期总数上限，各分类的保底篇数优先于它。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: minPerCategory
+          label: 每个分类至少几篇
+          value: 1
+          min: 0
+          max: 10
+          validation: required
+          help: 默认 1：先给分类清单里的每个分类各留够这个篇数（优先挑带封面图的），剩下的名额再按分数补满「精选篇数」。填 0 关闭配额，回到「全局按分数取前 N 名」的老行为（那种情况下某些分类可能一篇都没有）。归入「其他」的兜底分类不参与配额。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: maxPerCategory
+          label: 每个分类最多几篇
+          value: 0
+          min: 0
+          max: 50
+          validation: required
+          help: 0 = 不限（默认）。某个分类高分文章特别多、把名额全占了时可以填 2-3 压一压，让分类分布更均匀。
+        - $formkit: switch
+          if: "$get(aiDigestEnabled).value === true"
+          name: categoryFallbackEnabled
+          label: 分类没素材时放宽时间窗补抓
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，某个分类在时间窗内一篇候选都没有时，会用下面的「补抓时间窗」再抓一轮把它补上（只补缺口分类）。代价是多一轮 RSS 抓取 + 一轮 AI 评分，且只在确实有缺口时才会发生。关闭则本期该分类不发文章，报告里会标注原因。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: categoryFallbackHours
+          label: 补抓时间窗（小时）
+          value: 168
+          min: 1
+          max: 720
+          validation: required
+          help: 补抓用的时间范围，默认 168 小时（7 天）：让更新慢的分类也能找到一篇可发的文章。
+        - $formkit: number
+          if: "$get(aiDigestEnabled).value === true"
+          name: categoryFallbackScanLimit
+          label: 补抓最多再评几篇
+          value: 30
+          min: 1
+          max: 100
+          validation: required
+          help: 补抓时按发布时间倒序最多再评这么多篇，用于控制 AI 调用成本。
         - $formkit: number
           if: "$get(aiDigestEnabled).value === true"
           name: words
@@ -1996,6 +2338,19 @@ spec:
           onValue: true
           offValue: false
           help: 开启后，没配到头图（或头图上传失败）的文章会被过滤掉，由后续名次有图的文章补位；如果整轮都没配到图，本次运行会直接失败并说明原因，不会发出无图文章。关闭则允许发布无封面图的文章。
+        - $formkit: select
+          if: "$get(aiDigestEnabled).value === true"
+          name: coverFallbackMode
+          label: 配不到封面图时
+          value: "placeholder"
+          options:
+            - label: 自动生成标题卡片封面
+              value: "placeholder"
+            - label: 允许该篇无封面
+              value: "no-cover"
+            - label: 跳过该篇
+              value: "skip"
+          help: 某个分类的候选文章全都配不到图时怎么办。默认「生成标题卡片」：服务端按分类色 + 分类名 + 标题 + 日期画一张 1200×675 的卡片上传到附件库，这样每个分类都能保证「至少一篇带封面」。卡片用的是插件内置的中文字体（约 1.4MB，随插件分发），所以服务器不用装字体；碰到内置字库里没有的生僻字会只省略那个字，不会画成方框。「允许无封面」保住篇数但列表里没有配图；「跳过该篇」则该分类本期可能没有文章，报告里会写明原因。
         - $formkit: attachmentPolicySelect
           if: "$get(aiDigestEnabled).value === true"
           name: attachmentPolicyName
@@ -2054,7 +2409,78 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "以下两项<b>通常不需要填</b>：文章的分类与标签由插件按 AI 判定结果自动落到站点分类/标签上，不存在会自动创建（创建出来的带 <code>uni.uhalo.pro/auto-generated</code> 标签，便于在 Halo 后台区分）。只有想给所有日报文章再钉一个固定分类/标签时才需要填。"
+          innerHTML: "分类由 AI 从下方<b>分类清单</b>里选，再按所选方式落到站点分类上；标签由关键词自动生成。两者都不需要站长逐篇配置，只有想给所有日报文章再钉一个固定分类/标签时才填最后两项。<br/><b>注意</b>：自动创建出来的分类带 <code>uni.uhalo.pro/auto-generated</code> 标签，可在 Halo 后台区分；它们也会出现在小程序的分类页里，不想这样的话把「分类落库方式」改成「只复用已有分类」或「按映射指定」。"
+        - $formkit: repeater
+          if: "$get(aiDigestEnabled).value === true"
+          name: digestCategories
+          label: 分类清单（AI 只能从这里选）
+          value:
+            - key: ai-ml
+              label: AI / ML
+              emoji: "🤖"
+              desc: AI、机器学习、大模型、深度学习相关
+              targetCategory: ""
+            - key: security
+              label: 安全
+              emoji: "🔒"
+              desc: 安全、隐私、漏洞、加密相关
+              targetCategory: ""
+            - key: engineering
+              label: 工程
+              emoji: "⚙️"
+              desc: 软件工程、架构、编程语言、系统设计
+              targetCategory: ""
+            - key: tools
+              label: 工具 / 开源
+              emoji: "🛠"
+              desc: 开发工具、开源项目、新发布的库与框架
+              targetCategory: ""
+            - key: opinion
+              label: 观点 / 杂谈
+              emoji: "💡"
+              desc: 行业观点、个人思考、职业发展与文化评论
+              targetCategory: ""
+            - key: other
+              label: 其他
+              emoji: "📝"
+              desc: 暂时不适合归入其余主题的内容
+              targetCategory: ""
+          help: "上面预填的是插件内置的六类，可直接改：<b>英文标识</b>会写进 AI 提示词（AI 只能从清单里选），也用作自动创建分类时的 slug；<b>中文显示名</b>是日报正文里的归类小标题。<b>整份清单留空</b>等于沿用内置六类，行为与升级前一致。最多 12 条；重复的英文标识只取第一条。"
+          children:
+            - $formkit: text
+              name: key
+              label: 英文标识（如 tech、finance；留空则忽略该行）
+              value: ""
+            - $formkit: text
+              name: label
+              label: 中文显示名
+              value: ""
+            - $formkit: text
+              name: emoji
+              label: 图标 emoji
+              value: ""
+            - $formkit: text
+              name: desc
+              label: 给 AI 的判定说明
+              value: ""
+            - $formkit: text
+              name: targetCategory
+              label: 映射到已有分类名（可选）
+              value: ""
+        - $formkit: select
+          if: "$get(aiDigestEnabled).value === true"
+          name: categoryMode
+          label: 分类落库方式
+          value: create
+          options:
+            - label: 不存在就创建（默认，升级前行为）
+              value: create
+            - label: 只复用已有分类（匹配不到就不打分类）
+              value: reuse
+            - label: 按映射指定（用清单里填的「映射到已有分类名」）
+              value: map
+          validation: required
+          help: "「只复用已有分类」会按英文标识或中文显示名去匹配站点已有分类，匹配不到就<b>不打分类</b>（这是有意的：手误不该在站点上多出分类）。「按映射指定」则用清单里那一列映射目标。两种方式都不会创建新分类——如果不想让日报在分类页里多出分类，选它们。"
         - $formkit: switch
           if: "$get(aiDigestEnabled).value === true"
           name: autoCategoryEnabled
@@ -2062,7 +2488,19 @@ spec:
           value: true
           onValue: true
           offValue: false
-          help: 开启后，每篇文章按 AI 判定的主题（AI / ML、安全、工程、工具 / 开源、观点 / 杂谈、其他）自动归入对应的站点分类，分类不存在时自动创建。这样小程序端「按关注的分类看内容」才能生效——否则那些分类里永远没有文章。
+          help: 关闭则完全不打 AI 判定的分类（只保留下面手填的固定分类）。开启时，每篇文章按 AI 从分类清单里选中的主题归入站点分类，落库方式见上一项。这样小程序端「按关注的分类看内容」才能生效——否则那些分类里永远没有文章。
+        - $formkit: select
+          if: "$get(aiDigestEnabled).value === true"
+          name: unknownCategoryPolicy
+          label: AI 选了清单外的分类时
+          value: other
+          options:
+            - label: 归入「其他」分类（清单里得有 other 这一项）
+              value: other
+            - label: 不打分类
+              value: drop
+          validation: required
+          help: 正常不会发生（提示词里已限定只能从清单里选）；这是兜底：模型偶尔会自作主张给一个清单外的标签。
         - $formkit: switch
           if: "$get(aiDigestEnabled).value === true"
           name: autoTagEnabled

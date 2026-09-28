@@ -321,4 +321,95 @@ class DigestTaxonomyServiceTest {
             .assertNext(resolved -> assertThat(resolved).isEmpty())
             .verifyComplete();
     }
+
+    // ==================== 三种落库方式 ====================
+
+    /**
+     * 默认（create）方式必须与改造前完全一致：不存在就创建。
+     *
+     * <p>这是升级安全线——老站点没动过任何配置，日报的分分类行为不能变。</p>
+     */
+    @Test
+    void createModeShouldStillCreateMissingCategories() {
+        stubExisting(List.of(), List.of());
+        stubCreate();
+
+        StepVerifier.create(service().resolveAiCategories(List.of("ai-ml"), null, "create"))
+            .assertNext(resolved -> assertThat(resolved).containsExactly("ai-ml"))
+            .verifyComplete();
+
+        verify(client).create(any());
+    }
+
+    @Test
+    void createModeShouldUseConfiguredCatalogForNewCategory() {
+        stubExisting(List.of(), List.of());
+        stubCreate();
+        var catalog = pro.uhalo.uni.utils.DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("wechat", "微信生态", "💬",
+                "小程序、公众号、微信支付相关", "微信")));
+
+        StepVerifier.create(service().resolveAiCategories(List.of("wechat"), catalog, "create"))
+            .assertNext(resolved -> assertThat(resolved).containsExactly("wechat"))
+            .verifyComplete();
+
+        var captor = ArgumentCaptor.forClass(Category.class);
+        verify(client).create(captor.capture());
+        var spec = captor.getValue().getSpec();
+        // 显示名与描述都取自站长配置的清单，而不是内置的那张表
+        assertThat(spec.getDisplayName()).isEqualTo("微信生态");
+        assertThat(spec.getDescription()).isEqualTo("小程序、公众号、微信支付相关");
+    }
+
+    /** reuse：只复用已有分类，匹配不到就不打分类（更不会创建）。 */
+    @Test
+    void reuseModeShouldOnlyReuseExistingCategories() {
+        stubExisting(List.of(category("ai-ml", "AI / ML", "ai-ml")), List.of());
+
+        StepVerifier.create(service().resolveAiCategories(List.of("ai-ml", "brand-new"), null,
+                "reuse"))
+            .assertNext(resolved -> assertThat(resolved).containsExactly("ai-ml"))
+            .verifyComplete();
+
+        verify(client, never()).create(any());
+    }
+
+    /**
+     * reuse 模式也要认中文显示名。
+     *
+     * <p>站长的分类体系往往是中文的（「技术」「微信生态」），而 AI 只给英文 key；
+     * 只按 key 匹配的话，明明有对应分类也会被判为「不存在」，文章就白白没有分类了。</p>
+     */
+    @Test
+    void reuseModeShouldMatchChineseDisplayName() {
+        stubExisting(List.of(category("c1c2c3", "微信生态", "wechat-eco")), List.of());
+        var catalog = pro.uhalo.uni.utils.DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("wechat", "微信生态", "💬", "微信相关",
+                "")));
+
+        StepVerifier.create(service().resolveAiCategories(List.of("wechat"), catalog, "reuse"))
+            .assertNext(resolved -> assertThat(resolved).containsExactly("c1c2c3"))
+            .verifyComplete();
+
+        verify(client, never()).create(any());
+    }
+
+    /** map：按清单里的映射换成站点分类名，只匹配不创建。 */
+    @Test
+    void mapModeShouldResolveConfiguredTargetsOnly() {
+        stubExisting(List.of(category("tech", "技术", "tech")), List.of());
+        var catalog = pro.uhalo.uni.utils.DigestCategoryCatalog.from(List.of(
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("engineering", "工程", "⚙️", "工程相关",
+                "技术"),
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("news", "资讯", "📰", "资讯相关", ""),
+            new pro.uhalo.uni.dto.DigestCategoryConfigDTO("docs", "文档", "📚", "文档相关",
+                "不存在的分类")));
+
+        StepVerifier.create(service().resolveAiCategories(List.of("engineering", "news", "docs"),
+                catalog, "map"))
+            .assertNext(resolved -> assertThat(resolved).containsExactly("tech"))
+            .verifyComplete();
+
+        verify(client, never()).create(any());
+    }
 }

@@ -5,6 +5,7 @@ import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.DigestArticleDTO;
 import pro.uhalo.uni.dto.DigestStatsDTO;
 import pro.uhalo.uni.utils.DigestAiHelper;
+import pro.uhalo.uni.utils.DigestCategoryCatalog;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -34,29 +35,20 @@ public class DigestRenderer {
     private static final int TAG_CLOUD_LIMIT = 20;
     private static final int ASCII_BAR_WIDTH = 20;
 
-    private record CategoryMeta(String emoji, String label, String description) {
-    }
-
-    private static final Map<String, CategoryMeta> CATEGORY_META = Map.of(
-        "ai-ml", new CategoryMeta("🤖", "AI / ML", "AI、机器学习、大模型、深度学习相关"),
-        "security", new CategoryMeta("🔒", "安全", "安全、隐私、漏洞、加密相关"),
-        "engineering", new CategoryMeta("⚙️", "工程", "软件工程、架构、编程语言、系统设计"),
-        "tools", new CategoryMeta("🛠", "工具 / 开源", "开发工具、开源项目、新发布的库与框架"),
-        "opinion", new CategoryMeta("💡", "观点 / 杂谈", "行业观点、个人思考、职业发展与文化评论"),
-        "other", new CategoryMeta("📝", "其他", "暂时不适合归入其余主题的内容"));
-
-    private static CategoryMeta metaOf(String category) {
-        return CATEGORY_META.getOrDefault(category, CATEGORY_META.get("other"));
-    }
-
     /**
-     * 分类中文名（公开）。
+     * 分类中文名（按内置清单）。
      *
-     * <p>给小程序端用的：分类名与图标只在 {@link #CATEGORY_META} 里定义一份，
-     * 前端不要另抄一套映射，否则加新分类时两边会不一致。</p>
+     * <p>给小程序端与存量归类用的：分类名、图标、说明现在只有一份定义
+     * （{@link DigestCategoryCatalog}，站长可在后台改），前端不要另抄一套映射，
+     * 否则加新分类时两边会不一致。</p>
      */
     public static String categoryLabel(String category) {
-        return metaOf(category).label();
+        return categoryLabel(category, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /** 分类中文名（按站长配置的清单；清单外的旧分类回落到内置表或 key 本身）。 */
+    public static String categoryLabel(String category, DigestCategoryCatalog catalog) {
+        return orDefault(catalog).labelOf(category);
     }
 
     /**
@@ -66,16 +58,43 @@ public class DigestRenderer {
      * 写给站长看的「由某插件自动创建」在访客眼里是噪音，一句主题定义才是有效信息。</p>
      */
     public static String categoryDescription(String category) {
-        return metaOf(category).description();
+        return categoryDescription(category, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /** 分类说明（按站长配置的清单）。 */
+    public static String categoryDescription(String category, DigestCategoryCatalog catalog) {
+        return orDefault(catalog).descriptionOf(category);
     }
 
     /** 分类图标（公开），口径同 {@link #categoryLabel}。 */
     public static String categoryEmoji(String category) {
-        return metaOf(category).emoji();
+        return categoryEmoji(category, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /** 分类图标（按站长配置的清单）。 */
+    public static String categoryEmoji(String category, DigestCategoryCatalog catalog) {
+        return orDefault(catalog).emojiOf(category);
+    }
+
+    /** 目录兜底：调用方传 null（不该发生）时按内置清单走，避免 NPE 让整轮生成失败 */
+    private static DigestCategoryCatalog orDefault(DigestCategoryCatalog catalog) {
+        return catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
     }
 
     public String render(List<DigestArticleDTO> articles, DigestAiHelper.Overview overview,
-        DigestStatsDTO stats, boolean mermaidEnabled, String footerNote, ZonedDateTime generatedAt) {        var dateStr = generatedAt.format(DATE_FORMAT);
+        DigestStatsDTO stats, boolean mermaidEnabled, String footerNote, ZonedDateTime generatedAt) {
+        return render(articles, overview, stats, mermaidEnabled, footerNote, generatedAt,
+            DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /**
+     * 日报成稿（按站长配置的分类清单渲染分组标题与图标）。
+     */
+    public String render(List<DigestArticleDTO> articles, DigestAiHelper.Overview overview,
+        DigestStatsDTO stats, boolean mermaidEnabled, String footerNote, ZonedDateTime generatedAt,
+        DigestCategoryCatalog catalog) {
+        var directory = orDefault(catalog);
+        var dateStr = generatedAt.format(DATE_FORMAT);
         var avgWords = stats.getActualAvgWords() > 0 ? stats.getActualAvgWords() : stats.getWords();
 
         var report = new StringBuilder();
@@ -85,9 +104,9 @@ public class DigestRenderer {
             .append("，每篇约 ").append(avgWords).append(" 字\n\n");
 
         appendHighlights(report, overview);
-        appendTopThree(report, articles);
-        appendStats(report, articles, stats, mermaidEnabled);
-        appendCategoryGroups(report, articles);
+        appendTopThree(report, articles, directory);
+        appendStats(report, articles, stats, mermaidEnabled, directory);
+        appendCategoryGroups(report, articles, directory);
         appendFooter(report, articles, stats, generatedAt, footerNote);
 
         return report.toString();
@@ -103,13 +122,22 @@ public class DigestRenderer {
      */
     public String renderArticle(DigestArticleDTO article, DigestStatsDTO stats, String footerNote,
         ZonedDateTime generatedAt) {
-        var meta = metaOf(article.getCategory());
+        return renderArticle(article, stats, footerNote, generatedAt,
+            DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /** 单篇成稿（按站长配置的分类清单输出分类名与图标）。 */
+    public String renderArticle(DigestArticleDTO article, DigestStatsDTO stats, String footerNote,
+        ZonedDateTime generatedAt, DigestCategoryCatalog catalog) {
+        var directory = orDefault(catalog);
+        var category = article.getCategory();
         var report = new StringBuilder();
         report.append("# ").append(displayTitle(article)).append("\n\n");
         report.append('[').append(article.getTitle()).append("](").append(article.getLink())
             .append(") — ").append(article.getSourceName()).append(" · ")
             .append(humanizeTime(article.getPubDate())).append(" · ")
-            .append(meta.emoji()).append(' ').append(meta.label()).append("\n\n");
+            .append(directory.emojiOf(category)).append(' ').append(directory.labelOf(category))
+            .append("\n\n");
         appendImage(report, article);
         if (StringUtils.hasText(article.getSummary())) {
             report.append("> ").append(article.getSummary()).append("\n\n");
@@ -145,7 +173,8 @@ public class DigestRenderer {
 
     // ── 今日必读 ──
 
-    private void appendTopThree(StringBuilder report, List<DigestArticleDTO> articles) {
+    private void appendTopThree(StringBuilder report, List<DigestArticleDTO> articles,
+        DigestCategoryCatalog catalog) {
         if (articles.size() < 3) {
             return;
         }
@@ -153,12 +182,13 @@ public class DigestRenderer {
         report.append("## 🏆 今日必读\n\n");
         for (var i = 0; i < 3; i++) {
             var article = articles.get(i);
-            var meta = metaOf(article.getCategory());
+            var category = article.getCategory();
             report.append(medals.get(i)).append(" **").append(displayTitle(article)).append("**\n\n");
             report.append('[').append(article.getTitle()).append("](").append(article.getLink())
                 .append(") — ").append(article.getSourceName()).append(" · ")
                 .append(humanizeTime(article.getPubDate())).append(" · ")
-                .append(meta.emoji()).append(' ').append(meta.label()).append("\n\n");
+                .append(catalog.emojiOf(category)).append(' ').append(catalog.labelOf(category))
+                .append("\n\n");
             appendImage(report, article);
             if (StringUtils.hasText(article.getSummary())) {
                 report.append("> ").append(article.getSummary()).append("\n\n");
@@ -175,7 +205,7 @@ public class DigestRenderer {
     // ── 数据概览 ──
 
     private void appendStats(StringBuilder report, List<DigestArticleDTO> articles,
-        DigestStatsDTO stats, boolean mermaidEnabled) {
+        DigestStatsDTO stats, boolean mermaidEnabled, DigestCategoryCatalog catalog) {
         report.append("## 📊 数据概览\n\n");
         report.append("| 扫描源 | 抓取文章 | 时间范围 | 精选 |\n");
         report.append("|:---:|:---:|:---:|:---:|\n");
@@ -185,7 +215,7 @@ public class DigestRenderer {
             .append(stats.getHours()).append("h | **").append(articles.size()).append(" 篇** |\n\n");
 
         if (mermaidEnabled) {
-            var pieChart = categoryPieChart(articles);
+            var pieChart = categoryPieChart(articles, catalog);
             if (StringUtils.hasText(pieChart)) {
                 report.append("### 分类分布\n\n").append(pieChart);
             }
@@ -211,7 +241,8 @@ public class DigestRenderer {
 
     // ── 分类文章列表 ──
 
-    private void appendCategoryGroups(StringBuilder report, List<DigestArticleDTO> articles) {
+    private void appendCategoryGroups(StringBuilder report, List<DigestArticleDTO> articles,
+        DigestCategoryCatalog catalog) {
         var groups = new LinkedHashMap<String, List<DigestArticleDTO>>();
         for (var article : articles) {
             groups.computeIfAbsent(article.getCategory(), key -> new ArrayList<>()).add(article);
@@ -223,8 +254,8 @@ public class DigestRenderer {
 
         var globalIndex = 0;
         for (var entry : sorted) {
-            var meta = metaOf(entry.getKey());
-            report.append("## ").append(meta.emoji()).append(' ').append(meta.label()).append("\n\n");
+            report.append("## ").append(catalog.emojiOf(entry.getKey())).append(' ')
+                .append(catalog.labelOf(entry.getKey())).append("\n\n");
             for (var article : entry.getValue()) {
                 globalIndex++;
                 report.append("### ").append(globalIndex).append(". ")
@@ -260,6 +291,10 @@ public class DigestRenderer {
     }
 
     private void appendImage(StringBuilder report, DigestArticleDTO article) {
+        // 标题卡片只作封面用：同一张卡片在正文里再出现一次没有任何信息量
+        if (article.isPlaceholderCover()) {
+            return;
+        }
         if (!StringUtils.hasText(article.getUploadedImage())) {
             return;
         }
@@ -343,6 +378,11 @@ public class DigestRenderer {
     }
 
     String categoryPieChart(List<DigestArticleDTO> articles) {
+        return categoryPieChart(articles, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    String categoryPieChart(List<DigestArticleDTO> articles, DigestCategoryCatalog catalog) {
+        var directory = orDefault(catalog);
         var counts = new LinkedHashMap<String, Integer>();
         for (var article : articles) {
             counts.merge(article.getCategory(), 1, Integer::sum);
@@ -351,11 +391,10 @@ public class DigestRenderer {
             return "";
         }
         var builder = new StringBuilder("```mermaid\npie showData\n    title \"文章分类分布\"\n");
-        sortByCountDesc(counts).forEach((category, count) -> {
-            var meta = metaOf(category);
-            builder.append("    \"").append(meta.emoji()).append(' ').append(meta.label())
-                .append("\" : ").append(count).append('\n');
-        });
+        sortByCountDesc(counts).forEach((category, count) -> builder
+            .append("    \"").append(directory.emojiOf(category)).append(' ')
+            .append(directory.labelOf(category))
+            .append("\" : ").append(count).append('\n'));
         return builder.append("```\n").toString();
     }
 

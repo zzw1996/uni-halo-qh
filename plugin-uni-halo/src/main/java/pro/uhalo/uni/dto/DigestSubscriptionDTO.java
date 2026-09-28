@@ -46,6 +46,14 @@ public class DigestSubscriptionDTO {
      */
     private List<String> effectiveCategories;
 
+    /**
+     * 额度视图：上限、免费额度、已购额度、积分解锁价格、被暂停的分类。
+     *
+     * <p>客户端不再自己判断上限（原来硬编码了一个与后端常量对齐的 5），
+     * 上限与免费额度都是可配的，必须由服务端下发。</p>
+     */
+    private SubscriptionLimitsDTO limits;
+
     /** 最近一次修改时间（yyyy-MM-dd HH:mm），未订阅为 null */
     private String updatedAt;
 

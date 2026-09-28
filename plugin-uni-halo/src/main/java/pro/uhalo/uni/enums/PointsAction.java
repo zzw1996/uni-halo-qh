@@ -77,6 +77,7 @@ public enum PointsAction {
             case "publish_moment" -> "发布瞬间";
             case "publish_refund" -> "投稿失败退还";
             case "exchange_dashboard" -> "积分兑换·数据看板";
+            case "subscribe_quota" -> "积分解锁·订阅额度";
             case "admin_adjust" -> "系统调整";
             default -> {
                 // 积分购买装扮的流水动作码为动态拼接 outfit_{key}，在此统一做前缀映射。

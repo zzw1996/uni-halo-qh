@@ -22,7 +22,7 @@ import pro.uhalo.uni.dto.InviteQRCodeDataDTO;
 import pro.uhalo.uni.scheme.QRCodeInfo;
 import pro.uhalo.uni.services.QRCodeInfoService;
 import pro.uhalo.uni.services.UniHaloService;
-import pro.uhalo.uni.utils.TokenManager;
+import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.attachment.Attachment;
@@ -60,7 +60,7 @@ public class UniHaloServiceImpl implements UniHaloService {
 
     private final QRCodeInfoService qrCodeInfoService;
     private final ReactiveSettingFetcher settingFetcher;
-    private final TokenManager tokenManager;
+    private final WxAccessTokenProvider wxAccessTokenProvider;
     private final AttachmentService attachmentService;
     private final ExternalLinkProcessor externalLinkProcessor;
     private final ConcurrentHashMap<String, Mono<String>> qrCodeGenerating = new ConcurrentHashMap<>();
@@ -84,6 +84,18 @@ public class UniHaloServiceImpl implements UniHaloService {
 
     /** 底部导航配置分组名 */
     private static final String TABBAR_CONFIG_GROUP = "tabbarConfig";
+
+    /** AI 日报配置分组名（内含大模型 Key） */
+    private static final String AI_DIGEST_CONFIG_GROUP = "aiDigestConfig";
+
+    /**
+     * AI 日报分组里禁止下发的密钥字段。
+     *
+     * <p>{@code aiProviders} 是清单，逐条的 Key 在 {@link #stripAiDigestSecrets} 里单独剥掉；
+     * 剩下三个是清单为空时生效的兼容通道密钥。</p>
+     */
+    private static final java.util.Set<String> AI_DIGEST_SECRET_FIELDS =
+        java.util.Set.of("aiApiKey", "fallbackApiKey");
 
     /**
      * 底部导航最少/最多显示项。
@@ -112,8 +124,10 @@ public class UniHaloServiceImpl implements UniHaloService {
      * 表现与原生 tab 一致（无返回箭头、不重载）。</p>
      */
     private static final java.util.List<TabbarPreset> TABBAR_OPTIONAL = java.util.List.of(
-        new TabbarPreset("category", "showCategory", false, "分类", "select_category",
-            "/pages/tabbar/category/category", true, null),
+        // 页面已从「分类」重做成「发现」（分类发现 + 搜索/排序 + 订阅热度榜）。
+        // key 保持 category：改 key 会让站长的 showCategory 开关与用户本地偏好全部失配
+        new TabbarPreset("category", "showCategory", false, "发现", "select_category",
+            "/pages/tabbar/discover/discover", true, null),
         new TabbarPreset("moments", "showMoments", false, "瞬间", "select_gallery",
             "/pages/tabbar/moments/moments", true, "moments"),
         new TabbarPreset("rank", "showRank", false, "榜单", "select_rank",
@@ -133,6 +147,7 @@ public class UniHaloServiceImpl implements UniHaloService {
         // 因此必须在此剥离仅供服务端使用的密钥，避免下发到客户端：
         // - 支付密钥（paySig 签名用）
         // - 个人令牌（等同于管理员权限：拿到它就能以管理员身份调 Halo 任何接口）
+        // - 大模型 API Key（能直接消费站长的 AI 额度）
         return this.settingFetcher.getValues()
             .map(configs -> {
                 var sanitized = new HashMap<String, JsonNode>(configs);
@@ -147,6 +162,10 @@ public class UniHaloServiceImpl implements UniHaloService {
                 var tabbarConfig = sanitized.get(TABBAR_CONFIG_GROUP);
                 if (tabbarConfig != null) {
                     sanitized.put(TABBAR_CONFIG_GROUP, normalizeTabbarConfig(tabbarConfig));
+                }
+                var aiDigestConfig = sanitized.get(AI_DIGEST_CONFIG_GROUP);
+                if (aiDigestConfig != null) {
+                    sanitized.put(AI_DIGEST_CONFIG_GROUP, stripAiDigestSecrets(aiDigestConfig));
                 }
                 return sanitized;
             });
@@ -166,8 +185,34 @@ public class UniHaloServiceImpl implements UniHaloService {
                 if (TABBAR_CONFIG_GROUP.equals(groupName)) {
                     return normalizeTabbarConfig(config);
                 }
+                if (AI_DIGEST_CONFIG_GROUP.equals(groupName)) {
+                    return stripAiDigestSecrets(config);
+                }
                 return config;
             });
+    }
+
+    /**
+     * 移除 AI 日报分组里的密钥：{@code aiApiKey}、{@code fallbackApiKey}，
+     * 以及通道清单 {@code aiProviders} 里每一条的 {@code apiKey}。
+     *
+     * <p>大模型 Key 能直接消费站长的 AI 额度，而这里是匿名接口。</p>
+     */
+    private static JsonNode stripAiDigestSecrets(JsonNode config) {
+        if (config == null || !(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        AI_DIGEST_SECRET_FIELDS.forEach(copy::remove);
+        var providers = copy.get("aiProviders");
+        if (providers != null && providers.isArray()) {
+            for (var item : providers) {
+                if (item instanceof ObjectNode entry) {
+                    entry.remove("apiKey");
+                }
+            }
+        }
+        return copy;
     }
 
     /**
@@ -447,25 +492,15 @@ public class UniHaloServiceImpl implements UniHaloService {
         return sb.toString();
     }
 
+    /**
+     * 取 access_token。
+     *
+     * <p>缓存与换取都交给 {@link WxAccessTokenProvider}（全插件共用一份，避免多处缓存互相挤掉）；
+     * 这里的错误类型保持 {@code IllegalStateException} 不变——小程序码接口对外的 500 语义
+     * 由它决定，收口 token 不该顺带改掉接口行为。</p>
+     */
     private Mono<String> ensureAccessToken() {
-        String token = tokenManager.getToken();
-        if (StringUtils.hasText(token)) {
-            return Mono.just(token);
-        }
-        return getAccessToken().flatMap(accessTokenJson -> {
-            if (accessTokenJson.has("errcode") && accessTokenJson.get("errcode").asInt() != 0) {
-                return Mono.error(new IllegalStateException(
-                    "微信 access_token 获取失败：" + accessTokenJson.path("errmsg").asText("请检查 appId/appSecret 配置")));
-            }
-            JsonNode accessTokenNode = accessTokenJson.get("access_token");
-            if (accessTokenNode == null || accessTokenNode.isNull() || !StringUtils.hasText(accessTokenNode.asText())) {
-                return Mono.error(new IllegalStateException("微信 access_token 为空，请检查小程序 appId/appSecret 配置"));
-            }
-            String accessToken = accessTokenNode.asText();
-            int expiresIn = accessTokenJson.path("expires_in").asInt(7200);
-            tokenManager.setToken(accessToken, expiresIn);
-            return Mono.just(accessToken);
-        });
+        return wxAccessTokenProvider.token();
     }
 
     private Mono<byte[]> requestWxacode(String token, String sceneKey) {
@@ -510,7 +545,7 @@ public class UniHaloServiceImpl implements UniHaloService {
             }
             String errmsg = err.path("errmsg").asText("未知错误");
             if ((errcode == 40001 || errcode == 42001) && !retried) {
-                tokenManager.clearToken();
+                wxAccessTokenProvider.invalidate();
                 return ensureAccessToken()
                     .flatMap(newToken -> requestWxacode(newToken, sceneKey, true));
             }

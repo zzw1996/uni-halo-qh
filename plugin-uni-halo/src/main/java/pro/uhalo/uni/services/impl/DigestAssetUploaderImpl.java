@@ -129,6 +129,22 @@ public class DigestAssetUploaderImpl implements DigestAssetUploader {
 
     // ── 方式二：插件下载字节流后走官方上传接口 ──
 
+    @Override
+    public Mono<String> uploadBytes(byte[] bytes, String mediaType, String baseName,
+        DigestConfigDTO config) {
+        if (bytes == null || bytes.length == 0) {
+            return Mono.empty();
+        }
+        if (bytes.length > MAX_IMAGE_BYTES) {
+            log.warn("[UniHalo][Digest] 待上传图片过大（{} 字节），跳过：{}", bytes.length, baseName);
+            return Mono.empty();
+        }
+        return Mono.defer(() -> resolveTarget(config)
+            .flatMap(target -> uploadBytes(new DownloadedImage(bytes, mediaType), baseName, target))
+            .doOnError(ex -> log.warn("[UniHalo][Digest] 图片上传失败 {}：{}",
+                baseName, describe(ex))));
+    }
+
     private Mono<String> downloadAndUpload(URL url, String sourceUrl, String baseName,
         UploadTarget target) {
         return downloadClient.get()

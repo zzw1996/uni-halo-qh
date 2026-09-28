@@ -94,4 +94,40 @@ class DigestTextUtilsTest {
         assertThat(DigestTextUtils.isTextualContentType("image/jpeg")).isFalse();
         assertThat(DigestTextUtils.isTextualContentType("")).isFalse();
     }
+
+    @Test
+    void normalizeLinkShouldIgnoreSchemeWwwSlashAnchorAndTrackingParams() {
+        var expected = "example.com/post/a";
+
+        // 同一篇被转载时，链接往往只差这些
+        assertThat(DigestTextUtils.normalizeLink("https://www.example.com/post/a/")).isEqualTo(expected);
+        assertThat(DigestTextUtils.normalizeLink("http://example.com/post/a")).isEqualTo(expected);
+        assertThat(DigestTextUtils.normalizeLink("https://EXAMPLE.com/post/a#comments")).isEqualTo(expected);
+        assertThat(DigestTextUtils.normalizeLink(
+            "https://example.com/post/a?utm_source=rss&utm_medium=feed&fbclid=x")).isEqualTo(expected);
+    }
+
+    @Test
+    void normalizeLinkShouldKeepMeaningfulQueryParams() {
+        // ?p=123 这类参数是文章身份的一部分，丢掉它会把不同文章误判成同一篇
+        // （空路径的斜杠统一去掉，所以是 example.com?p=123）
+        assertThat(DigestTextUtils.normalizeLink("https://example.com/?p=123"))
+            .isEqualTo("example.com?p=123");
+        assertThat(DigestTextUtils.normalizeLink("https://example.com/?p=123&utm_source=x"))
+            .isEqualTo("example.com?p=123");
+        // 站点根路径的两种写法是同一个地址
+        assertThat(DigestTextUtils.normalizeLink("https://example.com/"))
+            .isEqualTo(DigestTextUtils.normalizeLink("https://example.com"));
+    }
+
+    @Test
+    void dedupKeyShouldFallBackToTitleWhenLinkIsMissing() {
+        assertThat(DigestTextUtils.dedupKey("https://a.com/x", "标题"))
+            .isEqualTo("link:a.com/x");
+        // 没有链接时按标题去重（大小写与空白归一化），标题也没有才返回空
+        assertThat(DigestTextUtils.dedupKey("", "Rust  Weekly"))
+            .isEqualTo("title:rust weekly");
+        assertThat(DigestTextUtils.dedupKey(null, null)).isEmpty();
+        assertThat(DigestTextUtils.normalizeLink("")).isEmpty();
+    }
 }

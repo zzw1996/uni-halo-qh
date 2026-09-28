@@ -101,9 +101,57 @@ public class DigestEndpoint implements CustomEndpoint {
                         .implementation(String.class)))
             .GET("/digest/classify/status", digestController::classifyStatus, builder -> builder
                 .operationId("GetDigestClassifyStatus")
-                .description("How many published posts already carry one of the six digest "
+                .description("How many published posts already carry one of the digest "
                     + "categories, and how many are still unclassified.")
                 .tag(apiTag))
+            .GET("/digest/models", digestController::aiModels, builder -> builder
+                .operationId("GetDigestModels")
+                .description("AI model channels: the configured list, the channel in effect, the "
+                    + "per-task channel in effect, and the legacy main/fallback pair. Each "
+                    + "channel may carry a task list (score/write/overview/classify/content); "
+                    + "empty means every task. API keys are masked before sending.")
+                .tag(apiTag))
+            .PUT("/digest/models", digestController::saveAiModels, builder -> builder
+                .operationId("SaveDigestModels")
+                .description("Save the AI model channel list. Only the aiProviders field is "
+                    + "replaced; every other digest setting is preserved. Blank or masked keys "
+                    + "keep the stored value, task lists are taken as submitted.")
+                .tag(apiTag))
+            .GET("/digest/models/balance", digestController::aiBalances, builder -> builder
+                .operationId("GetDigestModelBalances")
+                .description("Query the account balance of each usable AI channel via the "
+                    + "provider's official endpoint (DeepSeek: GET /user/balance). Channels that "
+                    + "do not support it report that instead of failing. No tokens consumed.")
+                .tag(apiTag))
+            .POST("/digest/models/prices/refresh", digestController::refreshAiPrices,
+                builder -> builder
+                    .operationId("RefreshDigestPrices")
+                    .description("Read the model price table from the provider's official pricing "
+                        + "page (DeepSeek documents no price API). Same-model entries are replaced; "
+                        + "other entries in the table are kept. On failure the built-in table stays.")
+                    .tag(apiTag))
+            .POST("/digest/models/test", digestController::testAiModel, builder -> builder
+                .operationId("TestDigestModel")
+                .description("Test one AI channel with a single tiny request (8 output tokens). "
+                    + "The body is one panel row; a blank or masked key resolves to the stored one.")
+                .tag(apiTag))
+            .GET("/digest/categories", digestController::digestCategories, builder -> builder
+                .operationId("GetDigestCategories")
+                .description("Effective digest category list: where each configured category lands "
+                    + "when publishing, plus rows that would be silently skipped.")
+                .tag(apiTag))
+            .GET("/digest/categories/auto-created", digestController::autoCreatedCategories,
+                builder -> builder
+                    .operationId("ListAutoCreatedCategories")
+                    .description("Categories created by the plugin automatically, with how many "
+                        + "posts reference them (those with zero can be purged).")
+                    .tag(apiTag))
+            .DELETE("/digest/categories/auto-created",
+                digestController::purgeAutoCreatedCategories, builder -> builder
+                    .operationId("PurgeAutoCreatedCategories")
+                    .description("Delete auto-created categories that no post references. "
+                        + "Categories still in use are skipped.")
+                    .tag(apiTag))
             .POST("/digest/classify/preview", digestController::classifyPreview, builder -> builder
                 .operationId("PreviewDigestClassify")
                 .description("Ask the AI to classify the next batch of unclassified posts. "

@@ -10,6 +10,9 @@ import pro.uhalo.uni.dto.PostClassifyApplyResponse;
 import pro.uhalo.uni.dto.PostClassifyCandidateDTO;
 import pro.uhalo.uni.dto.PostClassifyPreviewResponse;
 import pro.uhalo.uni.dto.PostClassifyStatusDTO;
+import pro.uhalo.uni.enums.DigestAiTask;
+import pro.uhalo.uni.utils.DigestAiChannelResolver;
+import pro.uhalo.uni.utils.DigestCategoryCatalog;
 import pro.uhalo.uni.utils.DigestConfigHelper;
 import pro.uhalo.uni.utils.PostClassifyPromptHelper;
 import run.halo.app.core.extension.content.Post;
@@ -110,7 +113,7 @@ public class PostTaxonomyService {
                 .classifiedPosts(classified)
                 .pendingPosts(digests.size() - classified)
                 .batchSize(BATCH_SIZE)
-                .aiReady(StringUtils.hasText(config.getAiApiKey()))
+                .aiReady(DigestAiChannelResolver.hasUsableChannel(config, DigestAiTask.CLASSIFY))
                 .autoCategoryEnabled(config.isAutoCategoryEnabled())
                 .autoTagEnabled(config.isAutoTagEnabled())
                 .build();
@@ -125,9 +128,9 @@ public class PostTaxonomyService {
     public Mono<PostClassifyPreviewResponse> preview(int limit) {
         var size = Math.min(MAX_LIMIT, Math.max(1, limit <= 0 ? BATCH_SIZE : limit));
         return loadConfig().flatMap(config -> {
-            if (!StringUtils.hasText(config.getAiApiKey())) {
+            if (!DigestAiChannelResolver.hasUsableChannel(config, DigestAiTask.CLASSIFY)) {
                 return Mono.error(new IllegalStateException(
-                    "还没配置 AI 接口密钥（插件设置 - AI 日报 - API Key），无法判定文章主题"));
+                    "还没有可用的大模型通道（插件设置「AI 日报 → 大模型通道」），无法判定文章主题"));
             }
             return Mono.zip(loadPublishedPosts(), taxonomy.categoryLabels(), taxonomy.tagLabels())
                 .flatMap(tuple -> {
@@ -142,7 +145,7 @@ public class PostTaxonomyService {
                             .analyzed(0)
                             .pendingPosts(0)
                             .hasMore(false)
-                            .aiModel(config.getAiModel())
+                            .aiModel(DigestAiChannelResolver.activeModel(config, DigestAiTask.CLASSIFY))
                             .message("AI 日报生成的文章都已有分类，没有需要分析的"
                                 + "（你自己写的文章不在这里分析，请到 Halo 后台自行归类）")
                             .build());
@@ -155,14 +158,17 @@ public class PostTaxonomyService {
                         candidates.size(), pending.size());
                     // 与日报流水线共用同一个客户端：降级状态按轮次记忆，这里也要重置
                     aiClient.resetForNewRun();
-                    return aiClient.call(config, PostClassifyPromptHelper.buildPrompt(candidates))
-                        .map(text -> applyVerdicts(candidates, text, config))
+                    var catalog = DigestCategoryCatalog.from(config.getDigestCategories());
+                    return aiClient.call(config,
+                            PostClassifyPromptHelper.buildPrompt(candidates, catalog),
+                            DigestAiTask.CLASSIFY)
+                        .map(reply -> applyVerdicts(candidates, reply.text(), config, catalog))
                         .map(items -> PostClassifyPreviewResponse.builder()
                             .items(items)
                             .analyzed(items.size())
                             .pendingPosts(pending.size())
                             .hasMore(pending.size() > batch.size())
-                            .aiModel(config.getAiModel())
+                            .aiModel(DigestAiChannelResolver.activeModel(config, DigestAiTask.CLASSIFY))
                             .message("已分析 " + items.size() + " 篇，勾选要采纳的建议后再应用"
                                 + "（应用前不会改动任何文章）")
                             .build())
@@ -216,7 +222,11 @@ public class PostTaxonomyService {
             return Mono.just(result("", "", "FAILED", "", List.of(), "条目缺少文章标识"));
         }
         var name = item.getName().trim();
-        return Mono.defer(() -> client.fetch(Post.class, name)
+        return Mono.defer(() -> loadConfig().flatMap(config -> {
+            // 分类清单与日报同源：站长改了清单，旧文章归类也跟着改，
+            // 否则会出现「新日报按新清单分类、存量文章还在往旧分类里塞」的分裂
+            var catalog = DigestCategoryCatalog.from(config.getDigestCategories());
+            return client.fetch(Post.class, name)
                 .flatMap(post -> {
                     if (post.getSpec() == null) {
                         return Mono.just(result(name, "", "SKIPPED", "", List.of(), "文章内容为空"));
@@ -224,7 +234,7 @@ public class PostTaxonomyService {
                     var spec = post.getSpec();
                     var title = nullToEmpty(spec.getTitle());
                     return Mono.zip(
-                            resolveCategoryRefs(item.getCategory()),
+                            resolveCategoryRefs(item.getCategory(), catalog),
                             resolveTagRefs(item.getKeywords()))
                         .flatMap(refs -> {
                             // 先去重出「这篇还没有的」再判断要不要写：解析结果非空不等于有新增，
@@ -258,7 +268,7 @@ public class PostTaxonomyService {
                 .switchIfEmpty(Mono.fromSupplier(() -> {
                     log.info("[UniHalo][Digest] 旧文章归类：文章已不存在，跳过 name={}", name);
                     return result(name, "", "SKIPPED", "", List.of(), "文章不存在或已被删除");
-                })))
+                }))
             .retryWhen(Retry.backoff(UPDATE_RETRIES, Duration.ofMillis(200))
                 .filter(PostTaxonomyService::isConcurrentModification)
                 .doBeforeRetry(signal -> log.info(
@@ -270,23 +280,24 @@ public class PostTaxonomyService {
                 return Mono.just(result(name, "", "FAILED", "", List.of(),
                     "写入失败：" + describe(ex)));
             });
+        }));
     }
 
     /**
      * 解析要写入的分类。
      *
-     * <p>只认两种值：六个主题 key（不存在就自动创建，与日报链路一致），
+     * <p>只认两种值：分类清单里的主题 key（不存在就自动创建，与日报链路一致），
      * 或者站点上已存在的分类名。其余一律忽略——这个接口虽然只有站长能调，
      * 但「按请求体随意造分类」这种事没有理由留着。</p>
      */
-    private Mono<List<String>> resolveCategoryRefs(String requested) {
+    private Mono<List<String>> resolveCategoryRefs(String requested, DigestCategoryCatalog catalog) {
         if (!StringUtils.hasText(requested)) {
             return Mono.just(List.of());
         }
         var raw = requested.trim();
-        var key = PostClassifyPromptHelper.normalizeCategory(raw);
+        var key = PostClassifyPromptHelper.normalizeCategory(raw, catalog);
         if (StringUtils.hasText(key)) {
-            return taxonomy.resolveOrCreateCategories(List.of(key));
+            return taxonomy.resolveOrCreateCategories(List.of(key), catalog);
         }
         return taxonomy.resolveExistingCategories(List.of(raw))
             .doOnNext(matched -> {
@@ -342,8 +353,9 @@ public class PostTaxonomyService {
      * 让站长以为设置项不生效。</p>
      */
     private static List<PostClassifyCandidateDTO> applyVerdicts(
-        List<PostClassifyCandidateDTO> candidates, String aiText, DigestConfigDTO config) {
-        var verdicts = PostClassifyPromptHelper.parse(aiText, candidates.size());
+        List<PostClassifyCandidateDTO> candidates, String aiText, DigestConfigDTO config,
+        DigestCategoryCatalog catalog) {
+        var verdicts = PostClassifyPromptHelper.parse(aiText, candidates.size(), catalog);
         var result = new ArrayList<PostClassifyCandidateDTO>(candidates.size());
         for (var i = 0; i < candidates.size(); i++) {
             var candidate = candidates.get(i);
@@ -352,7 +364,7 @@ public class PostTaxonomyService {
             var keywords = config.isAutoTagEnabled() ? verdict.keywords() : List.<String>of();
             candidate.setSuggestedCategory(category);
             candidate.setSuggestedCategoryLabel(
-                StringUtils.hasText(category) ? DigestRenderer.categoryLabel(category) : "");
+                StringUtils.hasText(category) ? DigestRenderer.categoryLabel(category, catalog) : "");
             candidate.setSuggestedKeywords(keywords);
             candidate.setNote(noteOf(config, verdict));
             result.add(candidate);
@@ -366,8 +378,8 @@ public class PostTaxonomyService {
             notes.add("设置里关闭了「自动分类」，未给出主题建议");
         } else if (!verdict.hasCategory()) {
             notes.add("AI 没给出有效主题，可手工指定或先跳过");
-        } else if ("other".equals(verdict.category())) {
-            notes.add("AI 判定不属于前五类，归入「其它」");
+        } else if (DigestCategoryCatalog.FALLBACK_KEY.equals(verdict.category())) {
+            notes.add("AI 判定不属于清单里的其它主题，归入兜底分类");
         }
         if (!config.isAutoTagEnabled()) {
             notes.add("设置里关闭了「自动打标」，未提取关键词");

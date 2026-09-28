@@ -4,11 +4,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import pro.uhalo.uni.services.DigestRenderer;
+import pro.uhalo.uni.dto.DigestAutoCategoryDTO;
+import pro.uhalo.uni.utils.DigestCategoryCatalog;
+import pro.uhalo.uni.utils.DigestConfigHelper;
 import run.halo.app.core.extension.content.Category;
 import run.halo.app.core.extension.content.Tag;
 import run.halo.app.extension.Metadata;
 import run.halo.app.extension.ReactiveExtensionClient;
+import run.halo.app.extension.router.selector.LabelSelector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -65,25 +68,223 @@ public class DigestTaxonomyService {
      * 所以这里仍然只匹配；自动创建只发生在 AI 分类上（那是机器判定的固定枚举，不会写错）。</p>
      */
     public Mono<List<String>> resolveExistingCategories(List<String> names) {
+        return resolveExisting(Category.class, names, "「额外附加」里填的分类");
+    }
+
+    /**
+     * 解析 AI 分类 key：按站长的 {@code categoryMode} 决定「不存在时怎么办」。
+     *
+     * <ul>
+     *   <li>{@code create}（默认，与升级前一致）：所有 key 命中已有分类就复用，没有就按目录创建；</li>
+     *   <li>{@code reuse}：只复用已有分类（按 key / slug / 显示名匹配），匹配不到就不打分类；</li>
+     *   <li>{@code map}：按目录里每行的「映射到已有分类」把 key 换成站点分类名，同样只匹配不创建。</li>
+     * </ul>
+     *
+     * <p>后两种模式匹配失败是<b>静默跳过</b>（只留日志）：站长选了「不自动创建」，
+     * 那么笔误就不该造出分类——但后台自检会把匹配不上的行列出来，避免他以为配置没生效。</p>
+     *
+     * @param catalog      分类目录；null 表示内置六类
+     * @param categoryMode {@code create} / {@code reuse} / {@code map}
+     */
+    public Mono<List<String>> resolveAiCategories(List<String> aiCategories,
+        DigestCategoryCatalog catalog, String categoryMode) {
+        var directory = catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
+        var wanted = normalizeKeys(aiCategories);
+        if (wanted.isEmpty()) {
+            return Mono.just(List.of());
+        }
+        if (DigestConfigHelper.CATEGORY_MODE_MAP.equals(categoryMode)) {
+            return resolveExisting(Category.class, mappedTargets(wanted, directory),
+                "分类映射里指向的");
+        }
+        if (DigestConfigHelper.CATEGORY_MODE_REUSE.equals(categoryMode)) {
+            return resolveExisting(Category.class, reuseCandidates(wanted, directory),
+                "AI 判定出的分类");
+        }
+        return resolveOrCreateCategories(wanted, directory);
+    }
+
+    /**
+     * {@code reuse} 模式的候选名字：英文 key 与清单里的中文显示名都拿去匹配。
+     *
+     * <p>站长的分类体系里往往是中文名（「技术」「微信生态」），而 AI 只会给出英文 key；
+     * 只拿 key 去匹配的话，明明有对应分类也会被判为「不存在」而不打分类。</p>
+     */
+    private static List<String> reuseCandidates(List<String> keys, DigestCategoryCatalog catalog) {
+        var candidates = new ArrayList<String>();
+        for (var key : keys) {
+            candidates.add(key);
+            var entry = catalog.find(key);
+            if (entry != null && StringUtils.hasText(entry.label())
+                && !entry.label().equals(key)) {
+                candidates.add(entry.label().trim());
+            }
+        }
+        return List.copyOf(candidates);
+    }
+
+    /**
+     * 把 AI 分类 key 换成站长指定的站点分类名（{@code map} 模式）。
+     *
+     * <p>清单里没配映射的行会被跳过并留日志：这是站长最容易漏配的地方。</p>
+     */
+    private static List<String> mappedTargets(List<String> keys, DigestCategoryCatalog catalog) {
+        var targets = new ArrayList<String>();
+        for (var key : keys) {
+            var entry = catalog.find(key);
+            var target = entry == null ? "" : entry.targetCategory();
+            if (StringUtils.hasText(target)) {
+                targets.add(target.trim());
+            } else {
+                log.warn("[UniHalo][Digest] 分类 {} 没有配置「映射到已有分类」，本次不打该分类"
+                    + "（模式为 map，不会自动创建）", key);
+            }
+        }
+        return List.copyOf(targets);
+    }
+
+    /** 只匹配已有的通用实现：{@code source} 只用于日志里说明这些名字是哪来的 */
+    private Mono<List<String>> resolveExisting(
+        Class<? extends run.halo.app.extension.Extension> type, List<String> names,
+        String source) {
         if (isEmpty(names)) {
             return Mono.just(List.of());
         }
-        return loadCandidates(Category.class)
-            .map(candidates -> matchAll(names, candidates));
+        return loadCandidates(type).map(candidates -> matchAll(names, candidates, source));
     }
 
     /** 解析「额外附加」的标签名：只匹配已有，不创建。 */
     public Mono<List<String>> resolveExistingTags(List<String> names) {
-        if (isEmpty(names)) {
-            return Mono.just(List.of());
-        }
-        return loadCandidates(Tag.class)
-            .map(candidates -> matchAll(names, candidates));
+        return resolveExisting(Tag.class, names, "「额外附加」里填的标签");
     }
 
     /** 已有分类的「metadata.name → 显示名」，用于后台预览表里显示人看得懂的分类名。 */
     public Mono<Map<String, String>> categoryLabels() {
         return labels(Category.class);
+    }
+
+    /**
+     * 已有分类的「可匹配名字」集合（name / slug / 显示名，小写）。
+     *
+     * <p>给后台自检用：站长在分类清单里填的名字能不能落到站点分类上，
+     * 判断口径必须与发布时一致（{@link #matchOne}），否则自检说「没问题」而发布却静默跳过。</p>
+     */
+    public Mono<java.util.Set<String>> categoryMatchNames() {
+        return loadCandidates(Category.class).map(candidates -> {
+            var names = new LinkedHashSet<String>();
+            for (var candidate : candidates) {
+                candidate.matchableNames().forEach(name -> names.add(name.toLowerCase(Locale.ROOT)));
+            }
+            return java.util.Set.copyOf(names);
+        });
+    }
+
+    /**
+     * 列出「插件自动创建、且没有任何文章引用」的分类。
+     *
+     * <p>换掉分类清单之后，老的自动分类（ai-ml / security 这些）会留在站点上：
+     * 它们已经不参与日报，却又混在站长的分类体系里。这里把「可以安全删掉的那部分」列出来，
+     * 被任何文章引用过的一律不算——删了会让文章的分类指向空。</p>
+     */
+    public Mono<List<DigestAutoCategoryDTO>> listAutoCreatedCategories() {
+        return Mono.zip(autoCreatedCategories(), categoryPostCounts())
+            .map(tuple -> tuple.getT1().stream()
+                .map(category -> toAutoCategory(category, tuple.getT2(), false))
+                .toList());
+    }
+
+    /**
+     * 删除没有任何文章引用的自动分类；被引用的跳过并如实回报原因。
+     *
+     * <p>只删带 {@value #AUTO_GENERATED_LABEL} 标签的分类：站长自己建的分类哪怕没文章，
+     * 也绝不替他处理。</p>
+     */
+    public Mono<List<DigestAutoCategoryDTO>> purgeUnusedAutoCreatedCategories() {
+        return listAutoCreatedCategories()
+            .flatMapMany(Flux::fromIterable)
+            .filter(category -> category.getPostCount() == 0)
+            .concatMap(category -> client.fetch(Category.class, category.getName())
+                .flatMap(client::delete)
+                .thenReturn(withDeleted(category))
+                .onErrorResume(ex -> {
+                    log.warn("[UniHalo][Digest] 清理自动分类失败 name={}：{}", category.getName(),
+                        ex.getMessage());
+                    return Mono.just(DigestAutoCategoryDTO.builder()
+                        .name(category.getName())
+                        .displayName(category.getDisplayName())
+                        .postCount(0)
+                        .deleted(false)
+                        .message("删除失败：" + ex.getMessage())
+                        .build());
+                }))
+            .collectList();
+    }
+
+    /** 带自动创建标签的分类 */
+    private Mono<List<Category>> autoCreatedCategories() {
+        var options = new run.halo.app.extension.ListOptions();
+        options.setLabelSelector(
+            LabelSelector.builder().eq(AUTO_GENERATED_LABEL, "true").build());
+        return client.listAll(Category.class, options, null)
+            .collectList()
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Digest] 读取自动创建的分类失败，按空列表处理：{}", ex.getMessage());
+                return Mono.just(List.of());
+            });
+    }
+
+    /** 「分类名 → 引用它的文章数」：按全站文章统计（草稿也算，删分类同样会让草稿的分类指向空） */
+    private Mono<Map<String, Integer>> categoryPostCounts() {
+        Map<String, Integer> empty = new LinkedHashMap<>();
+        return client.listAll(run.halo.app.core.extension.content.Post.class,
+                new run.halo.app.extension.ListOptions(), null)
+            .reduce(empty, (counts, post) -> {
+                if (post.getSpec() == null || post.getSpec().getCategories() == null) {
+                    return counts;
+                }
+                for (var name : post.getSpec().getCategories()) {
+                    if (StringUtils.hasText(name)) {
+                        counts.merge(name, 1, Integer::sum);
+                    }
+                }
+                return counts;
+            })
+            .onErrorResume(ex -> {
+                // 统计不出来时按「都有引用」处理：宁可少删，也不能误删掉还在用的分类
+                log.warn("[UniHalo][Digest] 统计分类引用失败，本次不清理任何分类：{}", ex.getMessage());
+                return Mono.just(Map.of());
+            });
+    }
+
+    private static DigestAutoCategoryDTO toAutoCategory(Category category,
+        Map<String, Integer> counts, boolean deleted) {
+        var name = category.getMetadata() == null ? "" : category.getMetadata().getName();
+        var spec = category.getSpec();
+        var postCount = counts.getOrDefault(name, 0);
+        return DigestAutoCategoryDTO.builder()
+            .name(name)
+            .displayName(spec == null ? "" : nullToEmpty(spec.getDisplayName()))
+            .description(spec == null ? "" : nullToEmpty(spec.getDescription()))
+            .createdAt(category.getMetadata() == null
+                ? null : category.getMetadata().getCreationTimestamp())
+            .postCount(postCount)
+            .deleted(deleted)
+            .message(postCount > 0
+                ? "有 " + postCount + " 篇文章在用，已跳过（如需删除请先在后台改掉这些文章的分类）"
+                : (deleted ? "已删除" : "没有文章使用，可以安全删除"))
+            .build();
+    }
+
+    private static DigestAutoCategoryDTO withDeleted(DigestAutoCategoryDTO category) {
+        return DigestAutoCategoryDTO.builder()
+            .name(category.getName())
+            .displayName(category.getDisplayName())
+            .description(category.getDescription())
+            .createdAt(category.getCreatedAt())
+            .postCount(0)
+            .deleted(true)
+            .message("已删除")
+            .build();
     }
 
     /** 已有标签的「metadata.name → 显示名」。 */
@@ -120,6 +321,17 @@ public class DigestTaxonomyService {
      * 站长可能已经把显示名改成了自己喜欢的说法，插件不该覆盖它。</p>
      */
     public Mono<List<String>> resolveOrCreateCategories(List<String> aiCategories) {
+        return resolveOrCreateCategories(aiCategories, DigestCategoryCatalog.defaultCatalog());
+    }
+
+    /**
+     * 解析 AI 分类 key（按站长配置的分类清单）：没有的按清单里的中文名/说明创建。
+     *
+     * @param catalog 分类目录：创建分类时的显示名与描述取自它
+     */
+    public Mono<List<String>> resolveOrCreateCategories(List<String> aiCategories,
+        DigestCategoryCatalog catalog) {
+        var directory = catalog == null ? DigestCategoryCatalog.defaultCatalog() : catalog;
         var wanted = normalizeKeys(aiCategories);
         if (wanted.isEmpty()) {
             return Mono.just(List.of());
@@ -131,7 +343,7 @@ public class DigestTaxonomyService {
                     if (hit != null) {
                         return Mono.just(hit);
                     }
-                    return createCategory(key, existing);
+                    return createCategory(key, directory, existing);
                 })
                 .collectList());
     }
@@ -198,7 +410,8 @@ public class DigestTaxonomyService {
 
     // ── 创建 ──
 
-    private Mono<String> createCategory(String name, List<NameCandidate> existing) {
+    private Mono<String> createCategory(String name, DigestCategoryCatalog catalog,
+        List<NameCandidate> existing) {
         var category = new Category();
         var metadata = new Metadata();
         metadata.setName(name);
@@ -208,11 +421,11 @@ public class DigestTaxonomyService {
 
         var spec = new Category.CategorySpec();
         // 显示名用中文（Halo 的 name 不允许中文，所以只能靠显示名让人看懂）
-        spec.setDisplayName(DigestRenderer.categoryLabel(name));
+        spec.setDisplayName(catalog.labelOf(name));
         spec.setSlug(name);
         // 说明写主题定义而不是「由插件创建」：站点分类页的卡片会把描述显示给访客，
         // 一句「AI、机器学习、大模型相关」才是有效信息
-        spec.setDescription(DigestRenderer.categoryDescription(name));
+        spec.setDescription(catalog.descriptionOf(name));
         // 下面这几项必须显式写成与「后台手工创建的分类」一模一样：
         //
         // hideFromList 尤其关键——小程序分类页按 spec.hideFromList=false 过滤，
@@ -327,13 +540,14 @@ public class DigestTaxonomyService {
         return null;
     }
 
-    private static List<String> matchAll(List<String> wanted, List<NameCandidate> candidates) {
+    private static List<String> matchAll(List<String> wanted, List<NameCandidate> candidates,
+        String source) {
         var resolved = new LinkedHashSet<String>();
         for (var name : wanted) {
             var hit = matchOne(name, candidates);
             if (hit == null) {
-                log.warn("[UniHalo][Digest] 「额外附加」里填的 {} 在站点上不存在，已忽略"
-                    + "（自动分类由 AI 判定，不需要手工填）", name);
+                log.warn("[UniHalo][Digest] {}「{}」在站点上不存在，已忽略（匹配不到不会自动创建）",
+                    source, name);
                 continue;
             }
             resolved.add(hit);
@@ -422,6 +636,13 @@ public class DigestTaxonomyService {
             return target.equalsIgnoreCase(name)
                 || target.equalsIgnoreCase(displayName)
                 || target.equalsIgnoreCase(slug);
+        }
+
+        /** 可用于匹配的名字（去空、去重由调用方处理） */
+        List<String> matchableNames() {
+            return java.util.stream.Stream.of(name, displayName, slug)
+                .filter(StringUtils::hasText)
+                .toList();
         }
     }
 }
