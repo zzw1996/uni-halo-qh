@@ -53,6 +53,14 @@ public class DigestArticleDTO {
 
     private List<String> points = new ArrayList<>();
 
+    /**
+     * AI 看法：AI 以自己视角给出的评价、延伸或对读者的意义。
+     *
+     * <p>防侵权的关键段落——与「概述/核心信息」（转述原文事实）严格区分，
+     * 必须是 AI 的原创视角而非原文复述。</p>
+     */
+    private String aiTake;
+
     private String reason;
 
     // ── 精选阶段 ──

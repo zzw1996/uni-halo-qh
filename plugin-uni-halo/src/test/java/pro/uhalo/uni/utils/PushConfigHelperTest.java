@@ -63,7 +63,13 @@ class PushConfigHelperTest {
         var enabled = PushConfigHelper.parse(
             MAPPER.createObjectNode().put("enabled", true).put("templateId", "tmpl"));
         assertThat(PushConfigHelper.kindEnabled(enabled, PushConfigHelper.KIND_NEW_POST)).isTrue();
-        assertThat(PushConfigHelper.kindEnabled(enabled, PushConfigHelper.KIND_AI_DIGEST)).isTrue();
+        // 简报线要求单独配模板（不回落新文章模板）
+        assertThat(PushConfigHelper.kindEnabled(enabled, PushConfigHelper.KIND_AI_DIGEST))
+            .isFalse();
+        var withBrief = PushConfigHelper.parse(MAPPER.createObjectNode()
+            .put("enabled", true).put("templateId", "tmpl").put("aiDigestTemplateId", "tmpl-brief"));
+        assertThat(PushConfigHelper.kindEnabled(withBrief, PushConfigHelper.KIND_AI_DIGEST))
+            .isTrue();
 
         var onlyNewPost = PushConfigHelper.parse(MAPPER.createObjectNode()
             .put("enabled", true).put("templateId", "tmpl").put("aiDigestEnabled", false));

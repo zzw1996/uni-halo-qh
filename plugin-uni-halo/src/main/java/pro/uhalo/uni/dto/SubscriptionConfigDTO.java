@@ -31,7 +31,7 @@ public class SubscriptionConfigDTO {
 
     /** 每份额度的积分价格 */
     @Builder.Default
-    private int quotaPrice = 50;
+    private int quotaPrice = 300;
 
     /** 最多可购买几份额度（防止无限扩容） */
     @Builder.Default

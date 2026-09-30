@@ -3,6 +3,7 @@ package pro.uhalo.uni.services;
 import pro.uhalo.uni.dto.ContentLockedDTO;
 import pro.uhalo.uni.dto.UnlockedArticleListResponse;
 import reactor.core.publisher.Mono;
+import run.halo.app.core.extension.content.Post;
 
 /**
  * 付费内容（阅读券）服务。
@@ -47,6 +48,14 @@ public interface ContentTicketService {
 
     /** 当前用户持有的阅读券张数（未登录返回 0） */
     Mono<Integer> getTicketBalance(String openid);
+
+    /**
+     * 文章是否为付费内容（含付费标记标签；日报文章按 {@code freeForDigest} 豁免）。
+     *
+     * <p>供订阅墙等其他拦截链路复用：付费判定口径（含标签解析与日报豁免）必须与本服务
+     * 的锁定判定走同一段代码，否则会出现「订阅墙放行、阅读券墙拦截」的双重拦截或互相漏拦。</p>
+     */
+    Mono<Boolean> isPaidPost(Post post);
 
     /**
      * 「已解锁文章」列表：该用户的解锁历史（解锁时间倒序），附当前券余额。

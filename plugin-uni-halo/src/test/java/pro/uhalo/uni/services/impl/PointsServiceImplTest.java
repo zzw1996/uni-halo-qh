@@ -10,7 +10,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import pro.uhalo.uni.dto.PointsEarnRequest;
-import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
@@ -223,31 +222,31 @@ class PointsServiceImplTest {
     }
 
     /**
-     * 按动作码过滤明细（抽奖消耗明细页依赖它）。
+     * 按动作码过滤明细（如签到明细页）。
      *
      * <p>关键点是**过滤发生在分页之前**——否则会出现「筛选后首页为空、后面几页才有记录」
      * 的分页错乱；同时合计必须只统计过滤后的记录。</p>
      */
     @Test
     void listHistoryShouldFilterByActionBeforePagination() {
-        var draw1 = PointsPersistence.newRecord("openid-123", "lucky_draw", -20, 980L,
-            "积分抽奖 · 定制周边", "定制周边", "k1", null);
-        draw1.setCreateTime(Instant.now().minusSeconds(60));
+        var sign1 = PointsPersistence.newRecord("openid-123", "sign_in", -20, 980L,
+            "每日签到", "签到", "k1", null);
+        sign1.setCreateTime(Instant.now().minusSeconds(60));
         var browse = PointsPersistence.newRecord("openid-123", "browse", 5, 1000L,
             "浏览文章", "post-1", "k2", null);
         browse.setCreateTime(Instant.now().minusSeconds(30));
-        var draw2 = PointsPersistence.newRecord("openid-123", "lucky_draw", -20, 975L,
-            "积分抽奖 · 再来一次", "再来一次", "k3", null);
-        draw2.setCreateTime(Instant.now());
+        var sign2 = PointsPersistence.newRecord("openid-123", "sign_in", -20, 975L,
+            "每日签到", "签到", "k3", null);
+        sign2.setCreateTime(Instant.now());
         when(persistence.listRecordsByOpenid("openid-123"))
-            .thenReturn(Mono.just(List.of(draw1, browse, draw2)));
+            .thenReturn(Mono.just(List.of(sign1, browse, sign2)));
 
-        // 第一页：过滤后只有 2 条抽奖记录，非抽奖记录不得占位
-        StepVerifier.create(pointsService.listHistory("openid-123", "lucky_draw", 0, 1))
+        // 第一页：过滤后只有 2 条签到记录，非签到记录不得占位
+        StepVerifier.create(pointsService.listHistory("openid-123", "sign_in", 0, 1))
             .consumeNextWith(response -> {
                 assertThat(response.getTotal()).isEqualTo(2);
                 assertThat(response.getItems()).hasSize(1);
-                assertThat(response.getItems().get(0).getAction()).isEqualTo("lucky_draw");
+                assertThat(response.getItems().get(0).getAction()).isEqualTo("sign_in");
                 // 合计只统计过滤后的记录（-20 + -20）
                 assertThat(response.getTotalPoints()).isEqualTo(-40);
                 assertThat(response.isHasNext()).isTrue();
@@ -255,10 +254,10 @@ class PointsServiceImplTest {
             .verifyComplete();
 
         // 第二页：过滤后仍有记录（若过滤发生在分页之后，这里会是空的）
-        StepVerifier.create(pointsService.listHistory("openid-123", "lucky_draw", 1, 1))
+        StepVerifier.create(pointsService.listHistory("openid-123", "sign_in", 1, 1))
             .consumeNextWith(response -> {
                 assertThat(response.getItems()).hasSize(1);
-                assertThat(response.getItems().get(0).getAction()).isEqualTo("lucky_draw");
+                assertThat(response.getItems().get(0).getAction()).isEqualTo("sign_in");
                 assertThat(response.isHasNext()).isFalse();
             })
             .verifyComplete();
@@ -357,37 +356,7 @@ class PointsServiceImplTest {
         assertThat(records.get(6)).isTrue();
     }
 
-    @Test
-    void drawShouldDeductCostAndCreditPrize() throws Exception {
-        stubDrawConfig(10);
-        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
-        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
-        when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
-        when(persistence.saveAccount(any())).thenReturn(Mono.just(userPoints));
 
-        StepVerifier.create(pointsService.draw("openid-123"))
-            .consumeNextWith(res -> {
-                assertThat(res.getEarned()).isEqualTo(50);
-                assertThat(res.getCost()).isEqualTo(10);
-                assertThat(res.getBalance()).isEqualTo(60L);
-                assertThat(res.isAlreadyDrawn()).isFalse();
-            })
-            .verifyComplete();
-    }
-
-    @Test
-    void drawShouldRejectWhenBalanceInsufficient() throws Exception {
-        stubDrawConfig(30);
-        when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
-        when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
-
-        StepVerifier.create(pointsService.draw("openid-123"))
-            .expectErrorSatisfies(ex -> assertThat(ex)
-                .isInstanceOf(WxAuthException.class)
-                .hasMessageContaining("积分不足"))
-            .verify();
-        verify(persistence, never()).appendRecord(any());
-    }
 
     @Test
     void newUserGiftShouldBeIdempotent() throws Exception {
@@ -408,25 +377,12 @@ class PointsServiceImplTest {
             .verifyComplete();
     }
 
-    @Test
-    void pickPrizeShouldOnlyReturnConfiguredPoints() {
-        var prizes = List.of(
-            DrawPrizeDTO.builder().points(2).weight(1).build(),
-            DrawPrizeDTO.builder().points(100).weight(1).build());
-        for (int i = 0; i < 200; i++) {
-            assertThat(PointsServiceImpl.pickPrize(prizes)).isIn(2, 100);
-        }
-        assertThat(PointsServiceImpl.pickPrize(List.of())).isZero();
-        assertThat(PointsServiceImpl.pickPrize(null)).isZero();
-    }
 
     @Test
     void exchangeShouldDeductPointsForDashboard() throws Exception {
-        when(settingFetcher.get("exchangeConfig")).thenReturn(Mono.just(MAPPER.readTree("{}")));
+        // 兑换项以 mallConfig.exchangeItems 为权威分组（exchangeConfig 只是旧站点的回落）
+        stubMallExchangeItems("dashboard_advanced", "数据看板高级版", 100, 1);
         userPoints.setBalance(100L);
-        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
-            "{\"enabled\":true,\"rules\":{\"exchange\":{\"dashboardAdvanced\":"
-                + "{\"points\":30,\"dailyMaxCount\":1,\"freeCount\":0}}}}")));
         when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
         when(persistence.listRecordsByOpenid("openid-123")).thenReturn(Mono.just(List.of()));
         when(persistence.appendRecord(any())).thenReturn(Mono.just(new PointsRecord()));
@@ -434,8 +390,8 @@ class PointsServiceImplTest {
 
         StepVerifier.create(pointsService.exchange("openid-123", "dashboard_advanced"))
             .consumeNextWith(res -> {
-                assertThat(res.getPoints()).isEqualTo(30);
-                assertThat(res.getBalance()).isEqualTo(70L);
+                assertThat(res.getPoints()).isEqualTo(100);
+                assertThat(res.getBalance()).isEqualTo(0L);
             })
             .verifyComplete();
     }
@@ -564,14 +520,14 @@ class PointsServiceImplTest {
     }
 
     @Test
-    void voteShouldAwardTenPointsWithDefaultRule() throws Exception {
+    void voteShouldAwardDefaultFivePoints() throws Exception {
         stubEnabledConfig();
         when(persistence.findRecordByEarnKey(any())).thenReturn(Mono.empty());
         when(persistence.getOrCreateAccount("openid-123")).thenReturn(Mono.just(userPoints));
         when(persistence.listRecordsByOpenid("openid-123"))
             .thenReturn(Mono.just(List.of()))
             .thenReturn(Mono.just(List.of(
-                PointsPersistence.newRecord("openid-123", "vote", 10, 30L,
+                PointsPersistence.newRecord("openid-123", "vote", 5, 30L,
                     "投票测试", "vote-1",
                     PointsServiceImpl.buildDailyEarnKey("openid-123", "vote", "vote-1"),
                     "wx-user-1"))));
@@ -582,10 +538,10 @@ class PointsServiceImplTest {
 
         StepVerifier.create(pointsService.earn("openid-123", earnRequest("vote", "vote-1")))
             .consumeNextWith(response -> {
-                assertThat(response.getEarned()).isEqualTo(10);
-                assertThat(response.getBalance()).isEqualTo(30L);
-                assertThat(response.getTodayEarned()).isEqualTo(10);
-                assertThat(response.getMessage()).isEqualTo("+10 积分");
+                assertThat(response.getEarned()).isEqualTo(5);
+                assertThat(response.getBalance()).isEqualTo(25L);
+                assertThat(response.getTodayEarned()).isEqualTo(5);
+                assertThat(response.getMessage()).isEqualTo("+5 积分");
             })
             .verifyComplete();
 
@@ -596,11 +552,6 @@ class PointsServiceImplTest {
             .isEqualTo(PointsServiceImpl.buildDailyEarnKey("openid-123", "vote", "vote-1"));
     }
 
-    private void stubDrawConfig(int cost) throws Exception {
-        when(settingFetcher.get("pointsConfig")).thenReturn(Mono.just(MAPPER.readTree(
-            "{\"enabled\":true,\"rules\":{\"draw\":{\"cost\":" + cost
-                + ",\"prizes\":[{\"points\":50,\"weight\":1}]}}}")));
-    }
 
     // ========== 看板高级版：现金直购与积分兑换的当日开通合并计数 ==========
     //
@@ -788,7 +739,8 @@ class PointsServiceImplTest {
 
         assertThat(userPoints.getContentTickets()).isEqualTo(5);
         assertThat(userPoints.getPublishTickets()).isEqualTo(5);
-        assertThat(userPoints.getBalance()).isEqualTo(70L);
+        // 内置看板兑换项定价 30 → 100 分（定价体检：原价 ≈ ￥0.3，太廉价）
+        assertThat(userPoints.getBalance()).isEqualTo(0L);
     }
 
     /** 用 mallConfig.exchangeItems（当前生效分组）配置一个兑换项。 */

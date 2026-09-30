@@ -126,6 +126,12 @@ public final class AiContentPromptHelper {
     /** 把候选列表压成提示词里的「关注方向」描述（不暴露用户原始输入之外的信息） */
     public static String describe(List<String> categories, List<String> sources,
         List<String> keywords) {
+        return describe(categories, sources, keywords, List.of());
+    }
+
+    /** 同上，带用户手工输入的定制主题（主题检索命中时，AI 要围绕它组织导语与理由） */
+    public static String describe(List<String> categories, List<String> sources,
+        List<String> keywords, List<String> customTopics) {
         var parts = new ArrayList<String>();
         if (categories != null && !categories.isEmpty()) {
             parts.add("关注主题：" + String.join("、", categories));
@@ -136,7 +142,77 @@ public final class AiContentPromptHelper {
         if (keywords != null && !keywords.isEmpty()) {
             parts.add("关注关键词：" + String.join("、", keywords));
         }
+        if (customTopics != null && !customTopics.isEmpty()) {
+            parts.add("用户定制主题（本次简报要优先围绕它组织）：" + String.join("、", customTopics));
+        }
         return String.join("；", parts);
+    }
+
+    // ── 素材不足时的直接生成 ──
+
+    /**
+     * 组装「按定制主题直接生成」的提示词。
+     *
+     * <p>走到这里的场景：用户手输的主题在最近日报里检索不到足够素材。
+     * 没有素材依据是这段内容最大的风险，因此约束必须狠——
+     * 不编造数据与事件，只写观点、方法论与路线，宁可比摘要空泛也不能幻觉。</p>
+     */
+    public static String buildGeneratePrompt(List<String> topics, int words) {
+        var topicText = String.join("、", topics);
+        var floor = Math.round(words * 0.85f);
+        return """
+            你是一位技术博客的专栏小编。读者点了一份定制内容，想看这个主题：
+            「%s」
+
+            最近站内的日报素材里没有覆盖到它，请你直接写一篇围绕这个主题的短文。写作约束：
+
+            - **不许编造**：没有素材依据，就绝不能出现具体的统计数据、版本号、CVE 编号、
+              「某公司发布」「近日」这类具体事件表述——只写你能负责任地讲的：
+              概念之间的关系、为什么值得关注、实践路径与方法论、常见的误区、
+              下一步值得观察什么方向
+            - 不要自称 AI，不要出现「AI」「模型」「生成式」这类字样：这段内容会以
+              「小编看法」的署名展示
+            - 结构建议：先一句话说清这个主题为什么值得现在关注，再分 2-3 个层次展开
+              （每个层次一段），结尾给读者一句可操作的下一步建议
+            - 全文约 %d 字（不少于 %d 字），纯文本段落，不要 Markdown 标题、不要列表
+            - 语言全部是你自己的：不存在可照搬的原文，这本身就是防侵权的要求
+            - 正文中不要使用英文半角双引号（避免破坏 JSON 结构）
+
+            请严格按 JSON 格式返回，不要包含 markdown 代码块或其他文字：
+            {
+              "title": "一个具体的标题（不要出现主题二字）",
+              "body": "短文正文..."
+            }
+            """.formatted(topicText, words, floor);
+    }
+
+    /**
+     * 解析直接生成的内容；全容错——解析不出来就是「没有」，调用方降级为普通筛选结果。
+     */
+    public static Generated parseGenerated(String aiText) {
+        try {
+            var json = DigestAiHelper.parseJson(aiText);
+            var title = json.path("title").asText("").trim();
+            var body = json.path("body").asText("").trim();
+            if (!StringUtils.hasText(body)) {
+                return Generated.empty();
+            }
+            return new Generated(title, body);
+        } catch (Exception ex) {
+            return Generated.empty();
+        }
+    }
+
+    /** 直接生成结果：标题 + 正文；body 为空表示本次没有可用内容 */
+    public record Generated(String title, String body) {
+
+        public boolean hasBody() {
+            return StringUtils.hasText(body);
+        }
+
+        public static Generated empty() {
+            return new Generated("", "");
+        }
     }
 
     /** 兼容：模型偶尔会沿用日报那套字段名（results 而不是 picks） */

@@ -134,7 +134,8 @@ class DigestFeedServiceImplTest {
 
     @Test
     void descriptionShouldBeTrimmedToKeepPromptSmall() throws Exception {
-        var longText = "y".repeat(900);
+        // 2100 个字符：超过 2000 的截断上限，验证不会把全文无限喂给 AI
+        var longText = "y".repeat(2100);
         var rss = """
             <rss version="2.0"><channel><item>
               <title>Long</title>
@@ -143,7 +144,7 @@ class DigestFeedServiceImplTest {
             </item></channel></rss>
             """.formatted(longText);
 
-        assertThat(service.parseItems(rss, feed).get(0).getDescription()).hasSize(500);
+        assertThat(service.parseItems(rss, feed).get(0).getDescription()).hasSize(2000);
     }
 
     @Test

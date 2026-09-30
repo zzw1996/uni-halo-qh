@@ -99,7 +99,7 @@ class AiContentPreferenceServiceTest {
         request.setKeywords(List.of("rust"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml", "security"),
-                config(5, 5, 10)))
+                config(5, 5, 10), java.util.List.of()))
             .assertNext(dto -> {
                 assertThat(dto.getCategories()).containsExactly("ai-ml");
                 assertThat(dto.getSources()).containsExactly("blog.rust-lang.org");
@@ -124,7 +124,7 @@ class AiContentPreferenceServiceTest {
         request.setCategories(List.of("security"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("security"),
-                config(5, 5, 10)))
+                config(5, 5, 10), java.util.List.of()))
             .assertNext(dto -> assertThat(dto.getCategories()).containsExactly("security"))
             .verifyComplete();
 
@@ -141,7 +141,7 @@ class AiContentPreferenceServiceTest {
         request.setSources(List.of("a", "b", "c"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 2, 10)))
+                config(5, 2, 10), java.util.List.of()))
             .expectErrorSatisfies(ex -> {
                 assertThat(ex).isInstanceOf(WxAuthException.class);
                 assertThat(((WxAuthException) ex).getReason()).contains("最多选 2 项", "当前 3 项");
@@ -157,7 +157,7 @@ class AiContentPreferenceServiceTest {
         request.setCategories(List.of("ai-ml", "not-in-list"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 5, 10)))
+                config(5, 5, 10), java.util.List.of()))
             .expectErrorSatisfies(ex -> assertThat(((WxAuthException) ex).getReason())
                 .contains("不在站长配置的分类清单里", "not-in-list"))
             .verify();
@@ -171,7 +171,7 @@ class AiContentPreferenceServiceTest {
         request.setKeywords(List.of("rust"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 5, 0)))
+                config(5, 5, 0), java.util.List.of()))
             .expectErrorSatisfies(ex -> assertThat(((WxAuthException) ex).getReason())
                 .contains("不可配置"))
             .verify();
@@ -185,7 +185,7 @@ class AiContentPreferenceServiceTest {
         request.setKeywords(List.of("x".repeat(41)));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 5, 10)))
+                config(5, 5, 10), java.util.List.of()))
             .expectErrorSatisfies(ex -> assertThat(((WxAuthException) ex).getReason())
                 .contains("过长"))
             .verify();
@@ -201,7 +201,7 @@ class AiContentPreferenceServiceTest {
         request.setKeywords(java.util.Arrays.asList("rust", " rust ", "", null, "Rust"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 5, 10)))
+                config(5, 5, 10), java.util.List.of()))
             .assertNext(dto -> assertThat(dto.getKeywords()).containsExactly("rust", "Rust"))
             .verifyComplete();
     }
@@ -210,7 +210,7 @@ class AiContentPreferenceServiceTest {
     void missingOpenidShouldFail() {
         var request = new AiContentPreferenceRequest();
 
-        StepVerifier.create(service().save("  ", request, catalog("ai-ml"), config(5, 5, 10)))
+        StepVerifier.create(service().save("  ", request, catalog("ai-ml"), config(5, 5, 10), java.util.List.of()))
             .expectErrorSatisfies(ex -> assertThat(((WxAuthException) ex).getReason())
                 .contains("Wechat-Session-Id"))
             .verify();

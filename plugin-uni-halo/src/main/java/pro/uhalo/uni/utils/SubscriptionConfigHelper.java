@@ -34,7 +34,7 @@ public final class SubscriptionConfigHelper {
         return SubscriptionConfigDTO.builder()
             .enabled(node.path("enabled").asBoolean(false))
             .freeQuota(clamp(node.path("freeQuota").asInt(5), 1, MAX_QUOTA_CEILING))
-            .quotaPrice(clamp(node.path("quotaPrice").asInt(50), 1, 100000))
+            .quotaPrice(clamp(node.path("quotaPrice").asInt(300), 1, 100000))
             .maxQuota(clamp(node.path("maxQuota").asInt(10), 0, MAX_QUOTA_CEILING))
             .memberMaxQuota(clamp(node.path("memberMaxQuota").asInt(30), 1, MAX_QUOTA_CEILING))
             .homeFeedPerCategory(clamp(node.path("homeFeedPerCategory").asInt(20), 5, 100))

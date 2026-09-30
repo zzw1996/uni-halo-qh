@@ -55,14 +55,14 @@ public final class LevelConfigHelper {
                 seedTitle("points_5000", "积分大亨", "total_points", 5000, "累计获得 5000 积分")
             ))
             .outfits(List.of(
-                seedOutfit("avatar_gold", "金色头像框", "avatar_frame", 200, 0, "gold"),
-                seedOutfit("avatar_rainbow", "彩虹头像框", "avatar_frame", 500, 0, "rainbow"),
-                seedOutfit("nick_star", "星光辉映", "nick_frame", 100, 0, "⭐"),
-                seedOutfit("nick_crown", "王者之冠", "nick_frame", 300, 0, "👑"),
+                seedOutfit("avatar_gold", "金色头像框", "avatar_frame", 1200, 0, "gold"),
+                seedOutfit("avatar_rainbow", "彩虹头像框", "avatar_frame", 3000, 0, "rainbow"),
+                seedOutfit("nick_star", "星光辉映", "nick_frame", 600, 0, "⭐"),
+                seedOutfit("nick_crown", "王者之冠", "nick_frame", 1800, 0, "👑"),
                 // type=theme 的 style 必须填 tm-vuetify 主题名（见前端 utils/themeSkin.js 的
                 // THEME_SKINS 白名单），不是 CSS 渐变值；填错会导致用户付费后界面无变化。
-                seedOutfit("theme_dusk", "静谧蓝紫主题", "theme", 150, 0, "primary"),
-                seedOutfit("theme_sunset", "落日橙主题", "theme", 150, 0, "deep-orange")
+                seedOutfit("theme_dusk", "静谧蓝紫主题", "theme", 900, 0, "primary"),
+                seedOutfit("theme_sunset", "落日橙主题", "theme", 900, 0, "deep-orange")
             ))
             .build();
     }

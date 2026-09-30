@@ -902,27 +902,27 @@ spec:
           value:
             browse:
               points: 1
-              dailyMaxCount: 10
-              dailyMaxPoints: 10
+              dailyMaxCount: 5
+              dailyMaxPoints: 5
             comment:
               points: 5
-              dailyMaxCount: 5
-              dailyMaxPoints: 25
+              dailyMaxCount: 2
+              dailyMaxPoints: 10
             upvote:
-              points: 2
-              dailyMaxCount: 20
-              dailyMaxPoints: 40
+              points: 1
+              dailyMaxCount: 5
+              dailyMaxPoints: 5
             vote:
-              points: 10
-              dailyMaxCount: 10
-              dailyMaxPoints: 100
+              points: 5
+              dailyMaxCount: 2
+              dailyMaxPoints: 10
             signIn:
-              points: 10
+              points: 5
               consecutiveBonus:
                 - days: 3
                   bonus: 5
                 - days: 7
-                  bonus: 20
+                  bonus: 15
           children:
             - $formkit: group
               name: browse
@@ -933,18 +933,19 @@ spec:
                   label: 单次积分
                   value: 1
                   min: 0
+                  help: 推荐 1。浏览是最轻的行为，单价不宜高于评论。
                 - $formkit: number
                   name: dailyMaxCount
                   label: 每日最多次数
-                  value: 10
+                  value: 5
                   min: 0
-                  help: 0 表示不限制次数
+                  help: 推荐 5（0 表示不限制次数）。原来默认 10 次太松：一天光浏览就白拿 10 分。
                 - $formkit: number
                   name: dailyMaxPoints
                   label: 每日积分上限
-                  value: 10
+                  value: 5
                   min: 0
-                  help: 0 表示不限制积分
+                  help: 推荐 5（0 表示不限制）。浏览+点赞合计日封顶建议不超过 10 分——这两项无内容成本、最容易被刷。
             - $formkit: group
               name: comment
               label: 发表评论
@@ -954,16 +955,19 @@ spec:
                   label: 单次积分
                   value: 5
                   min: 0
+                  help: 推荐 5。评论有真实内容价值，单价可以高于浏览/点赞。
                 - $formkit: number
                   name: dailyMaxCount
                   label: 每日最多次数
-                  value: 5
+                  value: 2
                   min: 0
+                  help: 推荐 2。评论容易被灌水，次数要收紧。
                 - $formkit: number
                   name: dailyMaxPoints
                   label: 每日积分上限
-                  value: 25
+                  value: 10
                   min: 0
+                  help: 推荐 10。
             - $formkit: group
               name: upvote
               label: 点赞文章
@@ -971,18 +975,21 @@ spec:
                 - $formkit: number
                   name: points
                   label: 单次积分
-                  value: 2
+                  value: 1
                   min: 0
+                  help: 推荐 1。点赞没有任何内容成本，是「刷分」的第一入口，单价必须压到最低。
                 - $formkit: number
                   name: dailyMaxCount
                   label: 每日最多次数
-                  value: 20
+                  value: 5
                   min: 0
+                  help: 推荐 5（原来 20 次 = 一天白拿 40 分，会让用户觉得积分根本不值钱）。
                 - $formkit: number
                   name: dailyMaxPoints
                   label: 每日积分上限
-                  value: 40
+                  value: 5
                   min: 0
+                  help: 推荐 5。
             - $formkit: group
               name: vote
               label: 参与投票
@@ -990,18 +997,21 @@ spec:
                 - $formkit: number
                   name: points
                   label: 单次积分
-                  value: 10
+                  value: 5
                   min: 0
+                  help: 推荐 5。投票是运营活动（不是每天都有），单价可以略高，但日封顶要卡死。
                 - $formkit: number
                   name: dailyMaxCount
                   label: 每日最多次数
-                  value: 10
+                  value: 2
                   min: 0
+                  help: 推荐 2。
                 - $formkit: number
                   name: dailyMaxPoints
                   label: 每日积分上限
-                  value: 100
+                  value: 10
                   min: 0
+                  help: 推荐 10（原来 100 分/天 = 占全部日产出的一半，等于把积分白送）。
             - $formkit: group
               name: signIn
               label: 每日签到
@@ -1009,8 +1019,9 @@ spec:
                 - $formkit: number
                   name: points
                   label: 基础签到积分
-                  value: 10
+                  value: 5
                   min: 0
+                  help: 推荐 5。签到是习惯养成，不应成为最重的收入来源（原来 10 分偏重）。
                 - $formkit: repeater
                   name: consecutiveBonus
                   label: 连续签到奖励
@@ -1018,8 +1029,8 @@ spec:
                     - days: 3
                       bonus: 5
                     - days: 7
-                      bonus: 20
-                  help: 连续签到达到指定天数时额外奖励（取满足条件的最高档）
+                      bonus: 15
+                  help: 连续签到达到指定天数时额外奖励（取满足条件的最高档）。推荐 3 天 +5、7 天 +15。
                   children:
                     - $formkit: number
                       name: days
@@ -1046,48 +1057,6 @@ spec:
               value: 100
               min: 0
               validation: required
-        - $formkit: group
-          name: draw
-          label: 每日翻牌抽奖
-          value:
-            cost: 10
-            prizes:
-              - points: 2
-                weight: 35
-              - points: 5
-                weight: 30
-              - points: 10
-                weight: 15
-              - points: 20
-                weight: 10
-              - points: 50
-                weight: 7
-              - points: 100
-                weight: 3
-          help: 用户每天可抽一次，先扣「每次消耗积分」再中奖；奖池按权重随机。
-          children:
-            - $formkit: number
-              name: cost
-              label: 每次消耗积分
-              value: 10
-              min: 0
-              validation: required
-            - $formkit: repeater
-              name: prizes
-              label: 奖池（中奖积分 + 权重）
-              children:
-                - $formkit: number
-                  name: points
-                  label: 中奖积分
-                  value: 2
-                  min: 1
-                  validation: required
-                - $formkit: number
-                  name: weight
-                  label: 权重
-                  value: 10
-                  min: 1
-                  validation: required
     - group: dailyTaskConfig
       label: 每日任务
       formSchema:
@@ -1104,23 +1073,23 @@ spec:
           value:
             - type: sign_in
               target: 1
-              points: 10
+              points: 5
               enabled: true
             - type: browse
               target: 3
-              points: 10
+              points: 5
               enabled: true
             - type: comment
               target: 1
-              points: 10
+              points: 5
               enabled: true
             - type: upvote
               target: 3
-              points: 8
+              points: 5
               enabled: true
             - type: vote
               target: 1
-              points: 10
+              points: 5
               enabled: true
           help: 同一任务的进度按「当日该行为的积分记录条数」统计，每天每任务可领取一次奖励。注意：若某行为在积分规则中的单次积分为 0，该行为不产生记录，对应任务进度将统计不到。
           children:
@@ -1173,12 +1142,12 @@ spec:
           value:
             - key: dashboard_advanced
               name: 数据看板高级版
-              points: 30
+              points: 100
               dailyMaxCount: 1
               description: 解锁当日数据看板高级版（30 日趋势与数据摘要导出）
             - key: content_ticket
               name: 阅读券 x1
-              points: 30
+              points: 150
               dailyMaxCount: 1
               tickets: 1
               description: 兑换 1 张阅读券，用于解锁付费文章
@@ -1216,67 +1185,6 @@ spec:
               value: 1
               min: 1
               help: 仅当「权益 key」填 content_ticket 时生效。留空或填 0 时会回落到「阅读券获取 → 积分兑换每次发放张数」。
-        - $formkit: switch
-          name: luckyEnabled
-          label: 开启幸运礼盒（抽奖）
-          value: true
-          onValue: true
-          offValue: false
-          help: 开启后积分兑换中心顶部展示抽奖卡；活动赠品性质，中奖由站长人工发放。
-        - $formkit: number
-          name: luckyCostPoints
-          label: 每次抽奖消耗积分
-          value: 20
-          min: 1
-          validation: required
-        - $formkit: repeater
-          name: luckyPrizes
-          label: 奖品池（按权重随机）
-          value:
-            - name: "再来一次"
-              emoji: "🎁"
-              weight: 50
-              needsAddress: false
-              desc: "未中奖，再接再厉"
-            - name: "定制周边小礼"
-              emoji: "🎀"
-              weight: 15
-              needsAddress: true
-              desc: "随机周边小件（帆布包/钥匙扣/贴纸等），中奖后填写收货信息"
-            - name: "感谢参与"
-              emoji: "🙏"
-              weight: 35
-              needsAddress: false
-              desc: "未中奖，下次好运"
-          help: 奖品在兑换中心「幸运礼盒」卡内展示（名称+说明），中奖用户可随时回填收货信息；中奖记录可在管理页查看：{站点地址}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/lucky-admin
-          children:
-            - $formkit: text
-              name: name
-              label: 奖品名称
-              value: ""
-              validation: required
-            - $formkit: text
-              name: emoji
-              label: 图标（emoji）
-              value: ""
-              validation: required
-            - $formkit: text
-              name: desc
-              label: 奖品说明（前端展示）
-              value: ""
-            - $formkit: number
-              name: weight
-              label: 权重
-              value: 10
-              min: 1
-              validation: required
-            - $formkit: switch
-              name: needsAddress
-              label: 中奖后需要填写收货信息
-              value: false
-              onValue: true
-              offValue: false
-              help: 开启后用户抽中将被引导填写收货人/电话/地址，中奖单在管理页可查。
     - group: levelConfig
       label: 等级与称号装扮
       formSchema:
@@ -1420,40 +1328,40 @@ spec:
             - key: avatar_gold
               name: 金色头像框
               type: avatar_frame
-              points: 200
+              points: 1200
               durationDays: 0
               style: gold
             - key: avatar_rainbow
               name: 彩虹头像框
               type: avatar_frame
-              points: 500
+              points: 3000
               durationDays: 0
               style: rainbow
             - key: nick_star
               name: 星光辉映
               type: nick_frame
-              points: 100
+              points: 600
               durationDays: 0
               style: "⭐"
             - key: nick_crown
               name: 王者之冠
               type: nick_frame
-              points: 300
+              points: 1800
               durationDays: 0
               style: "👑"
             - key: theme_dusk
               name: 静谧蓝紫主题
               type: theme
-              points: 150
+              points: 900
               durationDays: 0
               style: primary
             - key: theme_sunset
               name: 落日橙主题
               type: theme
-              points: 150
+              points: 900
               durationDays: 0
               style: deep-orange
-          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（全局主题皮肤）。style 含义随 type 不同：头像框填样式名（gold/rainbow/silver，需与前端注册表一致）、昵称前缀直接填前缀文本（如 ⭐、👑，建议 2 个字符以内，超长会被前端忽略）、theme 填<b>皮肤包 id 或框架主题名</b>。<br /><b>皮肤包（推荐）</b>：paper（宣纸白，默认，不改变外观）/ mint（青瓷：冷调页底 + 青绿强调）/ sunrise（晨光：暖调页底 + 琥珀强调）/ ink（墨韵深色：深墨底 + 亮字 + 亮靛青，夜间护眼）。皮肤会同时更换页面底色、卡片、文字层级、分割线、强调色与渐变，是「整体换装」；深色皮肤连导航栏与 tabBar 一起变暗。<br /><b>框架主题名（兼容旧配置）</b>：light-blue/primary/blue/cyan/green/orange/deep-orange/blue-grey，只换强调色，页面底色与卡片不变——已购用户的旧装扮继续有效。填错会导致用户付费后界面无变化（身份中心会显示「未登记」提示）。durationDays 填 0 表示永久；大于 0 为限时，到期后自动失效、需重新购买，身份中心会显示剩余天数。
+          help: key 唯一；type 为 avatar_frame（头像框）/nick_frame（昵称前缀）/theme（全局主题皮肤）。style 含义随 type 不同：头像框填样式名（gold/rainbow/silver，需与前端注册表一致）、昵称前缀直接填前缀文本（如 ⭐、👑，建议 2 个字符以内，超长会被前端忽略）、theme 填<b>皮肤包 id 或框架主题名</b>。<br /><b>皮肤包（推荐）</b>：paper（宣纸白，默认，不改变外观）/ mint（青瓷：冷调页底 + 青绿强调）/ sunrise（晨光：暖调页底 + 琥珀强调）/ ink（墨韵深色：深墨底 + 亮字 + 亮靛青，夜间护眼）。皮肤会同时更换页面底色、卡片、文字层级、分割线、强调色与渐变，是「整体换装」；深色皮肤连导航栏与 tabBar 一起变暗。<br /><b>框架主题名（兼容旧配置）</b>：light-blue/primary/blue/cyan/green/orange/deep-orange/blue-grey，只换强调色，页面底色与卡片不变——已购用户的旧装扮继续有效。填错会导致用户付费后界面无变化（身份中心会显示「未登记」提示）。durationDays 填 0 表示永久；大于 0 为限时，到期后自动失效、需重新购买，身份中心会显示剩余天数。<br /><b>定价建议</b>：按「现金价（元）× 100」平价最稳妥——装饰品不影响付费墙，让愿意等的人慢慢攒、急着要的人直接买（默认 600/900/1200/1800/3000，对应现金 ￥6/9/12/18/30，中度活跃用户需攒 3 周~4 个月）。调低会让积分换装扮挤掉现金销量，调得过高则用户毫无盼头。
           children:
             - $formkit: text
               name: key
@@ -1513,14 +1421,14 @@ spec:
         - $formkit: number
           name: rewardPoints
           label: 每邀请 1 人奖励积分（邀请人）
-          value: 30
+          value: 100
           min: 0
           validation: required
-          help: 被邀请人注册后自动发放到邀请人账户；填 0 表示只给被邀请人发。
+          help: 被邀请人注册后自动发放到邀请人账户；填 0 表示只给被邀请人发。推荐 100（约等于 1 元的购买力）：拉新价值高，给太少没人愿意分享；但也不宜超过 200，否则容易被批量小号刷。
         - $formkit: number
           name: inviteeRewardPoints
           label: 被邀请人奖励积分
-          value: 30
+          value: 50
           min: 0
           validation: required
           help: 新用户通过邀请分享首次登录时，他自己也能拿到的积分（填 0 表示不发）。这一笔与「新人见面礼」相互独立，两者都会发。注意：奖励只挂在「新用户首次注册」这个动作上，不要写成「分享得积分」——微信运营规范禁止诱导分享。
@@ -1530,7 +1438,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "微信虚拟支付（个人主体）仅支持「道具直购」：现金直接购买具体权益（发布券 / 阅读券 / 装扮），不支持充值积分、代币等流转功能。数据看板高级版已调整为纯积分兑换权益，不再作为付费道具售卖。开通前提：小程序主体为个人、服务类目含「工具」、已完成认证与备案，并在 MP 后台【支付与交易 - 虚拟支付】开通签约。限额与费率：月支付限额 10 万元；Android 技术服务费约 1%、iOS 苹果佣金约 12%。"
+          innerHTML: "微信虚拟支付（个人主体）仅支持「道具直购」：现金直接购买具体权益（发布券 / 阅读券 / 装扮），不支持充值积分、代币等流转功能。数据看板高级版已调整为纯积分兑换权益，不再作为付费道具售卖。开通前提：小程序主体为个人、服务类目含「工具」、已完成认证与备案，并在 MP 后台【支付与交易 - 虚拟支付】开通签约。<b>MP 后台的「代币兑换比例」请设为 1 人民币 = 100 代币（1 代币 = 1 分），后台道具价格数值即本处分值，两边照抄不会错；该比例只在后台展示换算用，道具直购的实际扣款 = 本处分值 × 数量。</b>限额与费率：月支付限额 10 万元；Android 技术服务费约 1%、iOS 苹果佣金约 12%，iOS 单笔最低 1 元。"
         - $formkit: switch
           name: enabled
           id: payEnabled
@@ -1592,13 +1500,20 @@ spec:
               label: 道具名称（前端展示）
               value: ""
               validation: required
+            - $formkit: attachment
+              name: image
+              label: 道具图片（可选，商品卡展示）
+              value: ""
+              accepts:
+                - "image/*"
+              help: 使用 Halo 官方附件选择器：可本地上传、也可从附件库挑选（支持「外部链接」类型的附件）。MP 后台【道具管理】里配的道具图片<b>不会下发给小程序</b>（微信没有读取接口），所以商品卡的图片以这里为准。本地存储的附件会自动拼上站点外链下发给小程序；图片所在域名需加入小程序后台的 downloadFile 合法域名（站点自己的域名通常已在）。建议 200×200 以上方图。
             - $formkit: number
               name: price
               label: 单价（单位：分）
               value: 600
               min: 1
               validation: required
-              help: 单位为「分」，全程不做换算，例如 6 元填 600。必须与 MP 后台道具价格一致，否则支付报 -15013。
+              help: 单位为「分」，全程不做换算，例如 6 元填 600。必须与 MP 后台道具价格一致，否则支付报 -15013。<br /><b>MP 后台的代币兑换比例请设为「1 人民币 = 100 代币」（1 代币 = 1 分）</b>——这样后台道具的代币数值与本处分值是同一组数字（6 元 = 600 分 = 600 代币），两边照抄即可。比例设成其它值（如 1:1）时后台会按 代币数 × (1元 ÷ 比例) 收款，600 代币就会变成收 600 元。注意比例一旦发布不可修改；iOS 端单笔最低支付 1 元（低于 1 元的道具在 iOS 无法购买）。
             - $formkit: select
               name: type
               label: 道具类型
@@ -1743,7 +1658,7 @@ spec:
         - $formkit: number
           name: streakTickets
           label: 连签奖励张数
-          value: 2
+          value: 1
           min: 0
           help: 达到连签门槛时额外赠送的阅读券张数，与「每日签到赠送张数」叠加发放。
         - $formkit: number
@@ -1755,9 +1670,9 @@ spec:
         - $formkit: number
           name: exchangePoints
           label: 积分兑换默认定价
-          value: 30
+          value: 150
           min: 1
-          help: 当「积分商城 → 兑换权益」里没有 content_ticket 这一项时，插件会自动补一条内置的阅读券兑换项并使用该定价。若你已在积分商城里手工配了 content_ticket，则以你的配置为准，本字段不生效。
+          help: 推荐 150（约 1.5 元购买力，比现金单张 ￥1.2 贵 25%——券能直接解锁付费文章，积分通道要比现金贵一点，否则没人会付钱买券）。当「积分商城 → 兑换权益」里没有 content_ticket 这一项时，插件会自动补一条内置的阅读券兑换项并使用该定价。若你已在积分商城里手工配了 content_ticket，则以你的配置为准，本字段不生效。
     - group: subscriptionConfig
       label: 分类订阅额度
       formSchema:
@@ -1784,7 +1699,7 @@ spec:
         - $formkit: number
           name: quotaPrice
           label: 每份额度的积分价格
-          value: 50
+          value: 300
           min: 1
           validation: required
           help: 用户点「解锁」时扣掉的积分。额度永久有效、可累计。
@@ -1828,6 +1743,40 @@ spec:
           max: 3600
           validation: required
           help: 同一批分类在这段时间内只取一次。0 = 不缓存（每次请求都去取，订阅多时首页会变慢）。
+    - group: subscriptionWallConfig
+      label: 分类订阅墙
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "未订阅分类的文章：<b>列表可以浏览，阅读全文需要先订阅</b>。首页、榜单、邀请页等所有入口共用这道墙。<br />与「付费内容（阅读券）」互不叠加：打了付费标签的文章只走阅读券解锁，不会被订阅墙拦截。<br />建议开启顺序：先升级插件、更新小程序，再打开总开关——旧版小程序收到拦截响应会显示成付费解锁卡片。"
+        - $formkit: switch
+          name: enabled
+          id: subscriptionWallEnabled
+          label: 开启订阅墙
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后，未订阅分类的文章详情接口会被拦截并提示订阅。判定失败时一律放行（这是引导机制，不是安全边界），不会因插件内部错误导致全站文章打不开。
+        - $formkit: switch
+          name: gateGuests
+          label: 游客也拦截
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，未登录微信的游客点开文章详情会提示「登录并订阅后可读」。关闭则游客全站可读，只限制已登录但未订阅该分类的用户。
+        - $formkit: switch
+          name: memberFree
+          label: 会员豁免订阅墙
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，会员有效期内不用订阅也能读全站文章（「会员全站可读」权益）。关闭则会员与其他用户一样需要订阅，会员优势仅是订阅不限量。
+        - $formkit: text
+          name: freeCategories
+          label: 永久免费分类（可选）
+          value: ""
+          help: 这些分类的文章所有人可读、不受订阅墙限制。填分类<b>显示名</b>（如「公告」），多个用英文逗号分隔。留空 = 不设白名单。
     - group: memberConfig
       label: 会员卡
       formSchema:
@@ -1924,6 +1873,61 @@ spec:
           label: 权益说明文案（未开通页展示）
           value: ""
           help: 留空则用通用文案。可以写成一行一条，例如「每天一份按你兴趣挑的精选｜可随时调整关注主题｜有效期内不限次查看」。价格由商品配置决定，不在这里填。
+        - $formkit: number
+          name: maxTopics
+          label: 用户最多手输几个定制主题
+          value: 3
+          min: 0
+          max: 5
+          help: 「定制主题」是用户手工输入的（如「想了解大模型在教育的落地」），简报会优先围绕它检索素材、AI 再按主题重写。填 0 表示关掉手输维度。
+        - $formkit: switch
+          name: fallbackGenerateEnabled
+          label: 素材不足时允许 AI 直接生成
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，用户定制主题在最近日报里找不到足够素材时，AI 会按主题直接原创写一篇短文（约束不编造具体数据与事件）。关闭则只做检索，检索不到就提示放宽方向。
+        - $formkit: number
+          name: pointsPrice
+          label: 积分解锁价格（0=关闭积分通道）
+          value: 0
+          min: 0
+          help: 大于 0 时，用户可以用积分兑换权益（与现金直购道具等效，叠加在同一个到期时间上）；0 表示只能通过虚拟支付道具获取。<br /><b>推荐 800</b>（对应 30 天）：若你的现金价是 ￥6~8/30 天，积分价低于 600 会让现金通道彻底卖不动——用户攒几天就能白拿一个月。<b>经验公式：积分价 ≈ 现金价（元）× 100</b>。
+        - $formkit: number
+          name: pointsDays
+          label: 积分一次兑换的天数
+          value: 30
+          min: 1
+          help: 用户每兑换一次，权益在现有到期时间上叠加这么多天。
+        - $formkit: switch
+          name: memberFree
+          label: 会员期内免条件使用
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，付费会员在会员有效期内不用购买道具或积分兑换，直接可用本功能（与「会员免券」「会员全站可读」同一权益口径）。
+        - $formkit: textarea
+          name: presetTopics
+          label: 预设定制主题选项（可选）
+          value: ""
+          help: 供用户一键选择的定制主题建议，用逗号或换行分隔，如「AI 工具实测,开源项目点评,行业趋势分析,安全漏洞预警,学习路线,职业发展」。留空则只显示手输框与站内分类。
+        - $formkit: switch
+          name: homeCardEnabled
+          label: 首页展示运营位卡片
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后首页轮播下方出现「AI 定制内容」入口卡（一眼可见）。<b>这是该功能在小程序里唯一的入口</b>（「我的」页已不再放置入口），关闭后用户将无法进入定制内容页——只有你主动推送的简报链接还能把人带进去。
+        - $formkit: text
+          name: homeCardTitle
+          label: 首页卡片标题
+          value: "AI 定制内容"
+          help: 留空用默认文案。
+        - $formkit: text
+          name: homeCardDesc
+          label: 首页卡片描述
+          value: "每天一份为你定制的技术简报"
+          help: 留空用默认文案。
     - group: rankConfig
       label: 榜单
       formSchema:
@@ -2020,9 +2024,29 @@ spec:
           help: 在小程序后台「订阅消息 → 我的模板」里复制。模板字段必须是：文章标题 / 文章摘要 / 发布时间 / 文章来源 / 温馨提示（对应 thing4 / thing6 / time3 / thing7 / thing5）。字段不同会在下发时报 47003。
         - $formkit: text
           name: aiDigestTemplateId
-          label: 简报提醒模板 ID（可留空）
+          label: 简报提醒模板 ID
           value: ""
-          help: 留空表示复用上面的新文章模板（简报会用不同文案：「今日精选 · N 篇」）。以后单独申请了模板再填这里。
+          help: 在「订阅消息 → 我的模板」里<b>单独申请</b>一个用于「你的定制简报已生成」的模板，把模板 ID 填这里。<b>不要留空、也不要用新文章模板</b>：两个模板的字段不同，复用会在下发时报 47003。
+        - $formkit: text
+          name: aiDigestFieldTopic
+          label: 简报-主题字段名
+          value: "thing1"
+          help: 模板里「主题」那个字段的字段名（thing 类型，如 thing1）。内容固定为「你的定制简报已生成」。
+        - $formkit: text
+          name: aiDigestFieldContent
+          label: 简报-内容字段名
+          value: "thing2"
+          help: 模板里「内容/摘要」那个字段的字段名（thing 类型，如 thing2）。内容形如「3 条内容 · 大模型在教育行业的落地」。
+        - $formkit: text
+          name: aiDigestFieldTime
+          label: 简报-时间字段名
+          value: "time3"
+          help: 模板里「时间」那个字段的字段名（<b>必须是 time 类型</b>，如 time3）。会自动格式化成「2026年9月29日 09:00」。
+        - $formkit: text
+          name: aiDigestFieldTip
+          label: 简报-提示字段名
+          value: "thing3"
+          help: 模板里「温馨提示/备注」那个字段的字段名（thing 类型，如 thing3）。内容固定为「点击查看你的专属简报」。
         - $formkit: switch
           name: newPostEnabled
           label: 订阅分类有新文章时提醒
@@ -2032,11 +2056,29 @@ spec:
           help: 只推给「订阅了该分类」且还有提醒额度的用户；每人每天最多一条（当天的多篇更新合并成一条）。
         - $formkit: switch
           name: aiDigestEnabled
-          label: AI 简报就绪时提醒（付费权益）
+          label: 允许「AI 定制内容」推送（付费权益）
           value: true
           onValue: true
           offValue: false
-          help: 只推给「AI 定制内容」权益仍在有效期内的用户。文案里的「N 篇命中你的关注方向」用纯筛选算出，不额外消耗 AI 额度。
+          help: 关闭后：用户端不显示推送设置卡，「立即推送」接口也会拒绝。开启前请先把上面的简报模板与四个字段名配好。
+        - $formkit: switch
+          name: aiDigestScheduleEnabled
+          label: 允许用户设置「每日定时推送」
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后，用户在 AI 定制内容页可以选一个整点，服务端到点会<b>先为他生成简报再推送</b>（只有开了推送的用户才会被提前生成，不会给不活跃用户白烧 AI）。关闭后只保留用户手动「立即推送」。
+        - $formkit: text
+          name: aiDigestPushHours
+          label: 用户可选的推送整点
+          value: "8,12,18,21"
+          help: 逗号分隔的整点（0-23）。这是给用户选的时段，也是服务端分桶依据——用户分散在不同整点，服务端峰值被摊平。建议 3-5 个时段。
+        - $formkit: number
+          name: aiDigestMaxUsersPerRun
+          label: 每轮定时生成最多处理多少人
+          value: 200
+          min: 1
+          help: 兜底上限。到点的那一大批用户如果超过这个数，剩下的下一轮继续（每分钟醒一次，不会漏）。
         - $formkit: number
           name: checkIntervalMinutes
           label: 检查间隔（分钟）

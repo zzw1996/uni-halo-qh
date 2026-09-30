@@ -31,11 +31,11 @@ public final class DailyTaskConfigHelper {
         return DailyTaskConfigDTO.builder()
             .enabled(true)
             .tasks(List.of(
-                seed("sign_in", 1, 10),
-                seed("browse", 3, 10),
-                seed("comment", 1, 10),
-                seed("upvote", 3, 8),
-                seed("vote", 1, 10)
+                seed("sign_in", 1, 5),
+                seed("browse", 3, 5),
+                seed("comment", 1, 5),
+                seed("upvote", 3, 5),
+                seed("vote", 1, 5)
             ))
             .build();
     }

@@ -1,5 +1,5 @@
 {
-  "source": "Hacker News Popularity Contest 2025 (curated by Andrej Karpathy)",
+  "source": "Hacker News Popularity Contest 2025 (curated by Andrej Karpathy) + 中英文补充源（少数派/量子位/极客公园/The Verge 等，2026-09 人工验证可用）",
   "feeds": [
     {
       "name": "simonwillison.net",
@@ -460,6 +460,81 @@
       "name": "tedunangst.com",
       "xmlUrl": "https://www.tedunangst.com/flak/rss",
       "htmlUrl": "https://tedunangst.com"
+    },
+    {
+      "name": "sspai.com",
+      "xmlUrl": "https://sspai.com/feed",
+      "htmlUrl": "https://sspai.com"
+    },
+    {
+      "name": "qbitai.com",
+      "xmlUrl": "https://www.qbitai.com/feed",
+      "htmlUrl": "https://www.qbitai.com"
+    },
+    {
+      "name": "geekpark.net",
+      "xmlUrl": "https://www.geekpark.net/rss",
+      "htmlUrl": "https://www.geekpark.net"
+    },
+    {
+      "name": "oschina.net",
+      "xmlUrl": "https://www.oschina.net/news/rss",
+      "htmlUrl": "https://www.oschina.net"
+    },
+    {
+      "name": "ithome.com",
+      "xmlUrl": "https://www.ithome.com/rss/",
+      "htmlUrl": "https://www.ithome.com"
+    },
+    {
+      "name": "solidot.org",
+      "xmlUrl": "https://www.solidot.org/index.rss",
+      "htmlUrl": "https://www.solidot.org"
+    },
+    {
+      "name": "hellogithub.com",
+      "xmlUrl": "https://hellogithub.com/rss",
+      "htmlUrl": "https://hellogithub.com"
+    },
+    {
+      "name": "infoq.cn",
+      "xmlUrl": "https://www.infoq.cn/feed",
+      "htmlUrl": "https://www.infoq.cn"
+    },
+    {
+      "name": "woshipm.com",
+      "xmlUrl": "https://www.woshipm.com/feed",
+      "htmlUrl": "https://www.woshipm.com"
+    },
+    {
+      "name": "theverge.com",
+      "xmlUrl": "https://www.theverge.com/rss/index.xml",
+      "htmlUrl": "https://www.theverge.com"
+    },
+    {
+      "name": "techcrunch.com",
+      "xmlUrl": "https://techcrunch.com/feed/",
+      "htmlUrl": "https://techcrunch.com"
+    },
+    {
+      "name": "arstechnica.com",
+      "xmlUrl": "https://feeds.arstechnica.com/arstechnica/index",
+      "htmlUrl": "https://arstechnica.com"
+    },
+    {
+      "name": "blog.google",
+      "xmlUrl": "https://blog.google/rss/",
+      "htmlUrl": "https://blog.google"
+    },
+    {
+      "name": "martinfowler.com",
+      "xmlUrl": "https://martinfowler.com/feed.atom",
+      "htmlUrl": "https://martinfowler.com"
+    },
+    {
+      "name": "ruanyifeng.com",
+      "xmlUrl": "http://www.ruanyifeng.com/blog/atom.xml",
+      "htmlUrl": "https://www.ruanyifeng.com/blog/"
     }
   ]
 }

@@ -43,7 +43,7 @@ public class PointsEndpoint implements CustomEndpoint {
                     .parameter(parameterBuilder()
                         .name("action")
                         .in(ParameterIn.QUERY)
-                        .description("Optional action filter, e.g. lucky_draw (lottery spending) or sign_in")
+                        .description("Optional action filter, e.g. sign_in (daily check-in) or browse")
                         .required(false)
                         .implementation(String.class))
                     .parameter(parameterBuilder()
@@ -89,16 +89,6 @@ public class PointsEndpoint implements CustomEndpoint {
                 builder -> builder
                     .operationId("ClaimNewUserGift")
                     .description("Claim one-time new-user gift points (idempotent).")
-                    .tag(apiTag))
-            .POST(basePath + "/points/draw", pointsController::draw,
-                builder -> builder
-                    .operationId("DrawLuckyPoints")
-                    .description("Daily weighted draw with points cost, once per day.")
-                    .tag(apiTag))
-            .GET(basePath + "/points/draw/status", pointsController::drawStatus,
-                builder -> builder
-                    .operationId("GetDrawStatus")
-                    .description("Check today's draw status without consuming anything.")
                     .tag(apiTag))
             .POST(basePath + "/points/exchange", pointsController::exchange,
                 builder -> builder
@@ -183,26 +173,6 @@ public class PointsEndpoint implements CustomEndpoint {
                 builder -> builder
                     .operationId("UploadInvitePoster")
                     .description("Upload invite poster image to attachments (multipart field: file).")
-                    .tag(apiTag))
-            .GET(basePath + "/points/lucky/config", pointsController::luckyConfig,
-                builder -> builder
-                    .operationId("GetLuckyDrawConfig")
-                    .description("Get lucky draw config for rule display.")
-                    .tag(apiTag))
-            .POST(basePath + "/points/lucky/draw", pointsController::luckyDraw,
-                builder -> builder
-                    .operationId("DrawLuckyGift")
-                    .description("Draw once with points cost, weighted random prize.")
-                    .tag(apiTag))
-            .POST(basePath + "/points/lucky/submit", pointsController::luckySubmit,
-                builder -> builder
-                    .operationId("SubmitLuckyClaim")
-                    .description("Submit contact info for a won physical prize.")
-                    .tag(apiTag))
-            .GET(basePath + "/points/lucky/mine", pointsController::luckyMine,
-                builder -> builder
-                    .operationId("GetMyLuckyClaims")
-                    .description("List my lucky winning orders with status.")
                     .tag(apiTag))
             .GET(basePath + "/points/content/status", pointsController::contentStatus,
                 builder -> builder

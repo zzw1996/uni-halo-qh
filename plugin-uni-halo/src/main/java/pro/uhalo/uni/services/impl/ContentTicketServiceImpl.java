@@ -505,6 +505,17 @@ public class ContentTicketServiceImpl implements ContentTicketService {
      * 转化直接归零。因此日报文章默认豁免（可用 freeForDigest 关闭）。
      * 这里判在前面还有个好处：日报文章连标签都不用查，省一次标签解析。</p>
      */
+    /**
+     * 供订阅墙等其他拦截链路复用的付费判定。
+     *
+     * <p>口径必须与锁定判定走同一段代码（见下方私有重载）：
+     * 订阅墙靠它「放行付费文章」，口径漂移会造成两堵墙互相漏拦或双重拦截。</p>
+     */
+    @Override
+    public Mono<Boolean> isPaidPost(Post post) {
+        return loadConfig().flatMap(config -> isPaidPost(config, post));
+    }
+
     private Mono<Boolean> isPaidPost(ContentTicketConfigDTO config, Post post) {
         if (Boolean.TRUE.equals(config.getFreeForDigest()) && isDigestGenerated(post)) {
             return Mono.just(false);

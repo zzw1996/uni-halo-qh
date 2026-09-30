@@ -34,6 +34,14 @@ public final class AiContentConfigHelper {
     private static final int MAX_ITEMS = 30;
     private static final int MAX_WINDOW_DAYS = 60;
     private static final int MAX_INTRO_WORDS = 800;
+    private static final int MAX_TOPICS = 5;
+    private static final int MAX_PRICE = 100000;
+    private static final int MAX_POINTS_DAYS = 3650;
+    private static final int MAX_GENERATE_WORDS = 1500;
+
+    /** 首页运营位卡与手输主题的默认文案 */
+    private static final String DEFAULT_HOME_CARD_TITLE = "AI 定制内容";
+    private static final String DEFAULT_HOME_CARD_DESC = "每天一份为你定制的技术简报";
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter EXPIRE_FMT =
@@ -61,6 +69,15 @@ public final class AiContentConfigHelper {
             .maxItems(10)
             .windowDays(7)
             .introWords(200)
+            .maxTopics(3)
+            .pointsPrice(0)
+            .pointsDays(30)
+            .presetTopics("")
+            .homeCardEnabled(true)
+            .homeCardTitle(DEFAULT_HOME_CARD_TITLE)
+            .homeCardDesc(DEFAULT_HOME_CARD_DESC)
+            .fallbackGenerateEnabled(true)
+            .memberFree(true)
             .benefitNote("")
             .build();
     }
@@ -85,6 +102,19 @@ public final class AiContentConfigHelper {
                 1, MAX_WINDOW_DAYS))
             .introWords(clamp(node.path("introWords").asInt(fallback.getIntroWords()),
                 50, MAX_INTRO_WORDS))
+            // 手输主题允许配 0：关掉 = 用户只能用高级筛选，不能自由输入
+            .maxTopics(clamp(node.path("maxTopics").asInt(fallback.getMaxTopics()),
+                0, MAX_TOPICS))
+            .pointsPrice(clamp(node.path("pointsPrice").asInt(fallback.getPointsPrice()),
+                0, MAX_PRICE))
+            .pointsDays(clamp(node.path("pointsDays").asInt(fallback.getPointsDays()),
+                1, MAX_POINTS_DAYS))
+            .presetTopics(text(node.path("presetTopics"), ""))
+            .homeCardEnabled(node.path("homeCardEnabled").asBoolean(true))
+            .homeCardTitle(text(node.path("homeCardTitle"), DEFAULT_HOME_CARD_TITLE))
+            .homeCardDesc(text(node.path("homeCardDesc"), DEFAULT_HOME_CARD_DESC))
+            .fallbackGenerateEnabled(node.path("fallbackGenerateEnabled").asBoolean(true))
+            .memberFree(node.path("memberFree").asBoolean(true))
             .benefitNote(text(node.path("benefitNote"), ""))
             .build();
     }
@@ -137,6 +167,19 @@ public final class AiContentConfigHelper {
 
     private static int clamp(int value, int min, int max) {
         return Math.min(max, Math.max(min, value));
+    }
+
+    /** 预设定制主题选项：按逗号/中文逗号/换行拆分（前端点击即加入自己的定制主题） */
+    public static java.util.List<String> parseTopics(String presetTopics) {
+        if (presetTopics == null || presetTopics.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(presetTopics.split("[,，;；\\n]"))
+            .map(String::trim)
+            .filter(value -> !value.isEmpty())
+            .distinct()
+            .limit(30)
+            .toList();
     }
 
     private static String text(JsonNode node, String fallback) {

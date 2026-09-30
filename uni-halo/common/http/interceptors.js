@@ -56,7 +56,8 @@ const showCategoryInputPasswordModal = (response, category) => {
 
 export const setInterceptors = (http) => {
     http.interceptors.request.use((config) => {
-        console.log("config", config)
+        // 不打印 config：它的 header 里带着 Wechat-Session-Id（= 用户 openid），
+        // 每个请求都刷一遍等于把用户标识写进日志（H5/开发者工具下等同公开）
 
         // 可使用async await 做异步操作
         config.header = {
@@ -120,8 +121,10 @@ export const setInterceptors = (http) => {
                     confirmText: '是',
                     confirmColor: '#2F54EB'
                 }).then(res => {
-                    uni.navigateTo({
-                        url: '/pagesB/login/login'
+                    // 小程序没有独立的「超管登录页」（pagesB 分包不存在），
+                    // 统一回「我的」页——那里有微信登录入口，也是本该走的路径
+                    uni.switchTab({
+                        url: '/pages/tabbar/about/about'
                     })
                 }).catch(err => {
                     uni.switchTab({

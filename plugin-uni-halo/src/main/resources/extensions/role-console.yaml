@@ -11,6 +11,12 @@ metadata:
     rbac.authorization.halo.run/ui-permissions: |
       ["plugin:plugin-uni-halo:users:view"]
 rules:
+  # 基础读取与更新（列表页、开关等）
   - apiGroups: [ "console.api.uni.uhalo.pro" ]
-    resources: [ "wxUsers", "userActivities", "pointsRecords", "luckyWinnings", "inviteRecords", "payOrders", "payStats", "commercialConfig" ]
+    resources: [ "wxUsers", "userActivities", "pointsRecords", "inviteRecords", "payOrders", "payStats", "commercialConfig" ]
     verbs: [ "get", "list", "update" ]
+  # 一键套用定价预设（POST → create）；同时登记带子路径的写法，
+  # 因为不同 Halo 版本对「POST 到 /x/y」映射成 (resource=x, subresource=y) 还是 (resource=x/y) 的处理不一致
+  - apiGroups: [ "console.api.uni.uhalo.pro" ]
+    resources: [ "commercialConfig", "commercialConfig/preset", "commercialConfig/*" ]
+    verbs: [ "create" ]

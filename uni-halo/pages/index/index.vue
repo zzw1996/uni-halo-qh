@@ -84,14 +84,15 @@ export default {
 		this.setPluginError('阿偶，检测到当前插件没有安装或者启用，无法启动 uni-halo 哦，请联系管理员');
 		if (!(await this.checkPluginAvailable())) return;
 
-		// 获取配置
-		uni.$tm.vx
-			.actions('config/fetchConfigs')
-			.then(async (res) => {
-				// 带邀请码进入：静默登录一次，首次进入小程序的用户将自动完成邀请绑定
-				if (pendingInvite) {
-					this.fnAutoLoginForInvite();
-				}
+			// 获取配置
+			uni.$tm.vx
+				.actions('config/fetchConfigs')
+				.then(async (res) => {
+					// 每次启动都静默登录一次（wx.login 用户无感知）：
+					// 清缓存/重装/登录态过期后，靠它把会话恢复回来——否则首页会一直
+					// 按未登录渲染（全站热门 + 订阅引导），而订阅明明还在服务端。
+					// 带邀请码首次进入的用户同样由它自动完成邀请绑定。
+					this.fnSilentLogin();
 
 				if (options.scene) {
 					if ('' !== options.scene) {
@@ -136,11 +137,15 @@ export default {
 	},
 	methods: {
 		/**
-		 * 带邀请码进入时静默登录：wx.login 用户无感知完成，
-		 * 首次进入（后端判断为新用户注册）自动绑定邀请关系并给邀请人发奖。
+		 * 启动时静默登录：wx.login 用户无感知完成。
+		 *
+		 * <p>三件事都靠它：① 清缓存/重装后恢复登录态（订阅、设置跟账号走的那部分）；
+		 * ② 登录态过期时续期；③ 带邀请码首次进入的用户自动绑定邀请关系并发奖。
 		 * 静默失败不打扰用户，邀请码保留至下次登录成功时由 wxLogin 消费。
+		 * 成功后 applyWxLoginSuccess 会广播 wx_login_status_changed，
+		 * 首页等页面据此重拉各自的个性化数据。</p>
 		 */
-		async fnAutoLoginForInvite() {
+		async fnSilentLogin() {
 			try {
 				await tryAutoWxLogin(this.$httpApi.v2);
 			} catch (e) {

@@ -577,15 +577,24 @@
 				this.deletingMomentName = name;
 				uni.showLoading({ mask: true, title: '删除中...' });
 				try {
-					await this.$httpApi.v2.deleteUserMoment(name);
+					const res = await this.$httpApi.v2.deleteUserMoment(name);
+					uni.hideLoading();
+					// directRequest 会把 400 业务错误也 resolve 回来（data.error 带服务端原因），
+					// 不检查就会「提示已删除、服务端其实没删」
+					const serverError = res?.data?.error;
+					if (res?.statusCode >= 400 || serverError) {
+						uni.showToast({ icon: 'none', title: serverError || '删除失败，请稍后重试' });
+						return;
+					}
+					// 原地移除已删项：不重拉列表、不滚回顶部，删除后停留在当前位置
+					this.dataList = this.dataList.filter((item) => item?.metadata?.name !== name);
 					uni.showToast({ icon: 'success', title: '已删除' });
-					this.fnReloadMomentList();
 				} catch (err) {
+					uni.hideLoading();
 					const message = err?.detail || err?.error || err?.message || '删除失败，请稍后重试';
 					uni.showToast({ icon: 'none', title: message });
 				} finally {
 					this.deletingMomentName = '';
-					uni.hideLoading();
 				}
 			},
 			fnToPublishMoment() {

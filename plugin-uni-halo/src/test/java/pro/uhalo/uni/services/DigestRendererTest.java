@@ -36,6 +36,7 @@ class DigestRendererTest {
         article.setKeywords(keywords);
         article.setSummary("概述内容");
         article.setPoints(List.of("论点一", "论点二"));
+        article.setAiTake("这是 AI 自己视角的原创点评，与原文表述无关");
         article.setReason("推荐理由");
         return article;
     }
@@ -70,7 +71,7 @@ class DigestRendererTest {
         ), true, "署名行");
 
         assertThat(report).contains("# 📰 AI 博客每日精选 — 2026-09-11");
-        assertThat(report).contains("来自 Karpathy 推荐的 92 个顶级技术博客，AI 精选 Top 3，每篇约 700 字");
+        assertThat(report).contains("精选 92 个中英文技术博客（含 Karpathy 推荐源），AI 精选 Top 3，每篇约 700 字");
         assertThat(report).contains("## 📝 今日看点");
         assertThat(report).contains("今日趋势总结");
         assertThat(report).contains("### 🧭 背景铺垫");
@@ -80,7 +81,21 @@ class DigestRendererTest {
         assertThat(report).contains("| 81/92 | 2484 篇 → 24 篇 | 48h | **3 篇** |");
         assertThat(report).contains("## 🤖 AI / ML");
         assertThat(report).contains("## 🔒 安全");
+        // 小编看法：合并模式与逐篇成稿都要带上（防侵权结构里的观点段）
+        assertThat(report).contains("✍️ **小编看法**: 这是 AI 自己视角的原创点评，与原文表述无关");
         assertThat(report).contains("*署名行*");
+    }
+
+    @Test
+    void renderArticleShouldIncludeAiTakeAndDisclaimer() {
+        var article = article("标题一", "ai-ml", List.of("Rust"));
+
+        var markdown = renderer.renderArticle(article, stats(), "", GENERATED_AT);
+
+        assertThat(markdown).contains("✍️ **小编看法**: 这是 AI 自己视角的原创点评，与原文表述无关");
+        // 版权声明：AI 生成属性 + 版权归属 + 引导读原文，逐篇固定输出
+        assertThat(markdown).contains("本文由 AI 辅助生成");
+        assertThat(markdown).contains("原文版权归原作者所有");
     }
 
     @Test
@@ -145,9 +160,11 @@ class DigestRendererTest {
         assertThat(post).startsWith("# 单篇标题");
         assertThat(post).contains("](https://example.com/单篇标题)");
         assertThat(post).contains("![单篇标题](https://blog.example.com/upload/a.jpg)");
-        assertThat(post).contains("核心论点");
+        assertThat(post).contains("核心信息");
         assertThat(post).contains("- 论点一");
         assertThat(post).contains("💡 **为什么值得读**: 推荐理由");
+        assertThat(post).contains("✍️ **小编看法**: 这是 AI 自己视角的原创点评，与原文表述无关");
+        assertThat(post).contains("本文由 AI 辅助生成");
         assertThat(post).contains("🏷️ LLM, Rust");
         // 单独成文：不能把日报级别的板块带进来，否则 5 篇就会变成 5 份重复的日报
         assertThat(post).doesNotContain("## 📝 今日看点");

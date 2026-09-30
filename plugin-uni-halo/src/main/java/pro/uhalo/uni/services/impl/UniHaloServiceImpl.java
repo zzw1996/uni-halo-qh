@@ -88,6 +88,15 @@ public class UniHaloServiceImpl implements UniHaloService {
     /** AI 日报配置分组名（内含大模型 Key） */
     private static final String AI_DIGEST_CONFIG_GROUP = "aiDigestConfig";
 
+    /** 微信小程序分组：appSecret 是服务端凭据（能换 access_token），绝不下发 */
+    private static final String WX_APP_CONFIG_GROUP = "wxAppConfig";
+
+    /** 应用配置：appInfo.appSecret 用于动态小程序码，同样是服务端凭据 */
+    private static final String APP_CONFIG_GROUP = "appConfig";
+
+    /** 插件独立 Redis：密码与小程序无关，属服务端基础设施配置 */
+    private static final String REDIS_CONFIG_GROUP = "redisConfig";
+
     /**
      * AI 日报分组里禁止下发的密钥字段。
      *
@@ -167,6 +176,18 @@ public class UniHaloServiceImpl implements UniHaloService {
                 if (aiDigestConfig != null) {
                     sanitized.put(AI_DIGEST_CONFIG_GROUP, stripAiDigestSecrets(aiDigestConfig));
                 }
+                var wxAppConfig = sanitized.get(WX_APP_CONFIG_GROUP);
+                if (wxAppConfig != null) {
+                    sanitized.put(WX_APP_CONFIG_GROUP, stripWxAppSecrets(wxAppConfig));
+                }
+                var appConfig = sanitized.get(APP_CONFIG_GROUP);
+                if (appConfig != null) {
+                    sanitized.put(APP_CONFIG_GROUP, stripAppInfoSecrets(appConfig));
+                }
+                var redisConfig = sanitized.get(REDIS_CONFIG_GROUP);
+                if (redisConfig != null) {
+                    sanitized.put(REDIS_CONFIG_GROUP, stripRedisSecrets(redisConfig));
+                }
                 return sanitized;
             });
     }
@@ -187,6 +208,15 @@ public class UniHaloServiceImpl implements UniHaloService {
                 }
                 if (AI_DIGEST_CONFIG_GROUP.equals(groupName)) {
                     return stripAiDigestSecrets(config);
+                }
+                if (WX_APP_CONFIG_GROUP.equals(groupName)) {
+                    return stripWxAppSecrets(config);
+                }
+                if (APP_CONFIG_GROUP.equals(groupName)) {
+                    return stripAppInfoSecrets(config);
+                }
+                if (REDIS_CONFIG_GROUP.equals(groupName)) {
+                    return stripRedisSecrets(config);
                 }
                 return config;
             });
@@ -222,13 +252,89 @@ public class UniHaloServiceImpl implements UniHaloService {
      * offerId 同样只在服务端构造 signData 时使用。小程序端只需要 enabled 与 goods
      * 两项即可完成「是否展示入口」与「商品列表渲染」。</p>
      */
-    private static JsonNode stripPaySecrets(JsonNode config) {
+    /**
+     * 移除微信小程序分组的 {@code appSecret}。
+     *
+     * <p>AppSecret 能换 access_token，等同于「以这个小程序的身份发任何请求」；
+     * 而这里是匿名接口、响应还会被小程序整包写进本地存储。客户端只需要 appId
+     * （用于 wx.login），因此只删 appSecret，保留 appId 与开关。</p>
+     */
+    private static JsonNode stripWxAppSecrets(JsonNode config) {
+        if (!(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        copy.remove("appSecret");
+        return copy;
+    }
+
+    /** 移除应用配置里动态小程序码用的 {@code appInfo.appSecret}（同样是服务端凭据） */
+    private static JsonNode stripAppInfoSecrets(JsonNode config) {
+        if (!(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        if (copy.get("appInfo") instanceof ObjectNode appInfo) {
+            appInfo.remove("appSecret");
+        }
+        return copy;
+    }
+
+    /** 移除插件独立 Redis 的密码（服务端基础设施配置，小程序端完全用不到） */
+    private static JsonNode stripRedisSecrets(JsonNode config) {
+        if (!(config instanceof ObjectNode node)) {
+            return config;
+        }
+        var copy = node.deepCopy();
+        if (copy.get("pluginRedis") instanceof ObjectNode pluginRedis) {
+            pluginRedis.remove("password");
+        }
+        return copy;
+    }
+
+    private JsonNode stripPaySecrets(JsonNode config) {
         if (config == null || !(config instanceof ObjectNode node)) {
             return config;
         }
         var copy = node.deepCopy();
         PAY_SECRET_FIELDS.forEach(copy::remove);
+        normalizeGoodsImages(copy);
         return copy;
+    }
+
+    /**
+     * 归一化商品图片：Halo 附件库「本地存储」的附件给的是相对路径（如 {@code /upload/ai.png}），
+     * 小程序的 image 组件解析不了（会被当成包内文件，报渲染层网络错误），
+     * 这里用 {@link ExternalLinkProcessor} 拼上外部访问地址；非法值直接删字段，前端回落类型图标。
+     *
+     * <p><b>为什么这里也要做</b>：商品有两条下发通道——
+     * {@code getVirtualPayConfig} 专用端点（{@link VirtualPayServiceImpl} 已归一化）与本匿名全量配置接口。
+     * 后者是小程序启动时拉取并整包写入本地存储的那份，权益直购页<b>先用它渲染首屏</b>；
+     * 漏掉这里，第一屏就会拿相对路径去加载图片。</p>
+     */
+    private void normalizeGoodsImages(ObjectNode payConfig) {
+        var goods = payConfig.get("goods");
+        if (goods == null || !goods.isArray()) {
+            return;
+        }
+        for (var item : goods) {
+            if (!(item instanceof ObjectNode entry)) {
+                continue;
+            }
+            var raw = entry.path("image").asText("");
+            if (!StringUtils.hasText(raw)) {
+                continue;
+            }
+            var resolved = raw.startsWith("/") && !raw.startsWith("//")
+                ? externalLinkProcessor.processLink(raw) : raw;
+            var sanitized = VirtualPayServiceImpl.sanitizeGoodsImage(resolved,
+                entry.path("goodsId").asText(""), null);
+            if (sanitized == null) {
+                entry.remove("image");
+            } else {
+                entry.put("image", sanitized);
+            }
+        }
     }
 
     /**

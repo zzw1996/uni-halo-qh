@@ -15,5 +15,5 @@ public class PointsExchangeRulesDTO {
     /** 数据看板高级版（单次解锁，当日有效） */
     @Builder.Default
     private PointsExchangeItemRuleDTO dashboardAdvanced = PointsExchangeItemRuleDTO.builder()
-        .points(30).dailyMaxCount(1).freeCount(0).build();
+        .points(100).dailyMaxCount(1).freeCount(0).build();
 }

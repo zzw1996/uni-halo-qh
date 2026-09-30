@@ -2,7 +2,6 @@ import { definePlugin } from "@halo-dev/console-shared";
 import WxUsers from "./views/WxUsers.vue";
 import UserActivities from "./views/UserActivities.vue";
 import PointsRecords from "./views/PointsRecords.vue";
-import LuckyWinnings from "./views/LuckyWinnings.vue";
 import InviteFriends from "./views/InviteFriends.vue";
 import AiDigest from "./views/AiDigest.vue";
 import PayStats from "./views/PayStats.vue";
@@ -50,20 +49,6 @@ export default definePlugin({
           searchable: true,
           permissions: ["plugin:plugin-uni-halo:users:view"],
           menu: { name: "积分记录", group: "UniHalo", priority: 2 },
-        },
-      },
-    },
-    {
-      parentName: "Root",
-      route: {
-        path: "/uni-halo/lucky-winnings",
-        name: "UniHaloLuckyWinnings",
-        component: LuckyWinnings,
-        meta: {
-          title: "兑换礼品",
-          searchable: true,
-          permissions: ["plugin:plugin-uni-halo:users:view"],
-          menu: { name: "兑换礼品", group: "UniHalo", priority: 3 },
         },
       },
     },

@@ -71,6 +71,13 @@ public class AiContentFeedService {
     /** 一次请求最多等 AI 多久；超时就先给纯筛选结果（用户不该为一段导语干等） */
     private static final int AI_TIMEOUT_SECONDS = 45;
 
+    /** 主题检索「素材充足」的门槛：命中少于这个数就交给 AI 直接生成 */
+    private static final int MIN_TOPIC_MATCHES = 3;
+
+    /** AI 直接生成短文的字数区间：从导语字数推导，太短说不了事、太长超出简报体量 */
+    private static final int MIN_GENERATE_WORDS = 200;
+    private static final int MAX_GENERATE_WORDS = 800;
+
     private final ReactiveExtensionClient client;
     private final DigestPublicService digestPublicService;
     private final DigestAiClient aiClient;
@@ -142,6 +149,74 @@ public class AiContentFeedService {
             });
     }
 
+    /**
+     * 确保某用户今天的简报已生成，返回它（已有则直接复用，零额外 AI 成本）。
+     *
+     * <p>供「立即推送」与每日定时批量生成调用：内部走的是与 {@link #feed} 同一套逻辑
+     * （同一份 {@code inFlight} 合并 + 同一套幂等资源名），因此用户此刻正好打开页面
+     * 也不会双跑 AI。</p>
+     */
+    public Mono<AiContentIssue> ensureToday(String openid) {
+        if (!StringUtils.hasText(openid)) {
+            return Mono.empty();
+        }
+        var normalized = openid.trim();
+        var today = LocalDate.now(ZONE).toString();
+        return findIssue(normalized, today)
+            .switchIfEmpty(Mono.defer(() -> entitlementService.loadConfig()
+                .flatMap(config -> entitlementService.isActive(normalized)
+                    .flatMap(active -> active
+                        ? generate(normalized, today, config)
+                            .flatMap(feed -> findIssue(normalized, today))
+                        : Mono.empty()))));
+    }
+
+    /**
+     * 批量确保今天已生成（定时线用）。
+     *
+     * <p>候选池只查一次并复用给所有人——逐个用户各查一次日报，几十个用户就是几十次查询，
+     * 这是批量生成唯一需要额外小心的地方。</p>
+     *
+     * @param openids 目标用户（调用方已按「开关开 + 整点匹配 + 权益有效 + 还有额度」筛过）
+     */
+    public Mono<Integer> ensureTodayBatch(List<String> openids) {
+        if (openids == null || openids.isEmpty()) {
+            return Mono.just(0);
+        }
+        var targets = openids.stream().filter(StringUtils::hasText)
+            .map(String::trim).distinct().toList();
+        if (targets.isEmpty()) {
+            return Mono.just(0);
+        }
+        return entitlementService.loadConfig()
+            .flatMap(config -> digestPublicService.candidateArticles(config.getWindowDays())
+                .flatMap(candidates -> reactor.core.publisher.Flux.fromIterable(targets)
+                    // 并发 2：AI 调用是瓶颈，太高只会互相拖慢且更容易触发上游限流
+                    .flatMap(openid -> generateForUser(openid, config, candidates)
+                        .onErrorResume(ex -> {
+                            log.warn("[UniHalo][AiContent] 定时生成失败（跳过该用户）：openid={} {}",
+                                mask(openid), ex.getMessage());
+                            return Mono.just(false);
+                        }), 2)
+                    .filter(Boolean::booleanValue)
+                    .count()
+                    .map(Long::intValue)));
+    }
+
+    /** 单个用户的生成（候选池由调用方传入复用） */
+    private Mono<Boolean> generateForUser(String openid, AiContentConfigDTO config,
+        List<DigestPublicArticleDTO> candidates) {
+        var today = LocalDate.now(ZONE).toString();
+        return entitlementService.isActive(openid).flatMap(active -> {
+            if (!active) {
+                return Mono.just(false);
+            }
+            return generateWithCandidates(openid, today, config, candidates)
+                .map(feed -> true)
+                .defaultIfEmpty(false);
+        });
+    }
+
     /** 历史简报（按日期倒序，最多 limit 条） */
     public Mono<List<AiContentIssue>> listIssues(String openid, int limit) {
         if (!StringUtils.hasText(openid)) {
@@ -172,13 +247,36 @@ public class AiContentFeedService {
         return task;
     }
 
+    /**
+     * 同上，但候选池由调用方传入（批量场景查一次复用）。
+     *
+     * <p>同样走 {@code inFlight} 合并：与用户请求并发时只跑一次。</p>
+     */
+    private Mono<AiContentFeedDTO> generateWithCandidates(String openid, String date,
+        AiContentConfigDTO config, List<DigestPublicArticleDTO> candidates) {
+        var key = openid + ":" + date;
+        return inFlight.computeIfAbsent(key, ignored -> doGenerate(openid, date, config, candidates)
+            .doFinally(signal -> inFlight.remove(key))
+            .cache());
+    }
+
     private Mono<AiContentFeedDTO> doGenerate(String openid, String date,
         AiContentConfigDTO config) {
-        return Mono.zip(preferenceService.load(openid),
-                digestPublicService.candidateArticles(config.getWindowDays()))
-            .flatMap(tuple -> {
-                var preference = tuple.getT1();
-                var candidates = tuple.getT2();
+        return digestPublicService.candidateArticles(config.getWindowDays())
+            .flatMap(candidates -> doGenerate(openid, date, config, candidates));
+    }
+
+    private Mono<AiContentFeedDTO> doGenerate(String openid, String date,
+        AiContentConfigDTO config, List<DigestPublicArticleDTO> candidates) {
+        return preferenceService.load(openid)
+            .flatMap(preference -> {
+                var topics = preference.getCustomTopics() == null
+                    ? List.<String>of() : preference.getCustomTopics();
+                if (!topics.isEmpty()) {
+                    // 用户手输了定制主题：优先围绕它做「检索→重写/兜底生成」，
+                    // 普通偏好筛选（分类/来源/关键词）退居其次
+                    return generateWithTopics(openid, date, config, preference, candidates, topics);
+                }
                 var picked = select(candidates, preference, config);
                 if (picked.isEmpty() || !config.isAiIntroEnabled()) {
                     if (picked.isEmpty()) {
@@ -200,6 +298,135 @@ public class AiContentFeedService {
                     mask(openid), date, ex.getMessage());
                 return Mono.just(emptyFeed(config, date, true));
             });
+    }
+
+    /**
+     * 带定制主题的生成：先检索、素材足够就 AI 重写，不足时（且站长允许）AI 直接生成。
+     *
+     * <p>「足够」的门槛是 {@value #MIN_TOPIC_MATCHES} 篇——主题命中的文章太少时，
+     * 围绕它组织的简报会很空，宁可让 AI 按主题直接写一篇原创短文
+     * （约束不编造事实，见 {@code AiContentPromptHelper.buildGeneratePrompt}）。</p>
+     */
+    private Mono<AiContentFeedDTO> generateWithTopics(String openid, String date,
+        AiContentConfigDTO config, AiContentPreferenceDTO preference,
+        List<DigestPublicArticleDTO> candidates, List<String> topics) {
+        var matched = topicSearch(candidates, topics);
+        log.info("[UniHalo][AiContent] 定制主题检索：openid={} date={} 主题={} 命中 {} 篇",
+            mask(openid), date, String.join("、", topics), matched.size());
+        if (matched.size() >= MIN_TOPIC_MATCHES) {
+            // 素材充足：以主题命中的文章为准（它们比宽泛偏好筛选更贴合用户的输入），
+            // AI 围绕主题重写导语与每篇理由——事实来自素材，观点是原创，防侵权口径与日报一致
+            var picked = matched.stream().limit(config.getMaxItems())
+                .map(AiContentFeedService::toItem)
+                .toList();
+            return enhance(picked, preference, config)
+                .flatMap(enhanced -> save(openid, date, enhanced.intro(), enhanced.items(),
+                    candidates.size(), enhanced.aiGenerated()))
+                .map(saved -> toFeed(saved, config));
+        }
+        if (!config.isFallbackGenerateEnabled() || !config.isAiIntroEnabled()) {
+            // 兜底生成被关掉：退回普通筛选，宁可内容没那么贴题也不凭空生成
+            var picked = select(candidates, preference, config);
+            return save(openid, date, "", picked, candidates.size(), false)
+                .map(saved -> toFeed(saved, config));
+        }
+        return generateDirect(openid, date, config, preference, candidates, topics);
+    }
+
+    /**
+     * AI 直接按定制主题生成一篇原创短文。
+     *
+     * <p>生成的条目放在简报最前面（它是用户这次输入最直接的回应）；
+     * 普通偏好筛出的文章补在后面凑满 maxItems——简报不该因为主题冷门就只剩一段话。</p>
+     */
+    private Mono<AiContentFeedDTO> generateDirect(String openid, String date,
+        AiContentConfigDTO config, AiContentPreferenceDTO preference,
+        List<DigestPublicArticleDTO> candidates, List<String> topics) {
+        var words = Math.min(MAX_GENERATE_WORDS,
+            Math.max(MIN_GENERATE_WORDS, config.getIntroWords() * 2));
+        var prompt = AiContentPromptHelper.buildGeneratePrompt(topics, words);
+        return loadAiConfig()
+            .flatMap(aiConfig -> aiClient.call(aiConfig, prompt, DigestAiTask.CONTENT)
+                .timeout(Duration.ofSeconds(AI_TIMEOUT_SECONDS))
+                .map(reply -> AiContentPromptHelper.parseGenerated(reply.text()))
+                .onErrorResume(ex -> {
+                    log.warn("[UniHalo][AiContent] 主题生成失败，降级为普通筛选：{}", ex.getMessage());
+                    return Mono.just(AiContentPromptHelper.Generated.empty());
+                }))
+            .defaultIfEmpty(AiContentPromptHelper.Generated.empty())
+            .flatMap(generated -> {
+                var items = new ArrayList<AiContentItemDTO>();
+                if (generated.hasBody()) {
+                    items.add(generatedItem(topics, generated));
+                }
+                var remain = Math.max(0, config.getMaxItems() - items.size());
+                select(candidates, preference, config).stream().limit(remain).forEach(items::add);
+                var aiGenerated = items.stream()
+                    .anyMatch(item -> Boolean.TRUE.equals(item.getGenerated()));
+                return save(openid, date, "", items, candidates.size(), aiGenerated)
+                    .map(saved -> toFeed(saved, config));
+            });
+    }
+
+    /** AI 生成内容的条目形态：没有原文出处，正文存在 body 里，前端渲染成「定制文章卡」 */
+    private static AiContentItemDTO generatedItem(List<String> topics,
+        AiContentPromptHelper.Generated generated) {
+        var title = StringUtils.hasText(generated.title())
+            ? generated.title() : "关于「" + String.join(" · ", topics) + "」";
+        return AiContentItemDTO.builder()
+            .title(title)
+            .generated(true)
+            .body(generated.body())
+            .summary("根据你的定制主题原创生成，仅你自己可见")
+            .build();
+    }
+
+    /**
+     * 主题检索：定制主题在标题（×3）/关键词（×2）/摘要（×1）中的命中打分。
+     *
+     * <p>中文主题没有可靠的分词器，子串匹配就是够用的口径——主题本来就是用户
+     * 从真实兴趣里提炼的短语（如「大模型 教育」），它出现在标题里基本就是命中。
+     * 稳定排序保证同分时保持候选池的原有顺序（评分高的在前）。</p>
+     */
+    private static List<DigestPublicArticleDTO> topicSearch(
+        List<DigestPublicArticleDTO> candidates, List<String> topics) {
+        var cleaned = topics.stream()
+            .filter(StringUtils::hasText)
+            .map(topic -> topic.toLowerCase().trim())
+            .toList();
+        if (cleaned.isEmpty()) {
+            return List.of();
+        }
+        record Scored(DigestPublicArticleDTO article, int score) {
+        }
+        return candidates.stream()
+            .map(article -> {
+                var title = lowerOrNull(article.getTitle());
+                var summary = lowerOrNull(article.getSummary());
+                var keywords = article.getKeywords() == null ? ""
+                    : lowerOrNull(String.join(" ", article.getKeywords()));
+                var score = 0;
+                for (var topic : cleaned) {
+                    if (title != null && title.contains(topic)) {
+                        score += 3;
+                    }
+                    if (keywords.contains(topic)) {
+                        score += 2;
+                    }
+                    if (summary != null && summary.contains(topic)) {
+                        score += 1;
+                    }
+                }
+                return score > 0 ? new Scored(article, score) : null;
+            })
+            .filter(java.util.Objects::nonNull)
+            .sorted(java.util.Comparator.comparingInt(Scored::score).reversed())
+            .map(Scored::article)
+            .toList();
+    }
+
+    private static String lowerOrNull(String value) {
+        return StringUtils.hasText(value) ? value.toLowerCase() : null;
     }
 
     /**
@@ -237,7 +464,7 @@ public class AiContentFeedService {
     private Mono<Enhanced> enhance(List<AiContentItemDTO> picked, AiContentPreferenceDTO preference,
         AiContentConfigDTO config) {
         var preferences = AiContentPromptHelper.describe(preference.getCategories(),
-            preference.getSources(), preference.getKeywords());
+            preference.getSources(), preference.getKeywords(), preference.getCustomTopics());
         var prompt = AiContentPromptHelper.buildIntroPrompt(picked, preferences,
             config.getIntroWords());
         return loadAiConfig()
@@ -372,6 +599,10 @@ public class AiContentFeedService {
         if (items.isEmpty()) {
             return "最近 " + config.getWindowDays() + " 天的 " + candidates
                 + " 篇精选里没有命中你关注的方向，可以放宽关注条件试试";
+        }
+        if (items.stream().anyMatch(item -> Boolean.TRUE.equals(item.getGenerated()))) {
+            return "已按你的定制主题生成专属内容"
+                + (items.size() > 1 ? "，并附上站内相关的精选文章" : "");
         }
         var noIntro = Boolean.TRUE.equals(issue.getAiGenerated())
             && StringUtils.hasText(issue.getIntro()) ? "" : "（本次未生成导语，以下是按你的方向筛出的结果）";

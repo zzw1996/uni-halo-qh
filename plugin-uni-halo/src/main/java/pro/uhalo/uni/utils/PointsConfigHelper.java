@@ -3,12 +3,10 @@ package pro.uhalo.uni.utils;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.ConsecutiveBonusDTO;
-import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.dto.PointsActionRuleDTO;
 import pro.uhalo.uni.dto.PointsConfigDTO;
 import pro.uhalo.uni.dto.PointsExchangeItemRuleDTO;
 import pro.uhalo.uni.dto.PointsExchangeRulesDTO;
-import pro.uhalo.uni.dto.PointsDrawRuleDTO;
 import pro.uhalo.uni.dto.PointsRulesDTO;
 import pro.uhalo.uni.dto.PointsSignInRuleDTO;
 
@@ -56,7 +54,6 @@ public final class PointsConfigHelper {
             .vote(parseActionRule(rulesNode.path("vote"), defaults.getVote()))
             .signIn(parseSignInRule(rulesNode.path("signIn"), defaults.getSignIn()))
             .newUserGift(parseActionRule(rulesNode.path("newUserGift"), defaults.getNewUserGift()))
-            .draw(parseDrawRule(rulesNode.path("draw"), defaults.getDraw()))
             .exchange(parseExchangeRules(rulesNode.path("exchange"), defaults.getExchange()))
             .build();
     }
@@ -82,30 +79,6 @@ public final class PointsConfigHelper {
             .points(Math.max(0, node.path("points").asInt(fallback.getPoints())))
             .dailyMaxCount(Math.max(0, node.path("dailyMaxCount").asInt(fallback.getDailyMaxCount())))
             .freeCount(Math.max(0, node.path("freeCount").asInt(fallback.getFreeCount())))
-            .build();
-    }
-
-    private static PointsDrawRuleDTO parseDrawRule(JsonNode node, PointsDrawRuleDTO fallback) {
-        if (node == null || node.isNull() || node.isMissingNode()) {
-            return fallback;
-        }
-        var prizes = new ArrayList<DrawPrizeDTO>();
-        var prizeNode = node.path("prizes");
-        if (prizeNode.isArray()) {
-            prizeNode.forEach(item -> {
-                var points = item.path("points").asInt(0);
-                var weight = item.path("weight").asInt(0);
-                if (points > 0 && weight > 0) {
-                    prizes.add(DrawPrizeDTO.builder().points(points).weight(weight).build());
-                }
-            });
-        }
-        if (prizes.isEmpty()) {
-            prizes.addAll(fallback.getPrizes());
-        }
-        return PointsDrawRuleDTO.builder()
-            .cost(Math.max(0, node.path("cost").asInt(fallback.getCost())))
-            .prizes(List.copyOf(prizes))
             .build();
     }
 

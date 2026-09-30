@@ -4,7 +4,7 @@
  * 由 tools/gen-skins.cjs 从编译产物逐条抽取生成：全站含设计 Token 取值的声明
  * 都会被替换成该皮肤的取值。页面改版后请重新编译并重跑生成器。
  *
- * 生成时间：2026-09-28
+ * 生成时间：2026-09-30
  * 覆盖规则带 !important 的原因见生成器头部说明。
  */
 
@@ -212,6 +212,9 @@
 		color: #0e8a72 !important;
 		background: #e2f3ee !important;
 	}
+	view.skin-mint .tile-wall-flag {
+		background: #e6efeb !important;
+	}
 	view.skin-mint .filter-chip {
 		background: #e6efeb !important;
 	}
@@ -252,6 +255,18 @@
 	view.skin-mint .tile-btn-text {
 		color: #0e8a72 !important;
 	}
+	view.skin-mint .unlock-option {
+		background: #e6efeb !important;
+	}
+	view.skin-mint .unlock-price {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .unlock-price-num {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .unlock-price-unit {
+		color: #0e8a72 !important;
+	}
 	view.skin-mint .app-page .logo--guest {
 		background: #e6efeb !important;
 		border: 1rpx solid #dde8e4 !important;
@@ -275,17 +290,20 @@
 		border: 1rpx solid #0e8a72 !important;
 		color: #0e8a72 !important;
 	}
+	view.skin-mint .ai-card {
+		border: 1rpx solid #e2f3ee !important;
+	}
+	view.skin-mint .ai-card-icon {
+		background-image: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
+	}
+	view.skin-mint .promo-action_text--ai, view.skin-mint .promo-action_arrow--ai {
+		color: #0e8a72 !important;
+	}
 	view.skin-mint .channels-card {
 		background-image: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
 	}
 	view.skin-mint .channels-avatar_triangle {
-		border-left: 13rpx solid #0e8a72 !important;
-	}
-	view.skin-mint .channels-enter_text {
-		color: #0e8a72 !important;
-	}
-	view.skin-mint .channels-enter_arrow {
-		color: #0e8a72 !important;
+		border-left: 11rpx solid #0e8a72 !important;
 	}
 	view.skin-mint .feed-tab.is-active {
 		background: #0e8a72 !important;
@@ -318,7 +336,7 @@
 	view.skin-mint .app-page {
 		background: #e6efeb !important;
 	}
-	view.skin-mint .status-card {
+	view.skin-mint .hero-card {
 		background-image: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
 	}
 	view.skin-mint .benefit-dot {
@@ -347,6 +365,63 @@
 	}
 	view.skin-mint .feed-intro {
 		background: #e2f3ee !important;
+	}
+	view.skin-mint .point-num {
+		background: #e2f3ee !important;
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .push-row {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .push-row-switch {
+		background: #e6efeb !important;
+	}
+	view.skin-mint .push-btn {
+		background: #0e8a72 !important;
+	}
+	view.skin-mint .push-foot_link {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .demo-entry {
+		border-top: 1rpx solid #dde8e4 !important;
+	}
+	view.skin-mint .demo-entry_text {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .demo-entry_arrow {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .demo-tag {
+		background: #e2f3ee !important;
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .demo-item {
+		background: #e6efeb !important;
+	}
+	view.skin-mint .demo-item-reason {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .demo-take-block {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .demo-take {
+		border-top: 1rpx solid #dde8e4 !important;
+	}
+	view.skin-mint .goods-btn {
+		background: #0e8a72 !important;
+	}
+	view.skin-mint .advanced-toggle-text {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .feed-poster {
+		background: #e2f3ee !important;
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .feed-generated {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .feed-generated-tag {
+		background: #0e8a72 !important;
 	}
 	view.skin-mint .app-page {
 		background-color: #eef3f1 !important;
@@ -427,6 +502,9 @@
 	}
 	view.skin-mint .mode-tip-text {
 		color: #0e8a72 !important;
+	}
+	view.skin-mint .sub-bar-btn {
+		background: #0e8a72 !important;
 	}
 	view.skin-mint .comment-item {
 		border-top: 2rpx solid #e6efeb !important;
@@ -521,21 +599,6 @@
 	view.skin-mint .cta-btn {
 		background-image: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
 	}
-	view.skin-mint .form-input {
-		background: #e6efeb !important;
-	}
-	view.skin-mint .form-textarea {
-		background: #e6efeb !important;
-	}
-	view.skin-mint .progress-row {
-		border-bottom: 2rpx solid #e6efeb !important;
-	}
-	view.skin-mint .claim-item {
-		border-bottom: 2rpx solid #e6efeb !important;
-	}
-	view.skin-mint .draw-item {
-		border-bottom: 2rpx solid #e6efeb !important;
-	}
 	view.skin-mint .card {
 		box-shadow: 0 2rpx 8rpx rgba(24, 62, 52, 0.06) !important;
 	}
@@ -554,6 +617,36 @@
 	}
 	view.skin-mint .asset-card {
 		background-image: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
+	}
+	view.skin-mint .mode-tab-thumb {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .goods-icon.is-ticket {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .goods-icon.is-other {
+		background: #e6efeb !important;
+	}
+	view.skin-mint .spot-banner {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .goods-card--spotlight {
+		border: 3rpx solid #0e8a72 !important;
+	}
+	view.skin-mint .goods-spot-tag {
+		background: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
+	}
+	view.skin-mint .goods-perk {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .earn-card {
+		background: #e2f3ee !important;
+	}
+	view.skin-mint .earn-desc {
+		color: #0e8a72 !important;
+	}
+	view.skin-mint .earn-btn {
+		background: linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%) !important;
 	}
 	view.skin-mint .milestone-card {
 		background: linear-gradient(135deg, #e2f3ee 0%, #f6eeff 100%) !important;
@@ -806,6 +899,9 @@
 		color: #c25a06 !important;
 		background: #fbeedb !important;
 	}
+	view.skin-sunrise .tile-wall-flag {
+		background: #f2e8d9 !important;
+	}
 	view.skin-sunrise .filter-chip {
 		background: #f2e8d9 !important;
 	}
@@ -846,6 +942,18 @@
 	view.skin-sunrise .tile-btn-text {
 		color: #c25a06 !important;
 	}
+	view.skin-sunrise .unlock-option {
+		background: #f2e8d9 !important;
+	}
+	view.skin-sunrise .unlock-price {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .unlock-price-num {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .unlock-price-unit {
+		color: #c25a06 !important;
+	}
 	view.skin-sunrise .app-page .logo--guest {
 		background: #f2e8d9 !important;
 		border: 1rpx solid #ecdfcb !important;
@@ -869,17 +977,20 @@
 		border: 1rpx solid #c25a06 !important;
 		color: #c25a06 !important;
 	}
+	view.skin-sunrise .ai-card {
+		border: 1rpx solid #fbeedb !important;
+	}
+	view.skin-sunrise .ai-card-icon {
+		background-image: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
+	}
+	view.skin-sunrise .promo-action_text--ai, view.skin-sunrise .promo-action_arrow--ai {
+		color: #c25a06 !important;
+	}
 	view.skin-sunrise .channels-card {
 		background-image: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
 	}
 	view.skin-sunrise .channels-avatar_triangle {
-		border-left: 13rpx solid #c25a06 !important;
-	}
-	view.skin-sunrise .channels-enter_text {
-		color: #c25a06 !important;
-	}
-	view.skin-sunrise .channels-enter_arrow {
-		color: #c25a06 !important;
+		border-left: 11rpx solid #c25a06 !important;
 	}
 	view.skin-sunrise .feed-tab.is-active {
 		background: #c25a06 !important;
@@ -912,7 +1023,7 @@
 	view.skin-sunrise .app-page {
 		background: #f2e8d9 !important;
 	}
-	view.skin-sunrise .status-card {
+	view.skin-sunrise .hero-card {
 		background-image: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
 	}
 	view.skin-sunrise .benefit-dot {
@@ -941,6 +1052,63 @@
 	}
 	view.skin-sunrise .feed-intro {
 		background: #fbeedb !important;
+	}
+	view.skin-sunrise .point-num {
+		background: #fbeedb !important;
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .push-row {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .push-row-switch {
+		background: #f2e8d9 !important;
+	}
+	view.skin-sunrise .push-btn {
+		background: #c25a06 !important;
+	}
+	view.skin-sunrise .push-foot_link {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .demo-entry {
+		border-top: 1rpx solid #ecdfcb !important;
+	}
+	view.skin-sunrise .demo-entry_text {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .demo-entry_arrow {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .demo-tag {
+		background: #fbeedb !important;
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .demo-item {
+		background: #f2e8d9 !important;
+	}
+	view.skin-sunrise .demo-item-reason {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .demo-take-block {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .demo-take {
+		border-top: 1rpx solid #ecdfcb !important;
+	}
+	view.skin-sunrise .goods-btn {
+		background: #c25a06 !important;
+	}
+	view.skin-sunrise .advanced-toggle-text {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .feed-poster {
+		background: #fbeedb !important;
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .feed-generated {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .feed-generated-tag {
+		background: #c25a06 !important;
 	}
 	view.skin-sunrise .app-page {
 		background-color: #f8f1e7 !important;
@@ -1021,6 +1189,9 @@
 	}
 	view.skin-sunrise .mode-tip-text {
 		color: #c25a06 !important;
+	}
+	view.skin-sunrise .sub-bar-btn {
+		background: #c25a06 !important;
 	}
 	view.skin-sunrise .comment-item {
 		border-top: 2rpx solid #f2e8d9 !important;
@@ -1115,21 +1286,6 @@
 	view.skin-sunrise .cta-btn {
 		background-image: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
 	}
-	view.skin-sunrise .form-input {
-		background: #f2e8d9 !important;
-	}
-	view.skin-sunrise .form-textarea {
-		background: #f2e8d9 !important;
-	}
-	view.skin-sunrise .progress-row {
-		border-bottom: 2rpx solid #f2e8d9 !important;
-	}
-	view.skin-sunrise .claim-item {
-		border-bottom: 2rpx solid #f2e8d9 !important;
-	}
-	view.skin-sunrise .draw-item {
-		border-bottom: 2rpx solid #f2e8d9 !important;
-	}
 	view.skin-sunrise .card {
 		box-shadow: 0 2rpx 8rpx rgba(74, 46, 12, 0.06) !important;
 	}
@@ -1148,6 +1304,36 @@
 	}
 	view.skin-sunrise .asset-card {
 		background-image: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
+	}
+	view.skin-sunrise .mode-tab-thumb {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .goods-icon.is-ticket {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .goods-icon.is-other {
+		background: #f2e8d9 !important;
+	}
+	view.skin-sunrise .spot-banner {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .goods-card--spotlight {
+		border: 3rpx solid #c25a06 !important;
+	}
+	view.skin-sunrise .goods-spot-tag {
+		background: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
+	}
+	view.skin-sunrise .goods-perk {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .earn-card {
+		background: #fbeedb !important;
+	}
+	view.skin-sunrise .earn-desc {
+		color: #c25a06 !important;
+	}
+	view.skin-sunrise .earn-btn {
+		background: linear-gradient(135deg, #c25a06 0%, #e08a1e 100%) !important;
 	}
 	view.skin-sunrise .milestone-card {
 		background: linear-gradient(135deg, #fbeedb 0%, #f6eeff 100%) !important;
@@ -1745,24 +1931,6 @@
 	view.skin-ink .pa-btn.is-done {
 		background: #2c3550 !important;
 	}
-	view.skin-ink .lucky-card {
-		background: linear-gradient(160deg, #33291a 0%, #ffeedd 100%) !important;
-	}
-	view.skin-ink .lk-cost {
-		background: rgba(30, 30, 38,0.85) !important;
-	}
-	view.skin-ink .lk-prize {
-		background: rgba(30, 30, 38,0.92) !important;
-	}
-	view.skin-ink .lk-prize-prob {
-		background: #33291a !important;
-	}
-	view.skin-ink .lk-entry {
-		background: rgba(30, 30, 38,0.9) !important;
-	}
-	view.skin-ink .lk-entry-hover {
-		background: rgba(30, 30, 38,0.7) !important;
-	}
 	view.skin-ink .points-week-row {
 		border-top: 1rpx dashed #31313d !important;
 	}
@@ -1893,6 +2061,9 @@
 	view.skin-ink .tile-paused-flag {
 		background: #33291a !important;
 	}
+	view.skin-ink .tile-wall-flag {
+		background: #262630 !important;
+	}
 	view.skin-ink .section-title {
 		color: #f2f2f6 !important;
 	}
@@ -1972,6 +2143,39 @@
 	view.skin-ink .tile-meta {
 		color: #8b8b98 !important;
 	}
+	view.skin-ink .unlock-dialog {
+		background: #1e1e26 !important;
+	}
+	view.skin-ink .unlock-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .unlock-status {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .unlock-option {
+		background: #262630 !important;
+	}
+	view.skin-ink .unlock-option-icon {
+		background: #1e1e26 !important;
+	}
+	view.skin-ink .unlock-option-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .unlock-option-desc {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .unlock-price {
+		background: #232a45 !important;
+	}
+	view.skin-ink .unlock-price-num {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .unlock-price-unit {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .unlock-note {
+		color: #8b8b98 !important;
+	}
 	view.skin-ink .app-page .logo--guest {
 		background: #262630 !important;
 		border: 1rpx solid #31313d !important;
@@ -2004,6 +2208,25 @@
 		border: 1rpx solid #7d95ff !important;
 		color: #7d95ff !important;
 	}
+	view.skin-ink .ai-card {
+		background: #1e1e26 !important;
+		border: 1rpx solid #232a45 !important;
+	}
+	view.skin-ink .ai-card-icon {
+		background-image: linear-gradient(135deg, #7d95ff 0%, #9db0ff 100%) !important;
+	}
+	view.skin-ink .ai-card-badge {
+		background: #1f2e24 !important;
+	}
+	view.skin-ink .promo-title--ai {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .promo-desc--ai {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .promo-action_text--ai, view.skin-ink .promo-action_arrow--ai {
+		color: #7d95ff !important;
+	}
 	view.skin-ink .channels-card {
 		background-image: linear-gradient(135deg, #7d95ff 0%, #9db0ff 100%) !important;
 	}
@@ -2017,22 +2240,10 @@
 		background-color: #1e1e26 !important;
 	}
 	view.skin-ink .channels-avatar_triangle {
-		border-left: 13rpx solid #7d95ff !important;
+		border-left: 11rpx solid #7d95ff !important;
 	}
 	view.skin-ink .channels-badge {
 		background-color: rgba(30, 30, 38,0.22) !important;
-	}
-	view.skin-ink .channels-enter {
-		background-color: #1e1e26 !important;
-	}
-	view.skin-ink .channels-enter_text {
-		color: #7d95ff !important;
-	}
-	view.skin-ink .channels-enter_arrow {
-		color: #7d95ff !important;
-	}
-	view.skin-ink .channels-foot {
-		background-color: rgba(30, 30, 38,0.14) !important;
 	}
 	view.skin-ink .nav-box {
 		background-color: #1e1e26 !important;
@@ -2161,11 +2372,23 @@
 	view.skin-ink .app-page {
 		background: #262630 !important;
 	}
-	view.skin-ink .status-card {
+	view.skin-ink .hero-card {
 		background-image: linear-gradient(135deg, #7d95ff 0%, #9db0ff 100%) !important;
 	}
-	view.skin-ink .status-badge {
-		background: rgba(30, 30, 38,0.22) !important;
+	view.skin-ink .hero-card:before {
+		background-color: rgba(30, 30, 38,0.12) !important;
+	}
+	view.skin-ink .hero-card:after {
+		background-color: rgba(30, 30, 38,0.08) !important;
+	}
+	view.skin-ink .hero-icon {
+		background-color: rgba(30, 30, 38,0.2) !important;
+	}
+	view.skin-ink .hero-badge {
+		background-color: rgba(30, 30, 38,0.22) !important;
+	}
+	view.skin-ink .hero-pill {
+		background-color: rgba(30, 30, 38,0.18) !important;
 	}
 	view.skin-ink .section-card {
 		background: #1e1e26 !important;
@@ -2255,7 +2478,131 @@
 	view.skin-ink .issue-count {
 		color: #8b8b98 !important;
 	}
+	view.skin-ink .point-num {
+		background: #232a45 !important;
+		color: #7d95ff !important;
+	}
+	view.skin-ink .point-text {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .push-row {
+		background: #232a45 !important;
+	}
+	view.skin-ink .push-row-switch {
+		background: #262630 !important;
+	}
+	view.skin-ink .push-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .push-desc {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .push-btn {
+		background: #7d95ff !important;
+	}
+	view.skin-ink .push-hours_label {
+		color: #b9b9c5 !important;
+	}
+	view.skin-ink .push-hours_tip {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .push-foot_text {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .push-foot_link {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .demo-entry {
+		border-top: 1rpx solid #31313d !important;
+	}
+	view.skin-ink .demo-entry_text {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .demo-entry_arrow {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .demo-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .demo-tag {
+		background: #232a45 !important;
+		color: #7d95ff !important;
+	}
+	view.skin-ink .demo-intro {
+		color: #b9b9c5 !important;
+	}
+	view.skin-ink .demo-item {
+		background: #262630 !important;
+	}
+	view.skin-ink .demo-item-cat {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .demo-item-source {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .demo-item-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .demo-item-reason {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .demo-take-block {
+		background: #232a45 !important;
+	}
+	view.skin-ink .demo-take-label {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .demo-take {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .demo-note {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .demo-take {
+		border-top: 1rpx solid #31313d !important;
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .goods-btn {
+		background: #7d95ff !important;
+	}
 	view.skin-ink .empty-tip {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .redeem-row {
+		background: #33291a !important;
+	}
+	view.skin-ink .redeem-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .redeem-desc {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .suggest-label {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .advanced-toggle {
+		border-top: 1rpx solid #262630 !important;
+	}
+	view.skin-ink .advanced-toggle-text {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .feed-poster {
+		background: #232a45 !important;
+		color: #7d95ff !important;
+	}
+	view.skin-ink .feed-generated {
+		background: #232a45 !important;
+	}
+	view.skin-ink .feed-generated-tag {
+		background: #7d95ff !important;
+	}
+	view.skin-ink .feed-generated-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .feed-generated-body {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .feed-generated-note {
 		color: #8b8b98 !important;
 	}
 	view.skin-ink .app-page {
@@ -2431,6 +2778,15 @@
 	}
 	view.skin-ink .article-card {
 		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.5) !important;
+	}
+	view.skin-ink .sub-bar-title {
+		color: #f2f2f6 !important;
+	}
+	view.skin-ink .sub-bar-desc {
+		color: #b9b9c5 !important;
+	}
+	view.skin-ink .sub-bar-btn {
+		background: #7d95ff !important;
 	}
 	view.skin-ink .comment-item {
 		border-top: 2rpx solid #262630 !important;
@@ -2675,74 +3031,6 @@
 	view.skin-ink .list-sub {
 		color: #8b8b98 !important;
 	}
-	view.skin-ink .form-card {
-		background: #1e1e26 !important;
-	}
-	view.skin-ink .form-label {
-		color: #b9b9c5 !important;
-	}
-	view.skin-ink .form-input {
-		background: #262630 !important;
-		color: #f2f2f6 !important;
-	}
-	view.skin-ink .form-textarea {
-		background: #262630 !important;
-		color: #f2f2f6 !important;
-	}
-	view.skin-ink .progress-card {
-		background: #1e1e26 !important;
-	}
-	view.skin-ink .progress-row {
-		border-bottom: 2rpx solid #262630 !important;
-	}
-	view.skin-ink .progress-label {
-		color: #8b8b98 !important;
-	}
-	view.skin-ink .progress-value {
-		color: #f2f2f6 !important;
-	}
-	view.skin-ink .progress-tip {
-		background: #33291a !important;
-	}
-	view.skin-ink .claim-item {
-		border-bottom: 2rpx solid #262630 !important;
-	}
-	view.skin-ink .claim-name {
-		color: #f2f2f6 !important;
-	}
-	view.skin-ink .claim-time {
-		color: #8b8b98 !important;
-	}
-	view.skin-ink .claim-arrow {
-		color: #63636f !important;
-	}
-	view.skin-ink .claim-item.is-pending {
-		background: #33291a !important;
-	}
-	view.skin-ink .claim-item-hover {
-		background: #262630 !important;
-	}
-	view.skin-ink .claim-tag-pending {
-		background: #33251c !important;
-	}
-	view.skin-ink .claim-tag-sent {
-		background: #222c44 !important;
-	}
-	view.skin-ink .claim-tag-done {
-		background: #1f2e24 !important;
-	}
-	view.skin-ink .draw-item {
-		border-bottom: 2rpx solid #262630 !important;
-	}
-	view.skin-ink .draw-title {
-		color: #f2f2f6 !important;
-	}
-	view.skin-ink .draw-time {
-		color: #63636f !important;
-	}
-	view.skin-ink .draw-balance {
-		color: #8b8b98 !important;
-	}
 	view.skin-ink .card {
 		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.5) !important;
 	}
@@ -2817,10 +3105,43 @@
 	view.skin-ink .asset-chip {
 		background: rgba(30, 30, 38,0.2) !important;
 	}
+	view.skin-ink .mode-tabs {
+		background: #1e1e26 !important;
+	}
+	view.skin-ink .mode-tab-text {
+		color: #8b8b98 !important;
+	}
+	view.skin-ink .mode-tab-thumb {
+		background: #232a45 !important;
+	}
+	view.skin-ink .pane-sub-text {
+		color: #8b8b98 !important;
+	}
 	view.skin-ink .goods-card {
 		background: #1e1e26 !important;
 	}
-	view.skin-ink .goods-promo {
+	view.skin-ink .goods-icon.is-ticket {
+		background: #232a45 !important;
+	}
+	view.skin-ink .goods-icon.is-other {
+		background: #262630 !important;
+	}
+	view.skin-ink .goods-icon-char {
+		color: #b9b9c5 !important;
+	}
+	view.skin-ink .spot-banner {
+		background: #232a45 !important;
+	}
+	view.skin-ink .goods-card--spotlight {
+		border: 3rpx solid #7d95ff !important;
+	}
+	view.skin-ink .goods-spot-tag {
+		background: linear-gradient(135deg, #7d95ff 0%, #9db0ff 100%) !important;
+	}
+	view.skin-ink .goods-perk {
+		background: #232a45 !important;
+	}
+	view.skin-ink .goods-promo-chip {
 		background: #33251c !important;
 	}
 	view.skin-ink .goods-unit-save {
@@ -2828,6 +3149,15 @@
 	}
 	view.skin-ink .exchange-card {
 		background: #1e1e26 !important;
+	}
+	view.skin-ink .earn-card {
+		background: #232a45 !important;
+	}
+	view.skin-ink .earn-desc {
+		color: #7d95ff !important;
+	}
+	view.skin-ink .earn-btn {
+		background: linear-gradient(135deg, #7d95ff 0%, #9db0ff 100%) !important;
 	}
 	view.skin-ink .milestone-card {
 		background: linear-gradient(135deg, #232a45 0%, #f6eeff 100%) !important;

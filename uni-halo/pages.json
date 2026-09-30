@@ -304,13 +304,6 @@
 					}
 				},
 				{
-					"path": "lucky-records/lucky-records",
-					"style": {
-						"navigationBarTitleText": "抽奖记录",
-						"enablePullDownRefresh": true
-					}
-				},
-				{
 					"path": "task-center/task-center",
 					"style": {
 						"navigationBarTitleText": "每日任务",
@@ -347,13 +340,6 @@
 								"style": "circle"
 							}
 						}
-					}
-				},
-				{
-					"path": "lucky-claim/lucky-claim",
-					"style": {
-						"navigationBarTitleText": "填写收货信息",
-						"enablePullDownRefresh": false
 					}
 				},
 				{

@@ -10,6 +10,9 @@ import org.mockito.quality.Strictness;
 import pro.uhalo.uni.dto.AiContentConfigDTO;
 import pro.uhalo.uni.dto.DigestPublicArticleDTO;
 import pro.uhalo.uni.dto.PushConfigDTO;
+import run.halo.app.plugin.ReactiveSettingFetcher;
+import pro.uhalo.uni.scheme.AiContentIssue;
+import pro.uhalo.uni.dto.AiContentPreferenceDTO;
 import pro.uhalo.uni.infra.DigestPersistence;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.scheme.DigestSubscription;
@@ -67,6 +70,9 @@ class PushDispatchServiceTest {
     private ReactiveExtensionClient client;
 
     @Mock
+    private ReactiveSettingFetcher settingFetcher;
+
+    @Mock
     private PushSubscriptionService subscriptionService;
 
     @Mock
@@ -89,8 +95,8 @@ class PushDispatchServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PushDispatchService(client, subscriptionService, messageService,
-            digestPersistence, digestPublicService, entitlementService, quotaService);
+        service = new PushDispatchService(client, settingFetcher, subscriptionService,
+            messageService, quotaService);
         // 额度按默认（免费 5）参与筛选：与首页生效集合同一口径
         lenient().when(quotaService.limitsByOpenid(any()))
             .thenReturn(Mono.just(java.util.Map.of()));
@@ -101,7 +107,7 @@ class PushDispatchServiceTest {
         lenient().when(client.create(any(PushRecord.class)))
             .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         lenient().when(messageService.send(anyString(), anyString(),
-                any(WxSubscribeMessageService.Message.class), anyString(), anyString()))
+                any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any()))
             .thenReturn(Mono.just(new WxSubscribeMessageService.SendResult(true, 0, "", false,
                 false)));
         lenient().when(subscriptionService.consume(anyString(), anyString()))
@@ -119,7 +125,11 @@ class PushDispatchServiceTest {
         return PushConfigDTO.builder()
             .enabled(true)
             .templateId("tmpl-new-post")
-            .aiDigestTemplateId("")
+            .aiDigestTemplateId("tmpl-brief")
+            .aiDigestFieldTopic("thing1")
+            .aiDigestFieldContent("thing2")
+            .aiDigestFieldTime("time3")
+            .aiDigestFieldTip("thing4")
             .newPostEnabled(true)
             .aiDigestEnabled(true)
             .checkIntervalMinutes(5)
@@ -212,7 +222,7 @@ class PushDispatchServiceTest {
         var captor = org.mockito.ArgumentCaptor.forClass(
             WxSubscribeMessageService.Message.class);
         verify(messageService, times(1)).send(eq(OPENID), eq("tmpl-new-post"),
-            captor.capture(), eq("pages/tabbar/home/home"), eq("formal"));
+            captor.capture(), eq("pages/tabbar/home/home"), eq("formal"), any());
         var message = captor.getValue();
         assertThat(message.title()).isEqualTo("第一篇");
         // 合并后说明「共 2 篇」，而不是把两篇都塞进标题
@@ -235,7 +245,7 @@ class PushDispatchServiceTest {
 
         verify(messageService).send(eq(OPENID), anyString(),
             any(WxSubscribeMessageService.Message.class),
-            eq("pagesA/article-detail/article-detail?name=p1"), anyString());
+            eq("pagesA/article-detail/article-detail?name=p1"), anyString(), any());
     }
 
     /** 每人每天最多一条：当天已有记录就不再打扰（这是额度最有效的用法） */
@@ -334,7 +344,7 @@ class PushDispatchServiceTest {
         stubSubscriptions(subscription(OPENID, "tech"));
         stubQuotas(quota(OPENID, 1, 0));
         when(messageService.send(anyString(), anyString(),
-            any(WxSubscribeMessageService.Message.class), anyString(), anyString()))
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any()))
             .thenReturn(Mono.just(new WxSubscribeMessageService.SendResult(false, 43101,
                 "user refuse to accept the msg", true, false)));
 
@@ -367,94 +377,114 @@ class PushDispatchServiceTest {
             any(WxSubscribeMessageService.Message.class), anyString(), anyString());
     }
 
-    // ── 简报线 ──
-
-    /** 今天的日报还没发布成功 → 不推 */
-    @Test
-    void briefingShouldWaitForPublishedDigest() {
-        var report = new DigestReport();
-        report.setStatus("RUNNING");
-        report.setPostCount(0);
-        when(digestPersistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(report)));
-
-        StepVerifier.create(service.dispatchAiDigest(config()))
-            .expectNext(0)
-            .verifyComplete();
-
-        verify(messageService, never()).send(anyString(), anyString(),
-            any(WxSubscribeMessageService.Message.class), anyString(), anyString());
-    }
+    // ── 简报线（新：按人推送已生成的简报） ──
 
     /**
-     * 日报已发布 → 给有权益的用户推「今日精选 · N 篇」。
+     * 有额度 + 今天没推过 → 发出「你的定制简报已生成」，并消耗一条额度。
      *
-     * <p>N 由候选池纯筛选算出（这里给 1 篇命中），<b>不调用 AI</b>：
-     * 推送的正文是「提醒」，内容在用户点进去时才生成。</p>
+     * <p>推送的判据是「这位用户自己的简报已生成」，而不是「站长的日报已生成」——
+     * 用户点开就是成品。</p>
      */
     @Test
-    void briefingShouldPushMatchedCountWithoutAi() {
-        var report = new DigestReport();
-        report.setStatus("SUCCESS");
-        report.setPostCount(1);
-        when(digestPersistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(report)));
-        var candidates = new ArrayList<DigestPublicArticleDTO>();
-        candidates.add(DigestPublicArticleDTO.builder()
-            .title("命中的").category("engineering").categoryLabel("工程")
-            .keywords(List.of("rust")).sourceName("src").build());
-        candidates.add(DigestPublicArticleDTO.builder()
-            .title("不命中的").category("opinion").categoryLabel("观点")
-            .keywords(List.of("life")).sourceName("other").build());
-        when(digestPublicService.candidateArticles(7)).thenReturn(Mono.just(candidates));
-
-        var account = new UserPoints();
-        account.setWxOpenid(OPENID);
-        account.setAiContentExpireAt(Instant.now().plusSeconds(86400));
-        when(client.listAll(eq(UserPoints.class), any(), any()))
-            .thenReturn(Flux.just(account));
-        var preference = new pro.uhalo.uni.scheme.AiContentPreference();
-        preference.setWxOpenid(OPENID);
-        preference.setEnabled(true);
-        preference.setCategories(List.of("engineering"));
-        when(client.listAll(eq(pro.uhalo.uni.scheme.AiContentPreference.class), any(), any()))
-            .thenReturn(Flux.just(preference));
+    void shouldPushGeneratedBriefingToUser() {
+        var issue = issue(TODAY, 3);
         stubQuotas(quota(OPENID, 0, 1));
         stubState(state());
+        stubSubscriptionLoad(quota(OPENID, 0, 1));
+        stubNoRecord();
+        when(messageService.send(anyString(), anyString(),
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any()))
+            .thenReturn(Mono.just(WxSubscribeMessageService.SendResult.success()));
 
-        StepVerifier.create(service.dispatchAiDigest(config()))
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue, preference("大模型落地")))
             .expectNext(1)
             .verifyComplete();
 
-        var captor = org.mockito.ArgumentCaptor.forClass(
-            WxSubscribeMessageService.Message.class);
-        verify(messageService).send(eq(OPENID), eq("tmpl-new-post"), captor.capture(),
-            eq("pagesA/ai-content/ai-content"), eq("formal"));
-        assertThat(captor.getValue().title()).isEqualTo("今日精选 · 1 篇");
-        assertThat(captor.getValue().source()).isEqualTo("AI 定制内容");
+        var captor = org.mockito.ArgumentCaptor.forClass(WxSubscribeMessageService.Message.class);
+        verify(messageService).send(eq(OPENID), eq("tmpl-brief"), captor.capture(),
+            eq("pagesA/ai-content/ai-content"), eq("formal"), any());
+        assertThat(captor.getValue().title()).isEqualTo("你的定制简报已生成");
+        assertThat(captor.getValue().summary()).contains("2 条内容").contains("大模型落地");
         verify(subscriptionService).consume(OPENID, PushConfigHelper.KIND_AI_DIGEST);
     }
 
-    /** 权益已过期：不推（付费权益只服务有效期内的用户） */
+    /** 没有推送额度（一次性订阅没授权/用完了）→ 不发，也不报错 */
     @Test
-    void expiredEntitlementShouldNotReceiveBriefing() {
-        var report = new DigestReport();
-        report.setStatus("SUCCESS");
-        report.setPostCount(1);
-        when(digestPersistence.listByDate(TODAY)).thenReturn(Mono.just(List.of(report)));
-        when(digestPublicService.candidateArticles(7)).thenReturn(Mono.just(List.of()));
-        var account = new UserPoints();
-        account.setWxOpenid(OPENID);
-        account.setAiContentExpireAt(Instant.now().minusSeconds(86400));
-        when(client.listAll(eq(UserPoints.class), any(), any())).thenReturn(Flux.just(account));
-        stubQuotas(quota(OPENID, 0, 1));
-        // 简报线也会读调度状态（用于每日上限与审计），单例必须存在
-        stubState(state());
+    void shouldSkipWhenNoPushQuota() {
+        stubSubscriptionLoad(quota(OPENID, 1, 0));
 
-        StepVerifier.create(service.dispatchAiDigest(config()))
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
+                preference("主题")))
             .expectNext(0)
             .verifyComplete();
 
         verify(messageService, never()).send(anyString(), anyString(),
-            any(WxSubscribeMessageService.Message.class), anyString(), anyString());
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any());
+    }
+
+    /** 今天已经推过 → 不重复推（每人每天一条） */
+    @Test
+    void shouldSkipWhenAlreadyPushedToday() {
+        stubSubscriptionLoad(quota(OPENID, 0, 2));
+        var record = new PushRecord();
+        record.setMetadata(new Metadata());
+        record.getMetadata().setName("push-existing");
+        when(client.fetch(eq(PushRecord.class), anyString())).thenReturn(Mono.just(record));
+
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
+                preference("主题")))
+            .expectNext(0)
+            .verifyComplete();
+
+        verify(messageService, never()).send(anyString(), anyString(),
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any());
+    }
+
+    /** 用户没设定制主题：文案退到「你的关注方向」，不能出现空标题 */
+    @Test
+    void shouldFallbackTopicWhenNoCustomTopic() {
+        stubSubscriptionLoad(quota(OPENID, 0, 1));
+        stubState(state());
+        stubNoRecord();
+        when(messageService.send(anyString(), anyString(),
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any()))
+            .thenReturn(Mono.just(WxSubscribeMessageService.SendResult.success()));
+
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 2),
+                preference(null)))
+            .expectNext(1)
+            .verifyComplete();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(WxSubscribeMessageService.Message.class);
+        verify(messageService).send(anyString(), anyString(), captor.capture(), anyString(),
+            anyString(), any());
+        assertThat(captor.getValue().summary()).contains("你的关注方向");
+    }
+
+    private static AiContentIssue issue(String date, int matched) {
+        var issue = new AiContentIssue();
+        issue.setWxOpenid(OPENID);
+        issue.setDate(date);
+        issue.setIntro("导语");
+        issue.setMatchedCount(matched);
+        issue.setItems("[{\"title\":\"a\"},{\"title\":\"b\"}]");
+        issue.setCreatedAt(Instant.now());
+        return issue;
+    }
+
+    private static AiContentPreferenceDTO preference(String topic) {
+        return AiContentPreferenceDTO.builder()
+            .customTopics(topic == null ? List.of() : List.of(topic))
+            .build();
+    }
+
+    private void stubSubscriptionLoad(PushSubscription subscription) {
+        when(subscriptionService.load(anyString())).thenReturn(Mono.just(subscription));
+    }
+
+    private void stubNoRecord() {
+        when(client.fetch(eq(PushRecord.class), anyString()))
+            .thenReturn(Mono.error(new IllegalStateException("not found")));
     }
 
     /** 永久买断的权益同样有效（远期时间表示法） */

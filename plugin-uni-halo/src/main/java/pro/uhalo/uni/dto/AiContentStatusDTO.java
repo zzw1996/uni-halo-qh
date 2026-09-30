@@ -33,4 +33,7 @@ public class AiContentStatusDTO {
 
     /** 剩余天数（不足一天按一天计）；永久或未开通为 0 */
     private int daysRemaining;
+
+    /** 当前有效性来自「会员期内免条件使用」而非已购道具（前端展示「会员期内免费」） */
+    private boolean viaMember;
 }

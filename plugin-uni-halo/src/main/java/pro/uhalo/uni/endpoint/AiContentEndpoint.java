@@ -48,6 +48,8 @@ public class AiContentEndpoint implements CustomEndpoint {
     private final AiContentService aiContentService;
     private final AiContentFeedService feedService;
     private final AiContentPreferenceService preferenceService;
+    private final pro.uhalo.uni.services.AiContentEntitlementService entitlementService;
+    private final pro.uhalo.uni.services.impl.AiContentPushService pushService;
 
     @Override
     public GroupVersion groupVersion() {
@@ -98,7 +100,47 @@ public class AiContentEndpoint implements CustomEndpoint {
                         .description("Max records, 1-30, default 10")
                         .required(false)
                         .implementation(Integer.class)))
+            .POST(Constants.END_POINT_API_BASE_PATH + "/ai/content/push", this::pushNow,
+                builder -> builder
+                    .operationId("PushAiContentNow")
+                    .description("Generate today's briefing if needed, then push it to the "
+                        + "user's WeChat right away. Returns pushed=false with needQuota when "
+                        + "the one-time subscription quota is used up.")
+                    .tag(apiTag))
+            .POST(Constants.END_POINT_API_BASE_PATH + "/ai/content/redeem", this::redeem,
+                builder -> builder
+                    .operationId("RedeemAiContentWithPoints")
+                    .description("Redeem the AI content entitlement with points (deducts "
+                        + "pointsPrice, extends the expiry by pointsDays). Disabled when "
+                        + "pointsPrice is 0.")
+                    .tag(apiTag))
             .build();
+    }
+
+    /** 立即生成并推送今天的简报（没有额度时如实返回，让前端引导授权） */
+    private Mono<ServerResponse> pushNow(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        return pushService.pushNow(openid)
+            .flatMap(this::jsonOk)
+            .onErrorResume(WxAuthException.class, ex -> error(400, ex.getReason()))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 立即推送失败 openid={}：{}", mask(openid),
+                    ex.toString());
+                return error(500, "推送失败，请稍后重试");
+            });
+    }
+
+    /** 积分兑换权益：扣积分 + 延长到期时间（通道关闭/余额不足时把原因原样回给用户） */
+    private Mono<ServerResponse> redeem(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        return entitlementService.redeemWithPoints(openid)
+            .flatMap(this::jsonOk)
+            .onErrorResume(WxAuthException.class, ex -> error(400, ex.getReason()))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 积分兑换失败 openid={}：{}", mask(openid),
+                    ex.toString());
+                return error(500, "兑换失败，请稍后重试");
+            });
     }
 
     private Mono<ServerResponse> getPreference(ServerRequest request) {

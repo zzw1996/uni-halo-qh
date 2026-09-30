@@ -426,9 +426,9 @@ public class InviteServiceImpl implements InviteService {
         }
         return new InviteConfig(
             node.path("enabled").asBoolean(true),
-            Math.max(0, node.path("rewardPoints").asInt(30)),
+            Math.max(0, node.path("rewardPoints").asInt(100)),
             // 被邀请人奖励允许配 0（只给邀请人发），所以下限是 0 而不是 1
-            Math.max(0, node.path("inviteeRewardPoints").asInt(30))
+            Math.max(0, node.path("inviteeRewardPoints").asInt(50))
         );
     }
 

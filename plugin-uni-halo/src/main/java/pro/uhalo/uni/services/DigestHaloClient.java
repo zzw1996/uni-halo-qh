@@ -156,6 +156,18 @@ public class DigestHaloClient {
             .map(raw -> readTree(raw, path));
     }
 
+    /** DELETE：Halo 删除成功通常返回空体，读成 String 再丢弃，避免空体解码歧义 */
+    public Mono<Void> delete(String path, Duration timeout) {
+        return resolveBaseUrl().flatMap(baseUrl -> requireToken()
+            .flatMap(token -> withCommonHeaders(clientFor(baseUrl).delete()
+                .uri(path)
+                .accept(MediaType.APPLICATION_JSON), baseUrl, token)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(timeout)))
+            .then();
+    }
+
     public Mono<JsonNode> postMultipart(String path, MultiValueMap<String, HttpEntity<?>> parts,
         Duration timeout) {
         return resolveBaseUrl().flatMap(baseUrl -> requireToken()

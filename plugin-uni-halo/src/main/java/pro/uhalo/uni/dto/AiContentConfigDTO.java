@@ -43,6 +43,33 @@ public class AiContentConfigDTO {
     /** AI 导语的字数上限 */
     private int introWords;
 
+    /** 用户最多手输几个定制主题（0=关闭手输维度） */
+    private int maxTopics;
+
+    /** 积分解锁价格（积分）；0 = 关闭积分兑换通道（只能现金直购道具） */
+    private int pointsPrice;
+
+    /** 积分一次兑换的权益天数 */
+    private int pointsDays;
+
+    /** 预设定制主题选项（textarea，逗号/换行分隔）；空则前端只展示手输框 */
+    private String presetTopics;
+
+    /** 是否在首页展示运营位卡片 */
+    private boolean homeCardEnabled;
+
+    /** 首页卡片标题 */
+    private String homeCardTitle;
+
+    /** 首页卡片描述 */
+    private String homeCardDesc;
+
+    /** 主题检索不到足够素材时，是否允许 AI 直接按主题生成（兜底开关） */
+    private boolean fallbackGenerateEnabled;
+
+    /** 会员有效期内是否免条件使用（对齐会员免券/免订阅墙口径） */
+    private boolean memberFree;
+
     /** 权益说明文案（未购买页展示，一行一条；留空则由前端用通用文案） */
     private String benefitNote;
 }

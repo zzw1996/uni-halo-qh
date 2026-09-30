@@ -76,7 +76,7 @@ public class AiContentPreferenceService {
      * @param catalog 站长的分类目录：用于拒绝清单外的分类 key
      */
     public Mono<AiContentPreferenceDTO> save(String openid, AiContentPreferenceRequest request,
-        DigestCategoryCatalog catalog, AiContentConfigDTO config) {
+        DigestCategoryCatalog catalog, AiContentConfigDTO config, List<Integer> allowedPushHours) {
         // 用 defer 包住：校验失败必须以 error 信号返回，而不是同步抛异常
         return Mono.defer(() -> {
             if (!StringUtils.hasText(openid)) {
@@ -91,6 +91,11 @@ public class AiContentPreferenceService {
                 config.getMaxSources(), "关注的来源");
             var keywords = sanitize(request == null ? null : request.getKeywords(),
                 config.getMaxKeywords(), "关注的关键词");
+            var customTopics = sanitize(request == null ? null : request.getCustomTopics(),
+                config.getMaxTopics(), "定制主题");
+            var pushEnabled = request != null && Boolean.TRUE.equals(request.getPushEnabled());
+            var pushHour = sanitizePushHour(request == null ? null : request.getPushHour(),
+                allowedPushHours);
 
             return findOne(normalizedOpenid)
                 .flatMap(existing -> {
@@ -98,11 +103,15 @@ public class AiContentPreferenceService {
                     existing.setCategories(categories);
                     existing.setSources(sources);
                     existing.setKeywords(keywords);
+                    existing.setCustomTopics(customTopics);
+                    existing.setPushEnabled(pushEnabled);
+                    existing.setPushHour(pushHour);
                     existing.setUpdatedAt(Instant.now());
                     return client.update(existing);
                 })
                 .switchIfEmpty(Mono.defer(() -> client.create(
-                    newPreference(normalizedOpenid, enabled, categories, sources, keywords))))
+                    newPreference(normalizedOpenid, enabled, categories, sources, keywords,
+                        customTopics, pushEnabled, pushHour))))
                 // 写入前已先读一次（findOne 不受索引构建影响），所以重试只会重跑写
                 .retryWhen(Retry.backoff(INDEX_BUILD_RETRIES, INDEX_BUILD_BACKOFF)
                     .filter(AiContentPreferenceService::isIndexBuildingError)
@@ -177,6 +186,27 @@ public class AiContentPreferenceService {
         return List.copyOf(cleaned);
     }
 
+    /**
+     * 推送整点校验：必须落在站长配置的可选时段里。
+     *
+     * <p>与分类清单同一口径——放行清单外的值，用户会配出一个「服务端永远不会跑的时段」，
+     * 表现就是「我明明开了推送，却从来没收到」。</p>
+     */
+    private static Integer sanitizePushHour(Integer hour, List<Integer> allowed) {
+        if (hour == null) {
+            return null;
+        }
+        if (hour < 0 || hour > 23) {
+            throw new WxAuthException("推送时间只能是 0-23 之间的整点");
+        }
+        var options = allowed == null ? List.<Integer>of() : allowed;
+        if (!options.isEmpty() && !options.contains(hour)) {
+            throw new WxAuthException("推送时间「" + hour + ":00」不在站长开放的时段里，"
+                + "请从列表里选择");
+        }
+        return hour;
+    }
+
     private Mono<AiContentPreference> findOne(String openid) {
         var listOptions = new ListOptions();
         listOptions.setFieldSelector(FieldSelector.of(equal("wxOpenid", openid)));
@@ -184,13 +214,17 @@ public class AiContentPreferenceService {
     }
 
     private static AiContentPreference newPreference(String openid, boolean enabled,
-        List<String> categories, List<String> sources, List<String> keywords) {
+        List<String> categories, List<String> sources, List<String> keywords,
+        List<String> customTopics, boolean pushEnabled, Integer pushHour) {
         var preference = new AiContentPreference();
         preference.setWxOpenid(openid);
         preference.setEnabled(enabled);
         preference.setCategories(categories);
         preference.setSources(sources);
         preference.setKeywords(keywords);
+        preference.setCustomTopics(customTopics);
+        preference.setPushEnabled(pushEnabled);
+        preference.setPushHour(pushHour);
         var now = Instant.now();
         preference.setCreatedAt(now);
         preference.setUpdatedAt(now);
@@ -207,12 +241,15 @@ public class AiContentPreferenceService {
             .categories(orEmpty(preference.getCategories()))
             .sources(orEmpty(preference.getSources()))
             .keywords(orEmpty(preference.getKeywords()))
+            .customTopics(orEmpty(preference.getCustomTopics()))
+            .pushEnabled(Boolean.TRUE.equals(preference.getPushEnabled()))
+            .pushHour(preference.getPushHour())
             .lastIssueDate(preference.getLastIssueDate())
             .updatedAt(preference.getUpdatedAt() == null ? null
                 : preference.getUpdatedAt().atZone(ZONE).format(TIME_FMT))
             .build();
         dto.setConfigured(!dto.getCategories().isEmpty() || !dto.getSources().isEmpty()
-            || !dto.getKeywords().isEmpty());
+            || !dto.getKeywords().isEmpty() || !dto.getCustomTopics().isEmpty());
         return dto;
     }
 
@@ -222,6 +259,9 @@ public class AiContentPreferenceService {
             .categories(List.of())
             .sources(List.of())
             .keywords(List.of())
+            .customTopics(List.of())
+            .pushEnabled(false)
+            .pushHour(null)
             .configured(false)
             .build();
     }

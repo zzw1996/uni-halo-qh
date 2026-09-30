@@ -44,6 +44,15 @@ public class AiContentPreference extends AbstractExtension {
     /** 关注的关键词（与文章的 AI 关键词求交集） */
     private List<String> keywords;
 
+    /** 手工输入的定制主题（自由文本，简报生成时优先围绕它检索与重写） */
+    private List<String> customTopics;
+
+    /** 是否开启「每日定时生成并推送」（一次性订阅消息，未授权或无额度时推不出去） */
+    private Boolean pushEnabled;
+
+    /** 每日推送的整点（0-23）：服务端按整点分桶批量生成，避免每分钟扫全量用户 */
+    private Integer pushHour;
+
     /** 最近一次生成简报的日期（yyyy-MM-dd），便于后台看活跃度 */
     private String lastIssueDate;
 

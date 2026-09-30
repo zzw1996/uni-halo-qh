@@ -5,11 +5,12 @@
 			<tm-button class="mt-24" size="m" theme="indigo" @click="fnGetData">重新加载</tm-button>
 		</view>
 		<!--
-			付费文章未解锁：后端 ContentTicketFilter 已拦截正文，
+			文章被插件拦截：付费墙（阅读券解锁）或订阅墙（分类未订阅）。
 			此处只展示 title/excerpt/cover，不含任何正文内容。
+			两种墙共用一张卡片骨架（403 + locked 的同一识别口径），按 type 分流按钮区。
 		-->
 		<view v-else-if="loading === 'locked' && contentLock" class="content-locked ma-24 pa-24 round-12">
-			<view class="locked-title">{{ contentLock.title || '付费内容' }}</view>
+			<view class="locked-title">{{ contentLock.title || (calcLockIsSubscription ? '订阅后可读' : '付费内容') }}</view>
 			<image
 				v-if="contentLock.cover"
 				class="locked-cover mt-24"
@@ -18,58 +19,93 @@
 				@click="handlePreview(0, [{ url: calcUrl(contentLock.cover) }])"
 			></image>
 			<view v-if="contentLock.excerpt" class="locked-excerpt mt-24">{{ contentLock.excerpt }}</view>
-			<view class="locked-tip mt-24">🔒 {{ contentLock.message || '本文为付费内容，需使用阅读券解锁' }}</view>
-			<view class="locked-balance mt-16">
-				<text>我的阅读券：{{ calcLockTickets }} 张</text>
-				<text>解锁需 {{ calcLockCostTickets }} 张</text>
-			</view>
-			<view class="locked-actions mt-24">
-				<tm-button
-					v-if="calcLockCanUnlock"
-					size="m"
-					theme="bg-gradient-indigo-accent"
-					:loading="unlocking"
-					@click="fnUnlockContent"
-				>{{ unlocking ? '解锁中...' : '使用阅读券解锁' }}</tm-button>
-				<tm-button
-					v-else
-					size="m"
-					theme="bg-gradient-orange-accent"
-					:disabled="unlocking"
-					@click="fnGoGetTickets"
-				>{{ calcLockIsLogin ? '阅读券不足，去获取' : '登录后查看并解锁' }}</tm-button>
-			</view>
-			<!--
-				会员引导：会员期内本文直接免券，因此这比「再买张券」更划算。
-				只在会员卡开启、用户不是会员、且会员确实含免券权益时展示
-				（承诺一个用户开了也享受不到的权益是最伤信任的做法）。
-			-->
-			<view v-if="calcLockIsLogin && !calcLockCanUnlock && memberPromo" class="locked-member mt-16">
-				<view class="locked-member-main">
-					<text class="locked-member-title">{{ memberPromo.title }}</text>
-					<text class="locked-member-desc">{{ memberPromo.desc }}</text>
+			<!-- 订阅墙：分类未订阅，引导订阅（列表能看，全文需订阅——转化漏斗的最后一环） -->
+			<template v-if="calcLockIsSubscription">
+				<view class="locked-tip mt-24">🔒 {{ contentLock.message || '订阅后可阅读全文' }}</view>
+				<view v-if="lockCategoryNames" class="locked-balance mt-16">
+					<text>所属分类：{{ lockCategoryNames }}</text>
 				</view>
-				<text class="locked-member-link" @click="fnGoGetTickets">去看看 ›</text>
-			</view>
-			<!--
-				券不够时的最高意图时刻：用户已经点开文章、看到摘要、被墙挡住。
-				在这里直接给一个「用积分换 1 张券」的按钮，比让他自己跳去充值页再找入口短得多。
-			-->
-			<view v-if="calcLockIsLogin && !calcLockCanUnlock && ticketExchange" class="locked-exchange mt-16">
-				<text class="locked-exchange-text">
-					可用 {{ ticketExchange.points }} 积分兑换 {{ ticketExchange.ticketCount || 1 }} 张阅读券
-					<text v-if="ticketExchange.todayCount >= ticketExchange.dailyMaxCount" class="locked-exchange-warn">
-						（今日已兑完）
+				<view class="locked-actions mt-24">
+					<tm-button
+						v-if="!calcLockIsLogin"
+						size="m"
+						theme="bg-gradient-indigo-accent"
+						@click="fnLoginForSubscribe"
+					>登录后订阅查看全文</tm-button>
+					<tm-button
+						v-else-if="calcLockPaused || lockQuotaFull"
+						size="m"
+						theme="bg-gradient-orange-accent"
+						:loading="subscribing"
+						@click="fnOpenLockUnlockSheet"
+					>{{ calcLockPaused ? '订阅已暂停，去解锁' : '订阅额度已满，去解锁' }}</tm-button>
+					<tm-button
+						v-else
+						size="m"
+						theme="bg-gradient-indigo-accent"
+						:loading="subscribing"
+						@click="fnSubscribeLockedCategory"
+					>{{ subscribing ? '订阅中...' : '立即订阅' }}</tm-button>
+				</view>
+				<view v-if="lockQuotaHint" class="locked-balance mt-16">
+					<text>{{ lockQuotaHint }}</text>
+				</view>
+			</template>
+			<!-- 付费墙：阅读券解锁（原有流程不动） -->
+			<template v-else>
+				<view class="locked-tip mt-24">🔒 {{ contentLock.message || '本文为付费内容，需使用阅读券解锁' }}</view>
+				<view class="locked-balance mt-16">
+					<text>我的阅读券：{{ calcLockTickets }} 张</text>
+					<text>解锁需 {{ calcLockCostTickets }} 张</text>
+				</view>
+				<view class="locked-actions mt-24">
+					<tm-button
+						v-if="calcLockCanUnlock"
+						size="m"
+						theme="bg-gradient-indigo-accent"
+						:loading="unlocking"
+						@click="fnUnlockContent"
+					>{{ unlocking ? '解锁中...' : '使用阅读券解锁' }}</tm-button>
+					<tm-button
+						v-else
+						size="m"
+						theme="bg-gradient-orange-accent"
+						:disabled="unlocking"
+						@click="fnGoGetTickets"
+					>{{ calcLockIsLogin ? '阅读券不足，去获取' : '登录后查看并解锁' }}</tm-button>
+				</view>
+				<!--
+					会员引导：会员期内本文直接免券，因此这比「再买张券」更划算。
+					只在会员卡开启、用户不是会员、且会员确实含免券权益时展示
+					（承诺一个用户开了也享受不到的权益是最伤信任的做法）。
+				-->
+				<view v-if="calcLockIsLogin && !calcLockCanUnlock && memberPromo" class="locked-member mt-16">
+					<view class="locked-member-main">
+						<text class="locked-member-title">{{ memberPromo.title }}</text>
+						<text class="locked-member-desc">{{ memberPromo.desc }}</text>
+					</view>
+					<text class="locked-member-link" @click="fnGoGetTickets">去看看 ›</text>
+				</view>
+				<!--
+					券不够时的最高意图时刻：用户已经点开文章、看到摘要、被墙挡住。
+					在这里直接给一个「用积分换 1 张券」的按钮，比让他自己跳去充值页再找入口短得多。
+				-->
+				<view v-if="calcLockIsLogin && !calcLockCanUnlock && ticketExchange" class="locked-exchange mt-16">
+					<text class="locked-exchange-text">
+						可用 {{ ticketExchange.points }} 积分兑换 {{ ticketExchange.ticketCount || 1 }} 张阅读券
+						<text v-if="ticketExchange.todayCount >= ticketExchange.dailyMaxCount" class="locked-exchange-warn">
+							（今日已兑完）
+						</text>
 					</text>
-				</text>
-				<tm-button
-					size="s"
-					theme="primary"
-					:disabled="exchangingTicket || ticketExchange.todayCount >= ticketExchange.dailyMaxCount"
-					:loading="exchangingTicket"
-					@click="fnExchangeTicketForArticle"
-				>积分兑换</tm-button>
-			</view>
+					<tm-button
+						size="s"
+						theme="primary"
+						:disabled="exchangingTicket || ticketExchange.todayCount >= ticketExchange.dailyMaxCount"
+						:loading="exchangingTicket"
+						@click="fnExchangeTicketForArticle"
+					>积分兑换</tm-button>
+				</view>
+			</template>
 		</view>
 		<view v-else-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
@@ -439,7 +475,7 @@
 			></comment-modal>
 		</block>
 
-		<!-- 微信登录弹窗（评论 / 海报 / 点赞） -->
+		<!-- 微信登录弹窗（评论 / 海报 / 点赞 / 订阅墙登录引导） -->
 		<wx-login-dialog
 			:show.sync="wxLoginDialogShow"
 			:title="wxLoginDialogTitle"
@@ -448,6 +484,9 @@
 			@success="fnOnWxLoginSuccess"
 			@close="fnOnWxLoginClose"
 		></wx-login-dialog>
+		<!-- 订阅墙：额度已满/已暂停时的解锁面板（选项与发现页一致） -->
+		<tm-actionSheet v-model="lockUnlockSheetShow" title="解锁订阅额度"
+			:actions="lockUnlockActions" @change="fnOnLockUnlockAction"></tm-actionSheet>
 		<points-toast></points-toast>
 	</view>
 </template>
@@ -468,6 +507,7 @@ import commentList from '@/pagesA/components/comment-list/comment-list.vue';
 import commentItem from '@/pagesA/components/comment-item/comment-item.vue';
 import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
+import tmActionSheet from '@/tm-vuetify/components/tm-actionSheet/tm-actionSheet.vue';
 import PointsToast from '@/components/points-toast/points-toast.vue';
 import ArticleVote from '@/components/article-vote/article-vote.vue';
 import ArticleDouban from '@/components/article-douban/article-douban.vue';
@@ -475,6 +515,7 @@ import contentReactionBar from '@/components/content-reaction-bar/content-reacti
  
 import barrage from '@/components/barrage/barrage.vue';
 import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
+import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, isQuotaFull } from '@/utils/categorySubscription.js';
 import { getCommentAuthorInfo } from '@/utils/comment.js';
 import { isWxLoginRequired } from '@/utils/wxLogin.js';
 import { upvote } from '@/utils/upvote.js';
@@ -504,6 +545,7 @@ export default {
 		barrage,
 		commentModal,
 		wxLoginDialog,
+		tmActionSheet,
 		PointsToast,
 		ArticleVote,
 		contentReactionBar,
@@ -600,7 +642,17 @@ export default {
 			/** 兑换请求进行中，防止连点重复扣积分 */
 			exchangingTicket: false,
 			/** 会员状态：仅用于锁定卡上的引导文案（已开通会员根本不会进锁定态） */
-			membership: { enabled: false, active: false, freeContent: false, bonusTickets: 0 }
+			membership: { enabled: false, active: false, freeContent: false, bonusTickets: 0 },
+
+			// ── 订阅墙（分类未订阅）──
+			/** 订阅请求/额度解锁进行中，防止连点 */
+			subscribing: false,
+			/** 进入订阅墙锁定态时取一次订阅状态：按钮文案与出口由额度决定 */
+			lockSubscription: null,
+			/** 额度已满/已暂停时的解锁面板 */
+			lockUnlockSheetShow: false,
+			/** 游客点「登录后订阅」：登录成功后回到锁定卡片，按钮变成「立即订阅」 */
+			pendingSubscribeLogin: false
 		};
 	},
 		computed: {
@@ -694,6 +746,53 @@ export default {
 					? `会员期内不再消耗阅读券，开通还送 ${bonus} 张券`
 					: '会员期内不再消耗阅读券'
 			};
+		},
+
+		// ── 订阅墙锁定卡 ──
+		/** 锁定类型：订阅墙（分类未订阅）还是付费墙（阅读券）。type 缺省按付费墙（兼容老服务端） */
+		calcLockIsSubscription() {
+			return this.contentLock?.type === 'subscription';
+		},
+		/** 文章所属未订阅分类的显示名（订阅引导展示用） */
+		lockCategoryNames() {
+			return (this.contentLock?.categories || [])
+				.map((item) => item?.displayName || item?.name)
+				.filter(Boolean)
+				.join('、');
+		},
+		calcLockPaused() {
+			return this.contentLock?.paused === true;
+		},
+		/** 订阅额度是否已满（额度下发失败时按未满处理，点订阅时公共模块还会再校验一次） */
+		lockQuotaFull() {
+			return this.lockSubscription ? isQuotaFull(this.lockSubscription) : false;
+		},
+		/** 卡片底部的额度提示：说清「还差多少位」比让用户自己去发现页数格子友好 */
+		lockQuotaHint() {
+			const state = this.lockSubscription;
+			if (!state || !state.loggedIn) {
+				return '';
+			}
+			return `已订阅 ${(state.subscribed || []).length}/${subscriptionLimit(state.limits)} 个分类`;
+		},
+		/** 解锁面板选项（与发现页同一组：积分解锁 / 开通会员） */
+		lockUnlockActions() {
+			const limits = this.lockSubscription?.limits || {};
+			const price = Number(limits.quotaPrice) || 0;
+			const balance = Number(limits.pointsBalance) || 0;
+			const short = Math.max(0, price - balance);
+			return [
+				{
+					title: `积分解锁一份（${price} 积分）`,
+					label: short > 0
+						? `当前 ${balance} 积分，还差 ${short} 积分`
+						: `当前 ${balance} 积分`
+				},
+				{
+					title: '购买会员卡（不限量）',
+					label: '会员期内订阅不限量，还可全站畅读'
+				}
+			];
 		}
 	},
 	watch: {
@@ -938,8 +1037,9 @@ export default {
 					this.fnLoadFooterModules();
 				})
 				.catch((err) => {
-					// 付费文章被插件拦截（ContentTicketFilter 返回 403 + ContentLockedDTO）。
-					// 必须与真正的加载失败区分：这里要渲染解锁卡片，而不是「文章加载失败」。
+					// 文章被插件拦截，必须与真正的加载失败区分：这里要渲染引导卡片，
+					// 而不是「文章加载失败」。两种墙共用 403 + locked 的识别口径：
+					// 付费墙（ContentTicketFilter）→ 阅读券解锁；订阅墙（SubscriptionWallFilter）→ 引导订阅。
 					const lockData = err?.data;
 					if ((err?.isContentLocked || err?.statusCode === 403) && lockData && lockData.locked === true) {
 						this.contentLock = lockData;
@@ -947,6 +1047,11 @@ export default {
 						this.lockIsLogin = checkHasWxLogin() && !!getOpenid();
 						this.loading = 'locked';
 						this.fnSetPageTitle(lockData.title || '付费内容');
+						if (lockData.type === 'subscription') {
+							// 订阅墙：按钮出口由额度决定（可订阅 / 已满去解锁 / 已暂停去解锁）
+							this.fnPrepareSubscriptionLock();
+							return;
+						}
 						// 券不够时卡片要给「用积分兑换」与「开通会员」两个出口，进入锁定态就查一次
 						this.fnLoadTicketExchange();
 						this.fnLoadMembership();
@@ -1053,6 +1158,13 @@ export default {
 			// 微信登录已完成，绑定页展示中；待绑定完成后再执行 pending 操作
 		},
 		fnOnWxLoginSuccess() {
+			if (this.pendingSubscribeLogin) {
+				// 订阅墙的登录引导：登录后重进锁定态（按钮从「去登录」变成「立即订阅」）。
+				// fnGetData 再次命中 403 时会带着新登录态重渲染卡片并回读额度
+				this.pendingSubscribeLogin = false;
+				this.fnGetData();
+				return;
+			}
 			if (this.pendingLockUnlock) {
 				// 登录后重新拉取：后端此时能识别身份并返回真实券余额。
 				// 这里刻意不自动扣券——解锁是消费行为，必须由用户再点一次确认。
@@ -1081,6 +1193,7 @@ export default {
 			this.pendingCommentPayload = null;
 			this.pendingLike = false;
 			this.pendingLockUnlock = false;
+			this.pendingSubscribeLogin = false;
 		},
 		fnOnCommentModalClose({ refresh, isSubmit, needLogin }) {
 			if (needLogin) {
@@ -2071,6 +2184,105 @@ export default {
 			// 让新到账的阅读券立刻反映在卡片上
 			this._needRecheckLock = true;
 			uni.navigateTo({ url: '/pagesA/points-recharge/points-recharge' });
+		},
+
+		// ── 订阅墙（分类未订阅）──
+
+		/** 进入订阅墙锁定态时取一次订阅状态：按钮出口由额度决定（可订阅 / 已满 / 已暂停） */
+		async fnPrepareSubscriptionLock() {
+			this.lockSubscription = await fetchCategorySubscription(this.$httpApi.v2);
+		},
+		fnLoginForSubscribe() {
+			// 登录成功后重进锁定卡片，按钮从「去登录」变成「立即订阅」；
+			// 刻意不自动订阅——订阅是用户自己的选择，登录只负责把门打开
+			this.pendingSubscribeLogin = true;
+			this.wxLoginDialogShow = true;
+		},
+		/** 锁定卡片上点「立即订阅」：订阅成功即重拉正文（fnGetData 会重置锁定态） */
+		async fnSubscribeLockedCategory() {
+			const categoryName = this.contentLock?.categories?.[0]?.name;
+			if (!categoryName || this.subscribing) {
+				return;
+			}
+			this.subscribing = true;
+			try {
+				const result = await subscribeCategory(this.$httpApi.v2, categoryName);
+				if (result.ok) {
+					uni.showToast({ title: '订阅成功', icon: 'success' });
+					this.fnGetData();
+					return;
+				}
+				if (result.reason === 'not-logged-in') {
+					this.fnLoginForSubscribe();
+					return;
+				}
+				if (result.reason === 'quota-full') {
+					this.fnOpenLockUnlockSheet();
+					return;
+				}
+				uni.showToast({ title: result.reason || '订阅失败，请稍后重试', icon: 'none' });
+			} finally {
+				this.subscribing = false;
+			}
+		},
+		/** 额度已满 / 已暂停：摆出「怎么多订」的两个出口，不让用户自己去别处找 */
+		fnOpenLockUnlockSheet() {
+			this.lockUnlockSheetShow = true;
+		},
+		fnOnLockUnlockAction(e) {
+			const index = e?.index ?? -1;
+			if (index === 0) {
+				this.fnUnlockQuotaWithPoints();
+				return;
+			}
+			if (index === 1) {
+				// 充值页回来后 onShow 复查锁定态（_needRecheckLock 约定）：会员开通/续费后墙自动放行
+				this._needRecheckLock = true;
+				uni.navigateTo({
+					url: '/pagesA/points-recharge/points-recharge',
+					fail: () => uni.showToast({ title: '打开权益直购页失败', icon: 'none' })
+				});
+			}
+		},
+		/** 积分解锁一份额度，成功后顺手把本文的分类订阅上，一步到位 */
+		async fnUnlockQuotaWithPoints() {
+			if (this.subscribing) {
+				return;
+			}
+			this.subscribing = true;
+			try {
+				const res = await this.$httpApi.v2.purchaseSubscribeQuota(1);
+				const body = res?.data || res || {};
+				if (body.error) {
+					uni.showToast({ title: body.error, icon: 'none' });
+					return;
+				}
+				// 积分余额变了：我的页/身份页靠这个事件同步（与其它扣分链路同一约定）
+				if (body.balance != null) {
+					uni.$emit('points_updated', { balance: body.balance });
+				}
+				// 解锁后额度变了：以服务端回读为准刷新卡片按钮
+				this.lockSubscription = await fetchCategorySubscription(this.$httpApi.v2);
+				const categoryName = this.contentLock?.categories?.[0]?.name;
+				if (!categoryName) {
+					uni.showToast({ title: body.message || '已解锁一份订阅额度', icon: 'none' });
+					return;
+				}
+				const result = await subscribeCategory(this.$httpApi.v2, categoryName);
+				if (result.ok) {
+					uni.showToast({ title: '订阅成功', icon: 'success' });
+					this.fnGetData();
+					return;
+				}
+				uni.showToast({ title: result.reason || '订阅失败，请稍后重试', icon: 'none' });
+			} catch (err) {
+				uni.showToast({
+					title: err?.error || err?.detail || '解锁失败，请稍后重试',
+					icon: 'none'
+				});
+			} finally {
+				this.subscribing = false;
+			}
 		},
 		handlePreview(index, list) {
 			uni.previewImage({

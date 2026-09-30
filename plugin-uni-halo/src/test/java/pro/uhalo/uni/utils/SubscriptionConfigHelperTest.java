@@ -22,7 +22,8 @@ class SubscriptionConfigHelperTest {
         // 默认必须等于改造前写死的 5，否则升级那一刻所有用户都会突然超出额度
         assertThat(config.getFreeQuota()).isEqualTo(5);
         assertThat(config.isEnabled()).isFalse();
-        assertThat(config.getQuotaPrice()).isEqualTo(50);
+        // 每份额度的积分价按「1 元 ≈ 100 积分」重新校准（原 50 分 = ￥0.5，太便宜）
+        assertThat(config.getQuotaPrice()).isEqualTo(300);
         assertThat(config.getMaxQuota()).isEqualTo(10);
         assertThat(config.getMemberMaxQuota()).isEqualTo(30);
         assertThat(config.limitFor(0)).isEqualTo(5);
@@ -49,7 +50,7 @@ class SubscriptionConfigHelperTest {
     @Test
     void parseShouldFallBackWhenGroupMissing() {
         assertThat(SubscriptionConfigHelper.parse(null).getFreeQuota()).isEqualTo(5);
-        assertThat(SubscriptionConfigHelper.parse(null).getQuotaPrice()).isEqualTo(50);
+        assertThat(SubscriptionConfigHelper.parse(null).getQuotaPrice()).isEqualTo(300);
     }
 
     @Test

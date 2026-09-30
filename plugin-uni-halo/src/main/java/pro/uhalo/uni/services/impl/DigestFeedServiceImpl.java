@@ -49,7 +49,8 @@ public class DigestFeedServiceImpl implements DigestFeedService {
     private static final int FEED_CONCURRENCY = 10;
     private static final int IMAGE_CONCURRENCY = 10;
     private static final int MAX_REDIRECT_HOPS = 3;
-    private static final int DESCRIPTION_LIMIT = 500;
+    /** 素材截断上限：成稿 AI 需要足够上下文才能写出观点而不是复述摘要（评分侧另行截到 300） */
+    private static final int DESCRIPTION_LIMIT = 2000;
 
     private static final String FEED_USER_AGENT = "AI-Daily-Digest/1.0 (RSS Reader)";
     private static final String FEED_ACCEPT =
@@ -261,8 +262,10 @@ public class DigestFeedServiceImpl implements DigestFeedService {
         var link = firstNonBlank(childText(item, "link"), childText(item, "guid"));
         var pubDate = firstNonBlank(childText(item, "pubdate"), childText(item, "date"),
             childText(item, "published"), childText(item, "updated"));
-        var rawBody = firstNonBlank(childText(item, "description"), childText(item, "encoded"),
-            childText(item, "content"));
+        // content:encoded 优先于 description：全文源（WordPress 系居多）的 description
+        // 往往只是句话摘要，成稿要的上下文在正文里；纯摘要源再退回 description
+        var rawBody = firstNonBlank(childText(item, "encoded"), childText(item, "content"),
+            childText(item, "description"));
         return buildArticle(feed, title, link, pubDate, rawBody, item);
     }
 
@@ -270,7 +273,7 @@ public class DigestFeedServiceImpl implements DigestFeedService {
         var title = DigestTextUtils.stripHtml(childText(entry, "title"));
         var link = atomLink(entry);
         var pubDate = firstNonBlank(childText(entry, "published"), childText(entry, "updated"));
-        var rawBody = firstNonBlank(childText(entry, "summary"), childText(entry, "content"));
+        var rawBody = firstNonBlank(childText(entry, "content"), childText(entry, "summary"));
         return buildArticle(feed, title, link, pubDate, rawBody, entry);
     }
 

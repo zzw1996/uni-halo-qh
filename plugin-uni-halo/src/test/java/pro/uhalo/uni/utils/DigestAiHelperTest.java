@@ -56,10 +56,22 @@ class DigestAiHelperTest {
     void summaryPromptShouldScaleOverviewAndPointQuotaByWords() {
         var prompt = DigestAiHelper.buildSummaryPrompt(List.of(article("A", "d")), 0, "zh", 600);
 
-        // 概述取一半篇幅，每条论点取剩下的一半再除以 3，且不低于 25 字
-        assertThat(prompt).contains("300 字左右的概述段落（不少于 255 字）");
-        assertThat(prompt).contains("每条约 100 字（不少于 85 字）");
-        assertThat(prompt).contains("合计不少于 600 字");
+        // 概述 0.35、分点 0.35 均分到 3 条、AI 看法 0.3（不低于 80 字）
+        assertThat(prompt).contains("210 字左右的客观概述段落（不少于 179 字）");
+        assertThat(prompt).contains("每条约 70 字（不少于 60 字）");
+        assertThat(prompt).contains("180 字左右的评论段落（不少于 153 字）");
+        assertThat(prompt).contains("合计不少于 512 字");
+    }
+
+    @Test
+    void summaryPromptShouldRequireRewriteAndAiTake() {
+        var prompt = DigestAiHelper.buildSummaryPrompt(List.of(article("A", "d")), 0, "zh", 600);
+
+        // 版权红线：禁止照搬原文；AI 看法：五件套之一，JSON 里有独立字段
+        assertThat(prompt).contains("版权红线");
+        assertThat(prompt).contains("连续 10 字以上的原文照抄一律不允许");
+        assertThat(prompt).contains("**小编看法** (aiTake)");
+        assertThat(prompt).contains("\"aiTake\": \"小编看法段落...\"");
     }
 
     @Test

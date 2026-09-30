@@ -12,6 +12,7 @@ import pro.uhalo.uni.dto.CommercialConfigSaveRequest;
 import pro.uhalo.uni.dto.ConfigGroupDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.utils.CommercialConfigChecks;
+import pro.uhalo.uni.utils.PricingPresets;
 import pro.uhalo.uni.utils.ContentTicketConfigHelper;
 import pro.uhalo.uni.utils.DailyTaskConfigHelper;
 import pro.uhalo.uni.utils.LevelConfigHelper;
@@ -82,6 +83,52 @@ public class CommercialConfigService {
         var incoming = request == null || request.getGroups() == null
             ? Map.<String, Map<String, Object>>of() : request.getGroups();
         return saveAttempt(incoming, 0);
+    }
+
+    /**
+     * 一键套用积分定价预设（保守 / 标准 / 激进）。
+     *
+     * <p>做法是「读当前配置 → 算出补丁 → 走同一条保存链路」，因此合并语义、
+     * 并发重试、白名单校验与手工保存完全一致——预设不是一条绕开保护的特权通道。
+     * 补丁只覆盖预设接管的字段（见 {@link PricingPresets}），站长自定义的装扮、
+     * 兑换项、任务与其它分组都不受影响。</p>
+     */
+    public Mono<CommercialConfigDTO> applyPricingPreset(String presetName) {
+        var preset = PricingPresets.parse(presetName);
+        if (preset == null) {
+            return Mono.error(new WxAuthException(
+                "未知的预设档位：" + presetName + "（可选 conservative / standard / aggressive）"));
+        }
+        return rawGroupValues().flatMap(raw -> {
+            var patch = PricingPresets.patch(preset, raw);
+            log.info("套用积分定价预设：{}，影响分组 {}", PricingPresets.nameOf(preset),
+                patch.keySet());
+            var request = new CommercialConfigSaveRequest();
+            request.setGroups(patch);
+            return save(request);
+        });
+    }
+
+    /** 读取当前各分组配置的原文（预设要在此基础上改，避免抹掉站长自定义的字段） */
+    private Mono<Map<String, JsonNode>> rawGroupValues() {
+        return resolveNames().flatMap(names -> client.fetch(ConfigMap.class, names.configMapName())
+            .switchIfEmpty(Mono.error(new WxAuthException(
+                "插件配置存储不存在，请在「应用市场 → 已安装」重新应用本插件")))
+            .map(configMap -> {
+                var result = new java.util.LinkedHashMap<String, JsonNode>();
+                var data = configMap.getData();
+                if (data == null) {
+                    return result;
+                }
+                for (var entry : data.entrySet()) {
+                    try {
+                        result.put(entry.getKey(), OBJECT_MAPPER.readTree(entry.getValue()));
+                    } catch (Exception ex) {
+                        log.warn("忽略无法解析的分组配置：{}（{}）", entry.getKey(), ex.getMessage());
+                    }
+                }
+                return result;
+            }));
     }
 
     private Mono<CommercialConfigDTO> saveAttempt(Map<String, Map<String, Object>> incoming,

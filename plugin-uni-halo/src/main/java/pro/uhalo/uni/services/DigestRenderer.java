@@ -99,8 +99,8 @@ public class DigestRenderer {
 
         var report = new StringBuilder();
         report.append("# 📰 AI 博客每日精选 — ").append(dateStr).append("\n\n");
-        report.append("> 来自 Karpathy 推荐的 ").append(stats.getTotalFeeds())
-            .append(" 个顶级技术博客，AI 精选 Top ").append(articles.size())
+        report.append("> 精选 ").append(stats.getTotalFeeds())
+            .append(" 个中英文技术博客（含 Karpathy 推荐源），AI 精选 Top ").append(articles.size())
             .append("，每篇约 ").append(avgWords).append(" 字\n\n");
 
         appendHighlights(report, overview);
@@ -118,7 +118,7 @@ public class DigestRenderer {
      * 单篇精选文章的成稿。
      *
      * <p>「精选 N 篇就发 N 篇」模式下每篇文章单独成文：中文标题、原文出处、头图、
-     * 概述、核心论点、推荐理由与关键词，末尾附一行来源说明。</p>
+     * 概述、核心信息、推荐理由、AI 看法与关键词，末尾附版权声明与来源说明。</p>
      */
     public String renderArticle(DigestArticleDTO article, DigestStatsDTO stats, String footerNote,
         ZonedDateTime generatedAt) {
@@ -146,7 +146,9 @@ public class DigestRenderer {
         if (StringUtils.hasText(article.getReason())) {
             report.append("💡 **为什么值得读**: ").append(article.getReason()).append("\n\n");
         }
+        appendAiTake(report, article);
         appendKeywords(report, article);
+        appendDisclaimer(report);
 
         report.append("---\n\n");
         // 文末不再输出「本文由…自动撰写／来源…」这类声明；署名行由配置决定（默认留空）
@@ -197,6 +199,7 @@ public class DigestRenderer {
             if (StringUtils.hasText(article.getReason())) {
                 report.append("💡 **为什么值得读**: ").append(article.getReason()).append("\n\n");
             }
+            appendAiTake(report, article);
             appendKeywords(report, article);
         }
         report.append("---\n\n");
@@ -282,8 +285,8 @@ public class DigestRenderer {
             .append(" | 扫描 ").append(stats.getSuccessFeeds()).append(" 源 → 获取 ")
             .append(stats.getTotalArticles()).append(" 篇 → 精选 ")
             .append(articles.size()).append(" 篇*\n");
-        report.append("*基于 [Hacker News Popularity Contest 2025]"
-            + "(https://refactoringenglish.com/tools/hn-popularity/) RSS 源列表，"
+        report.append("*英文源清单基于 [Hacker News Popularity Contest 2025]"
+            + "(https://refactoringenglish.com/tools/hn-popularity/)，"
             + "由 [Andrej Karpathy](https://x.com/karpathy) 推荐*\n");
         if (StringUtils.hasText(footerNote)) {
             report.append("*").append(footerNote.trim()).append("*\n");
@@ -308,12 +311,33 @@ public class DigestRenderer {
             return;
         }
         if (withHeading) {
-            report.append("**核心论点**\n\n");
+            report.append("**核心信息**\n\n");
         }
         for (var point : points) {
             report.append("- ").append(point).append('\n');
         }
         report.append('\n');
+    }
+
+    /**
+     * 小编看法：与概述（客观事实）和核心信息（硬信息）严格区分的原创观点段。
+     *
+     * <p>对外统一署名「小编」，不暴露 AI 字样（AI 生成属性由文末版权声明披露）；
+     * 这是防侵权结构的另一半——事实转述配上原创观点，整篇文章就没有
+     * 「原文复述」可指摘的部分；prompt 侧（{@code DigestAiHelper}）负责禁止照搬原文。</p>
+     */
+    private void appendAiTake(StringBuilder report, DigestArticleDTO article) {
+        if (!StringUtils.hasText(article.getAiTake())) {
+            return;
+        }
+        report.append("✍️ **小编看法**: ").append(article.getAiTake().trim()).append("\n\n");
+    }
+
+    /** 逐篇版权声明：AI 生成属性、版权归原作者、引导读原文（合理引用的三要素） */
+    private void appendDisclaimer(StringBuilder report) {
+        report.append(
+            "> 本文由 AI 辅助生成，内容为原文摘要与编辑点评，原文版权归原作者所有，欢迎点击上方链接阅读完整内容。")
+            .append("\n\n");
     }
 
     private void appendKeywords(StringBuilder report, DigestArticleDTO article) {

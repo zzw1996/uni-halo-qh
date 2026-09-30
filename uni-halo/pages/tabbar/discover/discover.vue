@@ -125,6 +125,10 @@
 							@click.stop="fnOpenUnlockSheet">
 							<text class="tile-paused-text">已暂停 · 去解锁</text>
 						</view>
+						<!-- 订阅墙开着时，未订阅的分类标个小锁：详情读全文需要订阅，先说清楚 -->
+						<view v-if="calcWallEnabled && !item.subscribed" class="tile-wall-flag">
+							<text class="tile-wall-text">🔒</text>
+						</view>
 						<view class="tile-main" @click="handleToCategory(item)">
 								<image v-if="fnCatCover(item)" class="tile-icon" :src="fnCatCover(item)"
 									mode="aspectFill" lazy-load></image>
@@ -143,11 +147,55 @@
 		</view>
 
 		<!--
-			解锁额度：两个选择放同一个面板里，价格与当前积分都写在选项上。
-			不用两个 showModal 串起来——那样用户得先关掉一个再看下一个，也不知道自己有多少积分。
+			解锁额度：居中弹窗。
+			原来是底部 actionSheet——自绘底栏是悬浮胶囊、层级更高，弹层下半截会被它压住，
+			两个选项的说明也被宽度截断；改成居中卡片后说明写得全，并把「还差多少积分」
+			摆到点按之前（与 AI 定制内容页的兑换交互同一套）。
 		-->
-		<tm-actionSheet v-model="unlockSheetShow" title="解锁更多订阅额度"
-			:actions="unlockActions" @change="fnOnUnlockAction"></tm-actionSheet>
+		<view v-if="unlockSheetShow" class="unlock-mask" @click="unlockSheetShow = false">
+			<view class="unlock-dialog" @click.stop="">
+				<view class="unlock-close" @click="unlockSheetShow = false">
+					<tm-icons name="icon-times" :size="28" color="#9a9a94"></tm-icons>
+				</view>
+
+				<text class="unlock-title">解锁更多订阅额度</text>
+				<text class="unlock-status">{{ unlockStatusText }}</text>
+
+				<!-- 积分解锁：价格写在右侧徽标，余额与差额写在副标题，点按前就知道够不够 -->
+				<view v-if="subCanUnlock" class="unlock-option" hover-class="unlock-option--hover"
+					@click="fnUnlockWithPoints">
+					<view class="unlock-option-icon unlock-option-icon--points">
+						<tm-icons name="icon-gem" :size="34" color="indigo"></tm-icons>
+					</view>
+					<view class="unlock-option-body">
+						<text class="unlock-option-title">用积分解锁一份额度</text>
+						<text class="unlock-option-desc" :class="{ 'is-short': unlockPointsShort > 0 }">
+							{{ unlockPointsDesc }}
+						</text>
+					</view>
+					<view class="unlock-price">
+						<text class="unlock-price-num">{{ unlockPrice }}</text>
+						<text class="unlock-price-unit">积分</text>
+					</view>
+				</view>
+
+				<!-- 会员卡：现金通道。商品名由站长配置（可能叫月卡），跳过去后直购页会指认出这张卡 -->
+				<view class="unlock-option" hover-class="unlock-option--hover" @click="fnToBuyMember">
+					<view class="unlock-option-icon unlock-option-icon--member">
+						<tm-icons name="icon-star-circle" :size="34" color="orange"></tm-icons>
+					</view>
+					<view class="unlock-option-body">
+						<text class="unlock-option-title">开通会员 · 订阅额度提升</text>
+						<text class="unlock-option-desc">会员期内订阅上限自动提升，还能免券读付费文章</text>
+					</view>
+					<view class="unlock-arrow">
+						<tm-icons name="icon-angle-right" :size="24" color="#9a9a94"></tm-icons>
+					</view>
+				</view>
+
+				<text class="unlock-note">解锁的额度永久有效；取消订阅不会退还已解锁的额度</text>
+			</view>
+		</view>
 
 		<!--
 			分类多起来之后，"回到顶部"比"切换视图"有用得多。
@@ -180,8 +228,8 @@ import { getAppConfigs } from '@/config/index.js';
 import { requestSubscribe, openSubscribeSetting, accumulatePushQuota, pushRemindState }
 	from '@/utils/subscribeMessage.js';
 import loadMoreMixin from '@/common/mixins/loadMore.js';
-import tmActionSheet from '@/tm-vuetify/components/tm-actionSheet/tm-actionSheet.vue';
 import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
+import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
 
 /** 一次拉全量分类：站点分类通常几十个，一屏搜完比翻页找更符合「发现」的用法 */
@@ -201,7 +249,7 @@ export default {
 		tmEmpty,
 		wxLoginDialog,
 		uhTabbar,
-		tmActionSheet,
+		tmIcons,
 		tmFlotbutton
 	},
 	created() {
@@ -288,6 +336,10 @@ export default {
 			const push = this.haloConfigs?.pushConfig;
 			return push?.enabled === true && !!push?.templateId;
 		},
+		/** 订阅墙开关：开着时未订阅分类的磁贴标小锁（详情读全文需订阅） */
+		calcWallEnabled() {
+			return this.haloConfigs?.subscriptionWallConfig?.enabled === true;
+		},
 		/**
 		 * 是否显示「更新提醒」入口。
 		 *
@@ -366,28 +418,41 @@ export default {
 				: `已订阅 ${this.subscribedCount}/${this.subLimit} 个分类`;
 		},
 		/**
-		 * 解锁面板的选项。
+		 * 解锁弹窗的取数。
 		 *
 		 * <p>把「还差多少积分」直接写进副标题：用户不用自己拿余额去减价格，
 		 * 不够时也一眼知道差多少，而不是点下去才被拒绝。</p>
 		 */
-		unlockActions() {
-			const limits = this.subLimits || {};
-			const price = Number(limits.quotaPrice) || 0;
-			const balance = Number(limits.pointsBalance) || 0;
-			const short = Math.max(0, price - balance);
-			return [
-				{
-					title: `积分解锁一份（${price} 积分）`,
-					label: short > 0
-						? `当前 ${balance} 积分，还差 ${short} 积分`
-						: `当前 ${balance} 积分，解锁后还可订 ${this.subLimit + 1} 个分类`
-				},
-				{
-					title: '购买会员卡（不限量）',
-					label: '会员期内订阅不限量，还能免券读付费文章'
-				}
-			];
+		unlockPrice() {
+			return Number(this.subLimits?.quotaPrice) || 0;
+		},
+		unlockPointsShort() {
+			const balance = Number(this.subLimits?.pointsBalance);
+			if (!Number.isFinite(balance) || balance < 0) {
+				return 0;
+			}
+			return Math.max(0, this.unlockPrice - balance);
+		},
+		unlockPointsDesc() {
+			const balance = Number(this.subLimits?.pointsBalance);
+			if (!Number.isFinite(balance) || balance < 0) {
+				return `解锁后可再订 1 个分类`;
+			}
+			const short = this.unlockPointsShort;
+			return short > 0
+				? `当前 ${balance} 积分，还差 ${short} 积分`
+				: `当前 ${balance} 积分，解锁后可再订 1 个分类`;
+		},
+		/** 弹窗顶部的一句话：被暂停 / 到上限 / 未到上限三种口径分开说（未到上限也能从「解锁更多」进来） */
+		unlockStatusText() {
+			if (this.pausedCount > 0) {
+				return `已订阅 ${this.subscribedCount}/${this.subLimit} 个分类，${this.pausedCount} 个分类因额度不足被暂停`;
+			}
+			if (this.isAtLimit) {
+				return `已订阅 ${this.subscribedCount}/${this.subLimit} 个分类，免费额度已用完`;
+			}
+			const remain = Math.max(0, this.subLimit - this.subscribedCount);
+			return `当前还能再订 ${remain} 个分类；也可以先解锁，把喜欢的分类都攒着`;
 		},
 		/** 提醒入口是否需要用户动手（没同意过 / 被禁用了） */
 		pushNeedsAction() {
@@ -851,29 +916,46 @@ export default {
 			this.unlockSheetShow = true;
 		},
 
-		/** 面板里选了一项：0 = 积分解锁，1 = 买会员卡（跳权益直购页） */
-		fnOnUnlockAction(e) {
-			const index = e?.index ?? -1;
-			if (index === 0) {
-				this.fnUnlockWithPoints();
-				return;
-			}
-			if (index === 1) {
-				uni.navigateTo({
-					url: '/pagesA/points-recharge/points-recharge',
-					fail: () => uni.showToast({ title: '打开权益直购页失败', icon: 'none' })
-				});
-			}
+		/** 弹窗里选了会员卡：关掉弹窗再跳权益直购页；highlight=member 让对方指认出该买哪张卡 */
+		fnToBuyMember() {
+			this.unlockSheetShow = false;
+			uni.navigateTo({
+				url: '/pagesA/points-recharge/points-recharge?highlight=member',
+				fail: () => uni.showToast({ title: '打开权益直购页失败', icon: 'none' })
+			});
 		},
 
 		/**
 		 * 用积分解锁一份额度。
 		 *
-		 * <p>成功后就地刷新订阅：新的上限与被暂停的分类都由服务端算好下发，
-		 * 界面不必自己推一遍（也就不会与首页、推送的口径出现偏差）。</p>
+		 * <p>点按前先用已知余额判断够不够：不足时直接给「还差多少」与「去赚积分」入口，
+		 * 而不是等用户确认完再被服务端拒绝（与 AI 定制内容页的兑换同一套交互）。
+		 * 余额可能已变，服务端仍会做权威校验。</p>
 		 */
 		async fnUnlockWithPoints() {
 			if (this.unlocking) {
+				return;
+			}
+			const price = this.unlockPrice;
+			const balance = Number(this.subLimits?.pointsBalance);
+			if (price > 0 && Number.isFinite(balance) && balance >= 0 && balance < price) {
+				const short = price - balance;
+				uni.showModal({
+					title: '积分不足',
+					content: `解锁一份需要 ${price} 积分，你当前有 ${balance} 积分，还差 ${short} 积分。`
+						+ '签到、浏览文章、发表评论都能赚积分。',
+					confirmText: '去赚积分',
+					cancelText: '知道了',
+					success: (res) => {
+						if (res.confirm) {
+							this.unlockSheetShow = false;
+							uni.navigateTo({
+								url: '/pagesA/task-center/task-center',
+								fail: () => uni.switchTab({ url: '/pages/tabbar/about/about' })
+							});
+						}
+					}
+				});
 				return;
 			}
 			this.unlocking = true;
@@ -884,12 +966,13 @@ export default {
 					uni.showToast({ title: body.error, icon: 'none' });
 					return;
 				}
+				// 成功就地关弹窗：新的上限与暂停分类由 fnLoadSubscribed 从服务端取回
+				this.unlockSheetShow = false;
 				uni.showToast({ title: body.message || '已解锁一份订阅额度', icon: 'none' });
 				// 积分余额变了：我的页/身份页靠这个事件同步（与其它扣分链路同一约定）
 				if (body.balance != null) {
 					uni.$emit('points_updated', { balance: body.balance });
 				}
-				// 服务端回读了新的额度：这里只负责把它取回来
 				await this.fnLoadSubscribed();
 			} catch (err) {
 				uni.showToast({
@@ -1350,6 +1433,22 @@ export default {
 	color: $uh-warning;
 }
 
+/* 订阅墙小锁：未订阅分类的详情读全文需要订阅，右上角轻量标记 */
+.tile-wall-flag {
+	position: absolute;
+	left: 12rpx;
+	top: 12rpx;
+	padding: 2rpx 8rpx;
+	border-radius: $uh-radius-pill;
+	background: $uh-fill;
+	z-index: 3;
+}
+
+.tile-wall-text {
+	font-size: 18rpx;
+	line-height: 1.4;
+}
+
 /* ===== 区块头 ===== */
 .section {
 	margin-top: 24rpx;
@@ -1640,6 +1739,139 @@ export default {
 	text-align: center;
 	padding: 24rpx 0 16rpx;
 	font-size: 22rpx;
+	color: $uh-ink-3;
+}
+
+/* ── 解锁额度弹窗（居中） ──
+   遮罩层级必须压过自绘底栏（z-index 1000），否则弹窗下半截被底栏盖住——
+   换居中弹窗就是从这个遮挡问题来的，这里取 1100 再留出余量。 */
+.unlock-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1100;
+	background: rgba(0, 0, 0, 0.45);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 48rpx;
+	box-sizing: border-box;
+}
+
+.unlock-dialog {
+	position: relative;
+	width: 100%;
+	max-width: 620rpx;
+	background: $uh-card;
+	border-radius: 24rpx;
+	padding: 40rpx 32rpx 28rpx;
+	box-sizing: border-box;
+}
+
+.unlock-close {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	padding: 8rpx;
+}
+
+.unlock-title {
+	display: block;
+	padding-right: 56rpx;
+	font-size: 34rpx;
+	font-weight: 700;
+	color: $uh-ink-1;
+}
+
+.unlock-status {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: $uh-ink-3;
+}
+
+.unlock-option {
+	display: flex;
+	align-items: center;
+	margin-top: 24rpx;
+	padding: 24rpx;
+	border-radius: 18rpx;
+	background: $uh-fill;
+}
+
+.unlock-option--hover {
+	opacity: 0.75;
+}
+
+.unlock-option-icon {
+	flex-shrink: 0;
+	width: 76rpx;
+	height: 76rpx;
+	border-radius: 20rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: $uh-card;
+}
+
+.unlock-option-body {
+	flex: 1;
+	min-width: 0;
+	margin: 0 20rpx;
+}
+
+.unlock-option-title {
+	display: block;
+	font-size: 28rpx;
+	font-weight: 600;
+	color: $uh-ink-1;
+}
+
+.unlock-option-desc {
+	display: block;
+	margin-top: 6rpx;
+	font-size: 22rpx;
+	line-height: 1.5;
+	color: $uh-ink-3;
+}
+
+/* 积分不够时差额用警示色：让用户先看到「差多少」再决定去哪赚 */
+.unlock-option-desc.is-short {
+	color: $uh-warning;
+}
+
+.unlock-price {
+	flex-shrink: 0;
+	text-align: center;
+	padding: 10rpx 20rpx;
+	border-radius: $uh-radius-pill;
+	background: $uh-accent-weak;
+}
+
+.unlock-price-num {
+	font-size: 30rpx;
+	font-weight: 700;
+	color: $uh-accent;
+}
+
+.unlock-price-unit {
+	display: block;
+	font-size: 18rpx;
+	color: $uh-accent;
+}
+
+.unlock-arrow {
+	flex-shrink: 0;
+}
+
+.unlock-note {
+	display: block;
+	margin-top: 24rpx;
+	text-align: center;
+	font-size: 20rpx;
 	color: $uh-ink-3;
 }
 

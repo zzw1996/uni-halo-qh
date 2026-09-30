@@ -78,6 +78,7 @@
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
 	import { generateUUID } from '@/utils/uuid.js';
+	import { emitPointsUpdated } from '@/utils/points.js';
 	import {
 		fetchUserPublishStatus,
 		submitUserMoment,
@@ -234,15 +235,65 @@
 				}
 				this.submitting = true;
 				uni.showLoading({ mask: true, title: '发布中...' });
+				let result = null;
 				try {
-					await this.fnSubmitAsUser(raw);
+					result = await this.fnSubmitAsUser(raw);
 				} catch (err) {
-					const message = err?.error || err?.detail || err?.message || '发表失败，请稍后重试';
-					uni.showToast({ icon: 'none', title: message });
-				} finally {
 					this.submitting = false;
 					uni.hideLoading();
+					const message = err?.error || err?.detail || err?.message || '发表失败，请稍后重试';
+					// 用弹窗而不是 toast：失败原因可能较长（「请先关联 Halo 账号…」
+					// 或服务端带回的 Halo 拒绝详情），toast 两秒就消失，用户看不清也来不及记
+					uni.showModal({
+						title: '发布失败',
+						content: message,
+						showCancel: false,
+						confirmText: '知道了'
+					});
+					return;
 				}
+				this.submitting = false;
+				uni.hideLoading();
+				// 余额变了（普通用户扣分）就广播出去：我的页/积分明细靠它同步
+				if (result?.balance != null) {
+					emitPointsUpdated({ balance: result.balance });
+				}
+				// 通知瞬间列表刷新，否则返回列表看不到刚发的那条
+				uni.$emit('moments_list_should_refresh');
+				// 结果文案由服务端给（「已发布」/「已提交，等待站长审核」）；用 none 图标是因为它可能较长
+				uni.showToast({ icon: 'none', title: result?.statusText || '发布成功' });
+				setTimeout(() => this.fnBack(), 1200);
+			},
+			/**
+			 * 真正提交：先逐张上传配图，再连同文字一起交给服务端。
+			 *
+			 * <p>上传走服务端代理（客户端不持有个人令牌）；串行上传而不是并发——
+			 * 一次最多 9 张，串行既能定位到具体第几张失败，也不会把上传通道打满。</p>
+			 *
+			 * <p>权限一律以服务端结论为准：博主/管理员的免积分、免审核、免次数限制
+			 * 都在服务端判定，这里不做任何客户端侧的门槛判断（否则后台策略一改就对不上）。</p>
+			 *
+			 * @returns {Promise<object>} 服务端返回的结果（mode/statusText/balance…）
+			 * @throws {{error: string}} 任一步失败都抛出，由 {@link fnSubmit} 统一提示
+			 */
+			async fnSubmitAsUser(raw) {
+				const images = [];
+				for (let i = 0; i < this.imageList.length; i++) {
+					const uploaded = await uploadUserPublishImage(this.$httpApi.v2,
+						this.imageList[i].localPath);
+					if (!uploaded.ok) {
+						throw { error: uploaded.reason || `第 ${i + 1} 张图片上传失败` };
+					}
+					images.push(uploaded.url);
+				}
+				const result = await submitUserMoment(this.$httpApi.v2, {
+					content: raw,
+					images
+				});
+				if (!result.ok) {
+					throw { error: result.reason || '发布失败，请稍后重试' };
+				}
+				return result.data || {};
 			}
 		}
 	};

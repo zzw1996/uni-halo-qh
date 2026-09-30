@@ -50,6 +50,7 @@ import pro.uhalo.uni.utils.XPaySigner;
 import pro.uhalo.uni.utils.XmlMessageParser;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import run.halo.app.infra.ExternalLinkProcessor;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Duration;
@@ -115,6 +116,9 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_DELIVERED = "delivered";
     private static final String STATUS_CLOSED = "closed";
+
+    /** 道具图片 URL 长度上限：正常的图床地址远用不了 512 字符，超限基本是贴错了内容 */
+    static final int GOODS_IMAGE_MAX_LENGTH = 512;
     /**
      * 失效状态：待支付订单超过有效期后的展示状态。
      *
@@ -175,6 +179,13 @@ public class VirtualPayServiceImpl implements VirtualPayService {
     private final TicketRewardService ticketRewardService;
     private final MembershipService membershipService;
     private final AiContentEntitlementService aiContentEntitlementService;
+    /**
+     * 相对链接 → 站点外链。附件库「本地存储」的附件是相对路径（/upload/…），
+     * 小程序 image 组件解析不了，必须拼上外部访问地址再下发。
+     * 用 ExternalLinkProcessor 而不是自己拼 ExternalUrlSupplier：getConfigs 通道
+     * （UniHaloServiceImpl）用的就是它且线上已验证可用，两条通道必须同一套口径。
+     */
+    private final ExternalLinkProcessor externalLinkProcessor;
 
     /**
      * 同一订单的在途发货任务。
@@ -310,6 +321,7 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                                     .style(goods.getStyle())
                                     .originalPrice(goods.getOriginalPrice())
                                     .promoEndsAt(goods.getPromoEndsAt())
+                                    .image(goods.getImage())
                                     .build());
                             }
                         }
@@ -1640,6 +1652,8 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                             .items(items)
                             .originalPrice(resolveOriginalPrice(item, price))
                             .promoEndsAt(resolvePromoEndsAt(item))
+                            .image(sanitizeGoodsImage(textValue(item, "image"), goodsId,
+                                externalLinkProcessor::processLink))
                             .build());
                     } else {
                         log.warn("虚拟支付商品被忽略（配置不完整）：goodsId={}, type={}"
@@ -1723,6 +1737,64 @@ public class VirtualPayServiceImpl implements VirtualPayService {
             return null;
         }
         return original;
+    }
+
+    /**
+     * 校验道具图片 URL，非法值丢弃并告警（返回 null，前端回落到类型图标）。
+     *
+     * <p>Halo 附件库里「本地存储」的附件给的是相对路径（如 {@code /upload/ai.png}），
+     * 小程序的 image 组件解析不了，这里经 {@code relativeLinkResolver}
+     * （{@link ExternalLinkProcessor#processLink}，与 getConfigs 通道同一实现）
+     * 拼上站点外部访问地址后再下发；S3 等对象存储的附件本身就是完整 URL，原样通过。
+     * 其它取值（相对文件名、data URI 等）一律丢弃——小程序的 image 既不支持相对路径，
+     * 也不该把内联内容塞进下发给全量用户的配置。</p>
+     *
+     * <p>图片域名还需加入小程序后台的 downloadFile 合法域名，否则真机加载不出
+     * （开发工具里看不出来）；站点自己的域名通常已在白名单里。</p>
+     */
+    static String sanitizeGoodsImage(String raw, String goodsId,
+        java.util.function.UnaryOperator<String> relativeLinkResolver) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        var value = raw.trim();
+        var lowered = value.toLowerCase();
+        if (lowered.startsWith("https://") || lowered.startsWith("http://")) {
+            return checkGoodsImageLength(value, goodsId);
+        }
+        if (value.startsWith("/") && !value.startsWith("//") && relativeLinkResolver != null) {
+            String resolved = null;
+            try {
+                resolved = relativeLinkResolver.apply(value);
+            } catch (Exception ex) {
+                log.warn("虚拟支付商品图片外链解析失败已忽略：goodsId={}, image={}, error={}",
+                    goodsId, value, ex.getMessage());
+            }
+            if (!StringUtils.hasText(resolved)) {
+                log.warn("虚拟支付商品图片相对路径解析结果为空已忽略：goodsId={}, image={}"
+                        + "（请检查 Halo 的外部访问地址设置）", goodsId, value);
+                return null;
+            }
+            var resolvedLower = resolved.toLowerCase();
+            if (resolvedLower.startsWith("https://") || resolvedLower.startsWith("http://")) {
+                return checkGoodsImageLength(resolved, goodsId);
+            }
+            log.warn("虚拟支付商品图片解析后仍不是绝对地址已忽略：goodsId={}, image={}"
+                    + "（请检查 Halo 的外部访问地址设置）", goodsId, resolved);
+            return null;
+        }
+        log.warn("虚拟支付商品图片无效已忽略：goodsId={}（应为 http(s):// 完整地址"
+            + "或 Halo 附件库选择的链接）", goodsId);
+        return null;
+    }
+
+    private static String checkGoodsImageLength(String value, String goodsId) {
+        if (value.length() > GOODS_IMAGE_MAX_LENGTH) {
+            log.warn("虚拟支付商品图片 URL 过长已忽略：goodsId={}, 长度={}（上限 {}）",
+                goodsId, value.length(), GOODS_IMAGE_MAX_LENGTH);
+            return null;
+        }
+        return value;
     }
 
     /**

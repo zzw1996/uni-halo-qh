@@ -12,6 +12,7 @@ import pro.uhalo.uni.dto.DigestArticleDTO;
 import pro.uhalo.uni.dto.DigestFeedResultDTO;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
 import pro.uhalo.uni.dto.HaloPostPublishResultDTO;
+import pro.uhalo.uni.infra.DigestSeenStore;
 import pro.uhalo.uni.infra.DigestPersistence;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.dto.DigestAiProviderDTO;
@@ -69,6 +70,9 @@ class DigestPipelineTest {
     private DigestPersistence persistence;
 
     @Mock
+    private DigestSeenStore seenStore;
+
+    @Mock
     private DigestFeedService feedService;
 
     @Mock
@@ -101,9 +105,12 @@ class DigestPipelineTest {
 
     @BeforeEach
     void setUp() {
-        service = new DigestServiceImpl(settingFetcher, persistence, feedService, aiClient,
-            aiModelService, new DigestRenderer(), assetUploader, publisher,
+        service = new DigestServiceImpl(settingFetcher, persistence, seenStore, feedService,
+            aiClient, aiModelService, new DigestRenderer(), assetUploader, publisher,
             new DigestProgressTracker());
+        // 跨天去重：流水线测试默认「没有历史记录」
+        lenient().when(seenStore.recentKeys()).thenReturn(Mono.just(java.util.Set.of()));
+        lenient().when(seenStore.recordAll(any(), any())).thenReturn(Mono.empty());
         lenient().when(settingFetcher.get("basic"))
             .thenReturn(Mono.just(MAPPER.createObjectNode().put("title", "测试站")));
         // 没有历史记录：首次 fetch 空，之后的保存都原样回写同一个实例

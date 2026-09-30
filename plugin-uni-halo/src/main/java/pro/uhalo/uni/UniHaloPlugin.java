@@ -6,8 +6,8 @@ import pro.uhalo.uni.scheme.AiContentIssue;
 import pro.uhalo.uni.scheme.AiContentPreference;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.scheme.DigestReport;
+import pro.uhalo.uni.scheme.DigestSeenArticle;
 import pro.uhalo.uni.scheme.DigestSubscription;
-import pro.uhalo.uni.scheme.LuckyWinning;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.PushRecord;
 import pro.uhalo.uni.scheme.PushState;
@@ -46,11 +46,12 @@ public class UniHaloPlugin extends BasePlugin {
     private static final java.util.List<Class<? extends run.halo.app.extension.Extension>>
         EXTENSION_TYPES = java.util.List.of(
             QRCodeInfo.class, WxUser.class, UserActivity.class, UserPoints.class,
-            PointsRecord.class, PayOrder.class, LuckyWinning.class, ContentUnlock.class,
+            PointsRecord.class, PayOrder.class, ContentUnlock.class,
             DigestSubscription.class, DigestReport.class,
             AiContentPreference.class, AiContentIssue.class,
             UserAppSettings.class,
-            PushSubscription.class, PushRecord.class, PushState.class);
+            PushSubscription.class, PushRecord.class, PushState.class,
+            DigestSeenArticle.class);
 
     private final SchemeManager schemeManager;
 
@@ -150,16 +151,6 @@ public class UniHaloPlugin extends BasePlugin {
             log.info("【UniHalo】PayOrder scheme 注册成功");
         });
 
-        schemeManager.register(LuckyWinning.class, indexSpecs -> {
-            indexSpecs.add(new IndexSpec()
-                .setName("wxOpenid")
-                .setIndexFunc(simpleAttribute(LuckyWinning.class, LuckyWinning::getWxOpenid)));
-            indexSpecs.add(new IndexSpec()
-                .setName("status")
-                .setIndexFunc(simpleAttribute(LuckyWinning.class, LuckyWinning::getStatus)));
-            log.info("【UniHalo】LuckyWinning scheme 注册成功");
-        });
-
         schemeManager.register(ContentUnlock.class, indexSpecs -> {
             indexSpecs.add(new IndexSpec()
                 .setName("unlockKey")
@@ -191,6 +182,15 @@ public class UniHaloPlugin extends BasePlugin {
                 .setName("status")
                 .setIndexFunc(simpleAttribute(DigestReport.class, DigestReport::getStatus)));
             log.info("【UniHalo】DigestReport scheme 注册成功");
+        });
+
+        schemeManager.register(DigestSeenArticle.class, indexSpecs -> {
+            // 跨天去重按「最近 14 天」的日期集合滚动查询（in），不需要按 dedupKey 查
+            indexSpecs.add(new IndexSpec()
+                .setName("seenDate")
+                .setIndexFunc(simpleAttribute(DigestSeenArticle.class,
+                    DigestSeenArticle::getSeenDate)));
+            log.info("【UniHalo】DigestSeenArticle scheme 注册成功");
         });
 
         schemeManager.register(AiContentPreference.class, indexSpecs -> {

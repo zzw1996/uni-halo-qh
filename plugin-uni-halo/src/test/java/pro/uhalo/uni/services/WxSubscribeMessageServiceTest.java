@@ -76,7 +76,7 @@ class WxSubscribeMessageServiceTest {
     }
 
     @Test
-    void templateOfShouldFallBackForAiDigest() {
+    void templateOfShouldNotFallBackForAiDigest() {
         var config = PushConfigDTO.builder()
             .enabled(true)
             .templateId("tmpl-new-post")
@@ -87,9 +87,11 @@ class WxSubscribeMessageServiceTest {
 
         assertThat(pro.uhalo.uni.utils.PushConfigHelper.templateOf(config, "newPost"))
             .isEqualTo("tmpl-new-post");
-        // 简报模板留空时复用新文章模板：同一个「内容更新通知」模板，只是文案不同
+        // 简报模板必须单独配：复用新文章模板会因字段不同在下发时报 47003
         assertThat(pro.uhalo.uni.utils.PushConfigHelper.templateOf(config, "aiDigest"))
-            .isEqualTo("tmpl-new-post");
+            .isEmpty();
+        assertThat(pro.uhalo.uni.utils.PushConfigHelper.kindEnabled(config, "aiDigest"))
+            .isFalse();
 
         var dedicated = PushConfigDTO.builder()
             .enabled(true)

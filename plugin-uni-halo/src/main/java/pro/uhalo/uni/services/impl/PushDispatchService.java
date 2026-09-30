@@ -4,18 +4,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import pro.uhalo.uni.dto.AiContentConfigDTO;
 import pro.uhalo.uni.dto.AiContentPreferenceDTO;
-import pro.uhalo.uni.dto.DigestPublicArticleDTO;
 import pro.uhalo.uni.dto.PushConfigDTO;
-import pro.uhalo.uni.infra.DigestPersistence;
 import pro.uhalo.uni.scheme.AiContentPreference;
 import pro.uhalo.uni.scheme.DigestSubscription;
+import pro.uhalo.uni.scheme.AiContentIssue;
 import pro.uhalo.uni.scheme.PushRecord;
 import pro.uhalo.uni.scheme.PushState;
 import pro.uhalo.uni.scheme.PushSubscription;
 import pro.uhalo.uni.scheme.UserPoints;
-import pro.uhalo.uni.services.AiContentEntitlementService;
 import pro.uhalo.uni.services.WxSubscribeMessageService;
 import pro.uhalo.uni.utils.AiContentConfigHelper;
 import pro.uhalo.uni.utils.DigestPreferenceMatcher;
@@ -26,6 +23,7 @@ import run.halo.app.core.extension.content.Post;
 import run.halo.app.extension.ListOptions;
 import run.halo.app.extension.Metadata;
 import run.halo.app.extension.ReactiveExtensionClient;
+import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -81,11 +79,9 @@ public class PushDispatchService {
     private static final String PAGE_ARTICLE = "pagesA/article-detail/article-detail";
 
     private final ReactiveExtensionClient client;
+    private final ReactiveSettingFetcher settingFetcher;
     private final PushSubscriptionService subscriptionService;
     private final WxSubscribeMessageService messageService;
-    private final DigestPersistence digestPersistence;
-    private final DigestPublicService digestPublicService;
-    private final AiContentEntitlementService entitlementService;
     private final pro.uhalo.uni.services.impl.SubscriptionQuotaService quotaService;
 
     // ── 新文章线 ──
@@ -218,128 +214,95 @@ public class PushDispatchService {
 
     // ── 简报线 ──
 
-    /**
-     * 检查今天的 AI 日报是否已就绪并推送。
-     *
-     * <p>「就绪」= 今天有一条发布成功的日报记录。这样日报流水线不需要加钩子：
-     * 调度器每轮看一眼，发布完成后的下一轮自然就会推。</p>
-     */
-    public Mono<Integer> dispatchAiDigest(PushConfigDTO config) {
-        var today = LocalDate.now(ZONE).toString();
-        return entitlementService.loadConfig()
-            .flatMap(aiConfig -> digestPersistence.listByDate(today)
-                .flatMap(reports -> {
-                    var ready = reports.stream()
-                        .anyMatch(report -> "SUCCESS".equalsIgnoreCase(report.getStatus())
-                            && report.getPostCount() != null && report.getPostCount() > 0);
-                    if (!ready) {
-                        return Mono.just(0);
-                    }
-                    return loadState().flatMap(state ->
-                        dispatchAiDigestToUsers(config, aiConfig, state, today));
-                }));
-    }
-
-    private Mono<Integer> dispatchAiDigestToUsers(PushConfigDTO config,
-        AiContentConfigDTO aiConfig, PushState state, String today) {
-        var templateId = PushConfigHelper.templateOf(config, PushConfigHelper.KIND_AI_DIGEST);
-        return digestPublicService.candidateArticles(aiConfig.getWindowDays())
-            .flatMap(candidates -> Mono.zip(
-                    subscriptionService.listAll(),
-                    aiContentMatchCounts(candidates))
-                .flatMap(tuple -> {
-                    var quotas = tuple.getT1().stream()
-                        .filter(item -> PushSubscriptionService.hasQuota(item,
-                            PushConfigHelper.KIND_AI_DIGEST))
-                        .toList();
-                    var matchedByOpenid = tuple.getT2();
-                    if (quotas.isEmpty() || matchedByOpenid.isEmpty()) {
-                        return Mono.just(0);
-                    }
-                    var bizKey = "aidigest:" + today;
-                    return Flux.fromIterable(quotas.stream().limit(MAX_USERS_PER_RUN).toList())
-                        .concatMap(target -> {
-                            var matched = matchedByOpenid.get(target.getWxOpenid());
-                            if (matched == null) {
-                                // 没有有效权益（或已过期）：不推
-                                return Mono.just(0);
-                            }
-                            return alreadyPushed(target.getWxOpenid(),
-                                    PushConfigHelper.KIND_AI_DIGEST, bizKey)
-                                .flatMap(exists -> exists ? Mono.just(0)
-                                    : sendAiDigest(config, state, target, templateId, bizKey,
-                                        matched));
-                        })
-                        .reduce(0, Integer::sum);
-                }));
-    }
-
-    private Mono<Integer> sendAiDigest(PushConfigDTO config, PushState state,
-        PushSubscription target, String templateId, String bizKey, int matched) {
-        var message = WxSubscribeMessageService.Message.of(
-            matched > 0 ? "今日精选 · " + matched + " 篇" : "今日精选已更新",
-            matched > 0 ? "命中你的关注方向" : "看看今天为你挑了什么",
-            Instant.now(),
-            "AI 定制内容",
-            "点击查看你的专属简报");
-        return deliver(config, state, target, PushConfigHelper.KIND_AI_DIGEST, templateId, bizKey,
-            PAGE_AI_CONTENT, message);
-    }
-
-    /**
-     * 有效权益用户 → 「今天命中几篇」。
-     *
-     * <p><b>纯筛选、零 AI 成本</b>：复用与生成简报同一套匹配规则（分类 3 / 来源 2 / 关键词），
-     * 用户点进消息才真正生成导语——那条链路每天仍然只花一次 AI 调用。</p>
-     */
-    private Mono<Map<String, Integer>> aiContentMatchCounts(
-        List<DigestPublicArticleDTO> candidates) {
-        return client.listAll(UserPoints.class, new ListOptions(), null)
-            .filter(account -> StringUtils.hasText(account.getWxOpenid())
-                && AiContentConfigHelper.isActive(account.getAiContentExpireAt()))
-            .take(MAX_USERS_PER_RUN)
-            .collectList()
-            .flatMap(accounts -> {
-                if (accounts.isEmpty()) {
-                    return Mono.just(Map.<String, Integer>of());
-                }
-                var openids = new HashSet<String>();
-                accounts.forEach(account -> openids.add(account.getWxOpenid()));
-                return client.listAll(AiContentPreference.class, new ListOptions(), null)
-                    .filter(preference -> openids.contains(preference.getWxOpenid()))
-                    .collectMap(AiContentPreference::getWxOpenid,
-                        PushDispatchService::toPreferenceDto)
-                    .map(preferences -> {
-                        var result = new LinkedHashMap<String, Integer>();
-                        for (var account : accounts) {
-                            var preference = preferences.get(account.getWxOpenid());
-                            var matched = preference == null
-                                ? candidates.size()
-                                : DigestPreferenceMatcher.apply(candidates,
-                                    AiContentFeedService.asSubscription(preference)).size();
-                            result.put(account.getWxOpenid(), matched);
-                        }
-                        return Map.copyOf(result);
-                    });
+    /** 读取推送配置（失败按未开启处理）：立即推送与定时生成都要用同一份口径 */
+    public Mono<PushConfigDTO> loadPushConfigSafely() {
+        return settingFetcher.get(PushConfigHelper.groupName())
+            .map(PushConfigHelper::parse)
+            .defaultIfEmpty(PushConfigHelper.defaults())
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][Push] 读取推送配置失败，按未开启处理：{}", ex.getMessage());
+                return Mono.just(PushConfigHelper.defaults());
             });
     }
 
-    private static AiContentPreferenceDTO toPreferenceDto(AiContentPreference preference) {
-        return AiContentPreferenceDTO.builder()
-            .enabled(Boolean.TRUE.equals(preference.getEnabled()))
-            .categories(orEmpty(preference.getCategories()))
-            .sources(orEmpty(preference.getSources()))
-            .keywords(orEmpty(preference.getKeywords()))
-            .configured(true)
-            .build();
+    /**
+     * 推送「你的定制简报已生成」。
+     *
+     * <p>与旧实现的关键差别：旧版在「站长日报就绪」时就群发给所有 AI 定制用户——用户点进去
+     * 可能还要等生成；现在只在<b>该用户自己的简报已生成</b>时推送，消息里带真实条数，
+     * 点开就是成品。</p>
+     *
+     * <p>额度不足（一次性订阅没授权过 / 用完了）时不发送也不报错——调用方据此提示用户去授权。</p>
+     *
+     * @return 1 = 已发出，0 = 未发（无额度 / 已推过 / 日上限到顶）
+     */
+    public Mono<Integer> pushAiContentReady(String openid, PushConfigDTO config,
+        AiContentIssue issue, AiContentPreferenceDTO preference) {
+        if (!StringUtils.hasText(openid) || issue == null) {
+            return Mono.just(0);
+        }
+        var date = StringUtils.hasText(issue.getDate())
+            ? issue.getDate() : LocalDate.now(ZONE).toString();
+        var bizKey = "aidigest:" + date;
+        return subscriptionService.load(openid.trim()).flatMap(subscription -> {
+            if (!PushSubscriptionService.hasQuota(subscription, PushConfigHelper.KIND_AI_DIGEST)) {
+                log.info("[UniHalo][Push] 用户没有简报推送额度，跳过：openid={}", mask(openid));
+                return Mono.just(0);
+            }
+            return alreadyPushed(openid.trim(), PushConfigHelper.KIND_AI_DIGEST, bizKey)
+                .flatMap(exists -> exists ? Mono.just(0)
+                    : loadState().flatMap(state -> sendAiContentReady(config, state, subscription,
+                        issue, preference, bizKey)));
+        });
     }
 
-    // ── 共用发送链路 ──
+    private Mono<Integer> sendAiContentReady(PushConfigDTO config, PushState state,
+        PushSubscription target, AiContentIssue issue, AiContentPreferenceDTO preference,
+        String bizKey) {
+        var items = AiContentFeedService.parseItems(issue.getItems());
+        var count = items.isEmpty() && issue.getMatchedCount() != null
+            ? issue.getMatchedCount() : items.size();
+        var topics = topicsOf(preference);
+        var message = WxSubscribeMessageService.Message.of(
+            "你的定制简报已生成",
+            count > 0 ? count + " 条内容 · " + topics : "点击看看今天为你挑的内容",
+            issue.getCreatedAt() == null ? Instant.now() : issue.getCreatedAt(),
+            "",
+            "点击查看你的专属简报");
+        return deliver(config, state, target, PushConfigHelper.KIND_AI_DIGEST,
+            PushConfigHelper.templateOf(config, PushConfigHelper.KIND_AI_DIGEST), bizKey,
+            PAGE_AI_CONTENT, message, config.aiDigestFieldMap());
+    }
+
+    /**
+     * 消息里露出的主题名：优先用户手输的定制主题，没有就退到分类/来源，再没有就说「你的关注方向」。
+     *
+     * <p>thing 字段只有 20 字，这里只取第一个主题——超长会由发送侧统一截断。</p>
+     */
+    private static String topicsOf(AiContentPreferenceDTO preference) {
+        var topics = preference == null ? null : preference.getCustomTopics();
+        if (topics != null && !topics.isEmpty() && StringUtils.hasText(topics.get(0))) {
+            return topics.get(0).trim();
+        }
+        var categories = preference == null ? null : preference.getCategories();
+        if (categories != null && !categories.isEmpty() && StringUtils.hasText(categories.get(0))) {
+            return categories.get(0).trim();
+        }
+        return "你的关注方向";
+    }
 
     /** 一次发送：先看整站日上限 → 调微信 → 按结果记账（扣额度 / 清零 / 记错误码） */
     private Mono<Integer> deliver(PushConfigDTO config, PushState state, PushSubscription target,
         String kind, String templateId, String bizKey, String page,
         WxSubscribeMessageService.Message message) {
+        return deliver(config, state, target, kind, templateId, bizKey, page, message,
+            PushConfigDTO.FieldMap.NEW_POST_DEFAULT);
+    }
+
+    /** 同上，指定模板字段映射（简报模板的字段名由站长配置） */
+    private Mono<Integer> deliver(PushConfigDTO config, PushState state, PushSubscription target,
+        String kind, String templateId, String bizKey, String page,
+        WxSubscribeMessageService.Message message, PushConfigDTO.FieldMap fields) {
         var today = LocalDate.now(ZONE).toString();
         var sameDay = today.equals(state.getDailyDate());
         var sentToday = sameDay ? orZero(state.getDailySent()) : 0;
@@ -350,7 +313,7 @@ public class PushDispatchService {
             return Mono.just(0);
         }
         return messageService.send(target.getWxOpenid(), templateId, message, page,
-                config.getMiniprogramState())
+                config.getMiniprogramState(), fields)
             .flatMap(result -> writeRecord(target.getWxOpenid(), kind, bizKey, page, result)
                 .then(settle(target, kind, result))
                 .flatMap(counted -> bumpDailyCounter(state, today, result)
@@ -478,6 +441,16 @@ public class PushDispatchService {
             .filter(post -> post.getSpec().getCategories() != null
                 && post.getSpec().getCategories().stream().anyMatch(wanted::contains))
             .toList();
+    }
+
+    /** openid 是用户标识，日志里只留前几位 */
+    private static String mask(String openid) {
+        if (!StringUtils.hasText(openid)) {
+            return "(未知)";
+        }
+        var trimmed = openid.trim();
+        return trimmed.length() <= 8 ? trimmed.charAt(0) + "***"
+            : trimmed.substring(0, 6) + "***";
     }
 
     private static String joiningCategories(List<Post> articles) {

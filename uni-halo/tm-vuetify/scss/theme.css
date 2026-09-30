@@ -1,3 +1,11 @@
+/*
+ * 【主包体积优化】theme.css 原本 @import 了 14 个颜色主题，每个含 border-/bg-/text-/shadow- 的
+ * 完整颜色矩阵（约 22KB），合计约 300KB —— 这是主包 main.wxss 里最大的一块。
+ * 经精确枚举（页面 props + 类名字面量 + 皮肤 tmColor），项目只用到：
+ *   primary / indigo（品牌色）/ teal（青瓷皮肤）/ amber（晨光皮肤）/ red / green / orange / blue-grey
+ * 其余颜色（blue, cyan, yellow, deep-orange, light-blue 等）已确认全仓零引用，故停用。
+ * 若将来页面要用到某个颜色（如 color="cyan"），把对应 @import 取消注释即可。
+ */
 /**
  * 以下主题库为我精细细化生成。
  * 可通过我的工具库自动生成。
@@ -10,7 +18,8 @@
 @import "./theme/amber.css";
 @import "./theme/blue.css";
 /* @import "./theme/brown.css"; */
-@import "./theme/cyan.css";
+/* 主包体积优化：项目未使用该颜色主题（颜色矩阵每个约 22KB），已停用 */
+/* @import "./theme/cyan.css"; */
 @import "./theme/green.css";
 /**品牌靛青：全站强调色统一用 indigo（见 uni.scss 的 $uh-accent）**/
 @import "./theme/indigo.css";
@@ -22,9 +31,12 @@
 /**组件库，必要的主题，不可删除**/
 /**青瓷皮肤用 teal 作为框架主题色（见 utils/skin.js 的 SKINS.mint.tmColor）**/
 @import "./theme/teal.css";
-@import "./theme/yellow.css";
+/* 主包体积优化：项目未使用该颜色主题（颜色矩阵每个约 22KB），已停用 */
+/* @import "./theme/yellow.css"; */
 @import "./theme/blue-grey.css";
-@import "./theme/deep-orange.css";
+/* 主包体积优化：项目未使用该颜色主题（颜色矩阵每个约 22KB），已停用 */
+/* @import "./theme/deep-orange.css"; */
 /*@import "./theme/deep-purple.css";*/
-@import "./theme/light-blue.css";
+/* 主包体积优化：项目未使用该颜色主题（颜色矩阵每个约 22KB），已停用 */
+/* @import "./theme/light-blue.css"; */
 /*@import "./theme/light-green.css"; */

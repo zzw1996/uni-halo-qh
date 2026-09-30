@@ -47,6 +47,32 @@
       </div>
     </div>
 
+    <!--
+      一键套用预设：积分与现金的比例是十几处配置的联动，让站长逐个填等于让他自己算一遍经济系统。
+      预设把「算好的整套值」一次写入；只覆盖预设接管的字段，自定义装扮/兑换项/任务都不动。
+    -->
+    <div class="panel">
+      <div class="panel-head">
+        <h3>一键套用定价预设</h3>
+        <span class="panel-sub">只改积分产出、兑换价、装扮价与邀请奖励；你自建的装扮与兑换项不受影响</span>
+      </div>
+      <div class="preset-row">
+        <button
+          v-for="item in PRESETS"
+          :key="item.key"
+          class="preset-card"
+          :disabled="loading || saving || applying"
+          @click="applyPreset(item)"
+        >
+          <span class="preset-name">{{ item.label }}</span>
+          <span class="preset-desc">{{ item.desc }}</span>
+        </button>
+      </div>
+      <p class="preset-tip">
+        套用后本页数值会立即刷新，检查面板也会重新评估是否还有失衡项。可以来回换档比较，数值是绝对值、不会累积放大。
+      </p>
+    </div>
+
     <!-- 分组切换：按业务归并，而不是按 YAML 的分组顺序 -->
     <div class="tabs">
       <button
@@ -94,7 +120,7 @@ import SchemaField from "./components/SchemaField.vue";
  * Setting.spec.forms），因此 setting.yaml 是唯一来源，不会出现两处定义不一致。
  * 本页面相对「插件设置」多出来的是：把互相耦合的分组放在一处、以及关联检查。
  */
-const { apiGet, apiPut } = useConsoleApi();
+const { apiGet, apiPost, apiPut } = useConsoleApi();
 
 interface ConfigGroup {
   group: string;
@@ -127,6 +153,27 @@ const idMaps = reactive<Record<string, Record<string, string>>>({});
 /** 各分组里站长保存过的字段名，用于给未自定义的字段打「默认」标记 */
 const customized = reactive<Record<string, Set<string>>>({});
 const activeTab = ref(TAB_DEFS[0].key);
+const applying = ref(false);
+
+/** 三档预设：与后端 PricingPresets 一一对应（新增档位要同时改两边） */
+const PRESETS = [
+  {
+    key: "conservative",
+    label: "保守（现金优先）",
+    desc: "产出最低、积分价最高，券约需攒 9 天。适合已有人付费、不想让积分侵蚀现金收入。",
+  },
+  {
+    key: "standard",
+    label: "标准（推荐）",
+    desc: "券约需攒 4 天：积分有获得感但不廉价，现金仍有「立刻到手」的优势。",
+  },
+  {
+    key: "aggressive",
+    label: "激进（活跃优先）",
+    desc: "产出最高、积分价最低，券约需攒 2 天。用积分换日活与回访，现金转化会弱一些。",
+  },
+];
+
 const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
@@ -233,6 +280,31 @@ async function load() {
  * 或某个功能完全不可用，但它不一定是你这次想改的东西，所以给一条明确绕过路径，
  * 而不是直接禁止保存让你卡死在这个页面。
  */
+async function applyPreset(item: { key: string; label: string; desc: string }) {
+  const confirmed = window.confirm(
+    `套用「${item.label}」将改写积分产出规则、兑换价、装扮价与邀请奖励。
+
+` +
+      `你自建的装扮与兑换项、以及其它分组（支付、会员等）不会受影响。
+
+继续吗？`
+  );
+  if (!confirmed) return;
+  applying.value = true;
+  error.value = "";
+  try {
+    const data = await apiPost("/commercialConfig/preset", { preset: item.key });
+    groups.value = Array.isArray(data?.groups) ? data.groups : groups.value;
+    checks.value = Array.isArray(data?.checks) ? data.checks : [];
+    groups.value.forEach(buildModel);
+    dirty.value = false;
+  } catch (e: any) {
+    error.value = e?.message || "套用预设失败";
+  } finally {
+    applying.value = false;
+  }
+}
+
 async function save() {
   const errors = checks.value.filter((item) => item.level === "error");
   if (errors.length) {
@@ -285,6 +357,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .panel-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 .panel-head h3 { margin: 0; font-size: 15px; color: #333a52; }
 .panel-sub { font-size: 12px; color: #a3a8ba; }
+
+/* 定价预设：三张并排卡片，标题+一句取舍说明 */
+.preset-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 4px 16px 0; }
+.preset-card {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 12px 14px; border-radius: 10px; cursor: pointer;
+  background: #f7f8fc; border: 1px solid #e4e7f0;
+}
+.preset-card:hover:not(:disabled) { border-color: #5b6ee8; background: #f1f3ff; }
+.preset-card:disabled { opacity: .6; cursor: not-allowed; }
+.preset-name { font-size: 13px; font-weight: 600; color: #2b2f3a; }
+.preset-desc { font-size: 12px; line-height: 1.6; color: #7a8095; }
+.preset-tip { margin: 10px 16px 0; font-size: 12px; color: #a3a8ba; }
 
 .check-empty { padding: 10px 0; color: #17a673; font-size: 13px; }
 .check-item { display: flex; gap: 12px; padding: 12px 14px; border-radius: 10px; margin-bottom: 10px; }

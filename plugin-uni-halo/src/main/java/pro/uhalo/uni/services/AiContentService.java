@@ -10,12 +10,15 @@ import pro.uhalo.uni.dto.AiContentPreferenceRequest;
 import pro.uhalo.uni.dto.AiContentPreferenceViewDTO;
 import pro.uhalo.uni.dto.DigestCategoryDTO;
 import pro.uhalo.uni.dto.DigestOptionItemDTO;
+import pro.uhalo.uni.dto.PushConfigDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.services.impl.AiContentFeedService;
 import pro.uhalo.uni.services.impl.AiContentPreferenceService;
 import pro.uhalo.uni.services.impl.DigestPublicService;
+import pro.uhalo.uni.utils.AiContentConfigHelper;
 import pro.uhalo.uni.utils.DigestCategoryCatalog;
 import pro.uhalo.uni.utils.DigestConfigHelper;
+import pro.uhalo.uni.utils.PushConfigHelper;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
@@ -45,21 +48,62 @@ public class AiContentService {
     private final DigestPublicService digestPublicService;
     private final ReactiveSettingFetcher settingFetcher;
 
-    /** 页面一次拉齐：权益状态 + 偏好 + 可选项 + 上限 */
+    /** 页面一次拉齐：权益状态 + 偏好 + 可选项 + 上限 + 推送设置 */
     public Mono<AiContentPreferenceViewDTO> view(String openid) {
-        return entitlementService.loadConfig().flatMap(config -> Mono.zip(
+        return Mono.zip(entitlementService.loadConfig(), loadPushConfig()).flatMap(configs ->
+            Mono.zip(
                 entitlementService.getStatus(openid),
                 preferenceService.load(openid),
-                sourceOptions(config),
-                categoryOptions())
+                sourceOptions(configs.getT1()),
+                categoryOptions(),
+                // 积分余额：让前端在点击「兑换」时就能判断够不够（服务端仍会权威校验）
+                entitlementService.loadPointsBalance(openid).defaultIfEmpty(-1L))
             .map(tuple -> AiContentPreferenceViewDTO.builder()
                 .status(tuple.getT1())
                 .preference(tuple.getT2())
                 .sourceOptions(tuple.getT3())
                 .categoryOptions(tuple.getT4())
-                .limits(limitsOf(config))
-                .benefitNote(config.getBenefitNote())
+                .limits(limitsOf(configs.getT1()))
+                .presetTopics(AiContentConfigHelper.parseTopics(configs.getT1().getPresetTopics()))
+                .redeem(AiContentPreferenceViewDTO.Redeem.builder()
+                    .pointsPrice(configs.getT1().getPointsPrice())
+                    .pointsDays(configs.getT1().getPointsDays())
+                    // -1 表示未登录/读不到：前端据此不显示余额、也不做本地判断
+                    .pointsBalance(balanceOf(tuple.getT5()))
+                    .build())
+                .push(AiContentPreferenceViewDTO.PushSettings.builder()
+                    .hourOptions(PushConfigHelper.parsePushHours(
+                        configs.getT2().getAiDigestPushHours()))
+                    .ready(isPushReady(configs.getT2()))
+                    .build())
+                .benefitNote(configs.getT1().getBenefitNote())
                 .build()));
+    }
+
+    /** 未登录或读取失败时用 -1 表示「余额未知」 */
+    private static Long balanceOf(Long balance) {
+        return balance == null || balance < 0 ? -1L : balance;
+    }
+
+    /** 推送配置：读失败按「未配置推送」处理，不给用户露出一个推不出去的开关 */
+    private Mono<PushConfigDTO> loadPushConfig() {
+        return settingFetcher.get(PushConfigHelper.groupName())
+            .map(PushConfigHelper::parse)
+            .defaultIfEmpty(PushConfigHelper.defaults())
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 读取推送配置失败，按未开启处理：{}", ex.getMessage());
+                return Mono.just(PushConfigHelper.defaults());
+            });
+    }
+
+    /**
+     * 推送是否可用：总开关 + 简报开关 + 模板 + 字段映射，缺一不可。
+     *
+     * <p>不满足时前端不显示推送入口——让用户开一个永远推不出去的开关，比不给入口更伤。</p>
+     */
+    public static boolean isPushReady(PushConfigDTO pushConfig) {
+        return pushConfig.isEnabled() && pushConfig.isAiDigestEnabled()
+            && pushConfig.hasAiDigestTemplate() && pushConfig.aiDigestFieldMap().usable();
     }
 
     /** 保存偏好（全量替换）：未开通/已过期一律拒绝，并给出可读原因 */
@@ -76,13 +120,14 @@ public class AiContentService {
                     return Mono.error(new WxAuthException(
                         "请先开通「AI 定制内容」再保存关注方向（已过期的配置会保留，续费后继续生效）"));
                 }
-                return settingsCatalog().flatMap(catalog ->
+                return loadPushConfig().flatMap(pushConfig -> settingsCatalog().flatMap(catalog ->
                     preferenceService.load(openid).flatMap(before ->
-                        preferenceService.save(openid, request, catalog, config)
+                        preferenceService.save(openid, request, catalog, config,
+                                PushConfigHelper.parsePushHours(pushConfig.getAiDigestPushHours()))
                             .flatMap(saved -> samePreferences(before, saved)
                                 // 没变就不动当天那份：否则反复提交同一份偏好就能反复消耗 AI 额度
                                 ? Mono.just(saved)
-                                : feedService.invalidateToday(openid).thenReturn(saved))));
+                                : feedService.invalidateToday(openid).thenReturn(saved)))));
             });
         });
     }
@@ -129,7 +174,8 @@ public class AiContentService {
         AiContentPreferenceDTO after) {
         return sameSet(before.getCategories(), after.getCategories())
             && sameSet(before.getSources(), after.getSources())
-            && sameSet(before.getKeywords(), after.getKeywords());
+            && sameSet(before.getKeywords(), after.getKeywords())
+            && sameSet(before.getCustomTopics(), after.getCustomTopics());
     }
 
     private static boolean sameSet(List<String> left, List<String> right) {
@@ -143,6 +189,7 @@ public class AiContentService {
             .maxCategories(config.getMaxCategories())
             .maxSources(config.getMaxSources())
             .maxKeywords(config.getMaxKeywords())
+            .maxTopics(config.getMaxTopics())
             .maxItems(config.getMaxItems())
             .windowDays(config.getWindowDays())
             .aiIntroEnabled(config.isAiIntroEnabled())

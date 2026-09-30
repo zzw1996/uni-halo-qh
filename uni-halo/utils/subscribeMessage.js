@@ -29,7 +29,12 @@ export const PUSH_KINDS = {
 /** 站长配置里的推送开关与模板 ID（读不到就按未开启处理） */
 function readPushConfig() {
 	const push = getAppConfigs()?.pushConfig || {};
-	return { enabled: push.enabled === true, templateId: push.templateId || '' };
+	return {
+		enabled: push.enabled === true,
+		templateId: push.templateId || '',
+		// 简报模板由站长单独申请（与新文章模板字段不同，不复用）
+		aiDigestTemplateId: push.aiDigestTemplateId || ''
+	};
 }
 
 /** 基础库版本要求（requestSubscribeMessage 从 2.4.4 起提供） */
@@ -281,7 +286,14 @@ async function loadStatus(apiV2) {
  *
  * @returns {Promise<{ok:boolean, skipped?:string}>} skipped 只用于日志/排查
  */
-export async function accumulatePushQuota(apiV2) {
+/**
+ * 静默续一次订阅额度。
+ *
+ * @param {object} apiV2
+ * @param {string} [kind] 续哪条线：默认 newPost；AI 内容页传 'aiDigest'
+ *（一次性订阅「一次授权一条」，两条线的额度各自记账，必须分别续）
+ */
+export async function accumulatePushQuota(apiV2, kind = PUSH_KINDS.newPost) {
 	if (!apiV2) {
 		return { ok: false, skipped: 'no-api' };
 	}
@@ -290,7 +302,10 @@ export async function accumulatePushQuota(apiV2) {
 		return { ok: false, skipped: 'env' };
 	}
 	const config = readPushConfig();
-	if (!config.enabled || !config.templateId) {
+	const isAiDigest = kind === PUSH_KINDS.aiDigest;
+	// 简报线用站长单独配的模板：没配就不去弹授权（授权了也推不出去，纯打扰）
+	const tmplId = isAiDigest ? config.aiDigestTemplateId : config.templateId;
+	if (!config.enabled || !tmplId) {
 		return { ok: false, skipped: 'config' };
 	}
 	try {
@@ -316,13 +331,13 @@ export async function accumulatePushQuota(apiV2) {
 	if (status.userEnabled === false) {
 		return { ok: false, skipped: 'user-off' };
 	}
-	if (Number(status.newPostQuota || 0) >= QUOTA_ENOUGH) {
+	const quota = isAiDigest
+		? Number(status.aiDigestQuota || 0) : Number(status.newPostQuota || 0);
+	if (quota >= QUOTA_ENOUGH) {
 		return { ok: false, skipped: 'enough' };
 	}
 	writeStorage(KEY_LAST_TRY, Date.now());
-	const result = await requestSubscribe(apiV2, [
-		{ kind: PUSH_KINDS.newPost, tmplId: config.templateId }
-	]);
+	const result = await requestSubscribe(apiV2, [{ kind, tmplId }]);
 	return { ok: !!result.ok, skipped: result.ok ? '' : 'denied', result };
 }
 

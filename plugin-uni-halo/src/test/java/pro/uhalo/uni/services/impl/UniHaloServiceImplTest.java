@@ -110,6 +110,56 @@ class UniHaloServiceImplTest {
     }
 
     /**
+     * 商品图片必须归一化：Halo 附件库本地存储给的是相对路径（/upload/…），
+     * 小程序 image 解析不了（会被当成包内文件报渲染层网络错误）。
+     * 全量配置通道（getConfigs）与专用端点（getVirtualPayConfig）都要过这一关——
+     * 这里锁定前者，因为它是小程序启动时首屏渲染用的那份。
+     */
+    @Test
+    void getAllConfigsShouldNormalizeGoodsImages() {
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        var pay = MAPPER.createObjectNode();
+        pay.put("enabled", true);
+        var goods = pay.putArray("goods");
+        var relative = goods.addObject();
+        relative.put("goodsId", "g_member");
+        relative.put("name", "月卡");
+        relative.put("price", 600);
+        relative.put("type", "membership");
+        relative.put("image", "/upload/2026/09/member.webp");
+        var absolute = goods.addObject();
+        absolute.put("goodsId", "g_ai");
+        absolute.put("name", "AI 定制日报");
+        absolute.put("price", 600);
+        absolute.put("type", "ai_content");
+        absolute.put("image", "https://cdn.example.com/ai.png");
+        var broken = goods.addObject();
+        broken.put("goodsId", "g_ticket");
+        broken.put("name", "阅读券");
+        broken.put("price", 50);
+        broken.put("type", "content_ticket");
+        broken.put("image", "data:image/png;base64,iVBORw0KGgo=");
+        configs.put("payConfig", pay);
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+        when(externalLinkProcessor.processLink("/upload/2026/09/member.webp"))
+            .thenReturn("https://www.lxfzzw.com/upload/2026/09/member.webp");
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var items = (com.fasterxml.jackson.databind.node.ArrayNode) result.get("payConfig").get("goods");
+                // 相对路径拼上外部访问地址
+                assertThat(items.get(0).get("image").asText())
+                    .isEqualTo("https://www.lxfzzw.com/upload/2026/09/member.webp");
+                // 绝对地址原样保留
+                assertThat(items.get(1).get("image").asText())
+                    .isEqualTo("https://cdn.example.com/ai.png");
+                // 非法值删除字段（前端回落类型图标），不能把 data URI 下发给全量用户
+                assertThat(items.get(2).has("image")).isFalse();
+            })
+            .verifyComplete();
+    }
+
+    /**
      * 大模型 Key 同样不能下发：它与其它密钥一样只在服务端使用，
      * 而下发接口是匿名的——拿到它就能直接消费站长的 AI 额度。
      */
@@ -167,6 +217,82 @@ class UniHaloServiceImplTest {
 
         StepVerifier.create(uniHaloService.getAppConfigsByGroupName("aiDigestConfig"))
             .assertNext(result -> assertThat(result.has("aiApiKey")).isFalse())
+            .verifyComplete();
+    }
+
+    /**
+     * 密钥泄漏回归：全量配置接口是匿名可读、且响应会被小程序整包写进本地存储，
+     * 因此每个含服务端凭据的分组都必须脱敏。这三组是 2026-09-29 发布前审计发现的漏网项。
+     */
+    @Test
+    void getAllConfigsShouldStripWxAppAppConfigAndRedisSecrets() {
+        var wxApp = MAPPER.createObjectNode();
+        wxApp.put("appId", "wx-fake-id");
+        wxApp.put("appSecret", "wx-fake-secret-aaaa");
+        wxApp.put("loginEnabled", true);
+        var appInfo = MAPPER.createObjectNode();
+        appInfo.put("appId", "wx-fake-id");
+        appInfo.put("appSecret", "wx-appinfo-secret-bbbb");
+        var appConfig = MAPPER.createObjectNode();
+        appConfig.set("appInfo", appInfo);
+        var pluginRedis = MAPPER.createObjectNode();
+        pluginRedis.put("username", "default");
+        pluginRedis.put("password", "redis-fake-password");
+        var redisConfig = MAPPER.createObjectNode();
+        redisConfig.set("pluginRedis", pluginRedis);
+
+        var configs = new HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+        configs.put("wxAppConfig", wxApp);
+        configs.put("appConfig", appConfig);
+        configs.put("redisConfig", redisConfig);
+        when(settingFetcher.getValues()).thenReturn(Mono.just(configs));
+
+        StepVerifier.create(uniHaloService.getAppConfigs())
+            .assertNext(result -> {
+                var wx = (ObjectNode) result.get("wxAppConfig");
+                // appSecret 能换 access_token，绝不能下发；appId 与开关要保留（wx.login 用）
+                assertThat(wx.has("appSecret")).isFalse();
+                assertThat(wx.get("appId").asText()).isEqualTo("wx-fake-id");
+                assertThat(wx.get("loginEnabled").asBoolean()).isTrue();
+
+                var app = (ObjectNode) result.get("appConfig");
+                assertThat(app.get("appInfo").has("appSecret")).isFalse();
+                assertThat(app.get("appInfo").get("appId").asText()).isEqualTo("wx-fake-id");
+
+                var redis = (ObjectNode) result.get("redisConfig");
+                assertThat(redis.get("pluginRedis").has("password")).isFalse();
+                assertThat(redis.get("pluginRedis").get("username").asText()).isEqualTo("default");
+
+                var all = result.toString();
+                assertThat(all).doesNotContain("wx-fake-secret-aaaa")
+                    .doesNotContain("wx-appinfo-secret-bbbb")
+                    .doesNotContain("redis-fake-password");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void getByGroupNameShouldStripWxAppAndRedisSecrets() {
+        var wxApp = MAPPER.createObjectNode();
+        wxApp.put("appId", "wx-fake-id");
+        wxApp.put("appSecret", "wx-fake-secret-aaaa");
+        when(settingFetcher.get("wxAppConfig")).thenReturn(Mono.just(wxApp));
+
+        StepVerifier.create(uniHaloService.getAppConfigsByGroupName("wxAppConfig"))
+            .assertNext(result -> {
+                assertThat(result.has("appSecret")).isFalse();
+                assertThat(result.get("appId").asText()).isEqualTo("wx-fake-id");
+            })
+            .verifyComplete();
+
+        var pluginRedis = MAPPER.createObjectNode();
+        pluginRedis.put("password", "redis-fake-password");
+        var redisConfig = MAPPER.createObjectNode();
+        redisConfig.set("pluginRedis", pluginRedis);
+        when(settingFetcher.get("redisConfig")).thenReturn(Mono.just(redisConfig));
+
+        StepVerifier.create(uniHaloService.getAppConfigsByGroupName("redisConfig"))
+            .assertNext(result -> assertThat(result.get("pluginRedis").has("password")).isFalse())
             .verifyComplete();
     }
 

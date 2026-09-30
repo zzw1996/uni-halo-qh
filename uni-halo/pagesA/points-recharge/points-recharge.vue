@@ -20,173 +20,235 @@
 				</view>
 			</view>
 
-			<!-- ===== 权益道具 ===== -->
-			<view v-if="payEnabled && goodsList.length" class="section">
-				<view class="section-head">
-					<text class="section-title">权益道具</text>
-					<text class="section-sub">支付成功后立即到账，用于解锁「付费」文章</text>
-				</view>
-				<!--
-					会员状态：已开通显示到期时间与权益；未开通且有在售会员卡时，
-					由下面的商品卡片承担引导，这里不重复说一遍。
-				-->
-				<view v-if="membership.active" class="member-card">
-					<view class="member-head">
-						<text class="member-badge">会员</text>
-						<text class="member-expire">{{ membership.expireAt }} 到期</text>
-					</view>
-					<text class="member-days">剩余 {{ membership.daysRemaining }} 天</text>
-					<view v-if="membershipBenefits.length" class="member-benefits">
-						<text v-for="(b, i) in membershipBenefits" :key="i" class="member-benefit">· {{ b }}</text>
-					</view>
-					<text class="member-note">会员期内阅读付费文章不消耗阅读券</text>
-				</view>
-
-				<!-- 首单礼：把「第一笔多送券」摆在购买按钮之前，直接打掉第一次付钱的心理门槛 -->
-				<view v-if="firstPurchaseTicketBonus > 0" class="promo-banner">
-					<text class="promo-banner-tag">首单礼</text>
-					<text class="promo-banner-text">首次购买额外赠送 {{ firstPurchaseTicketBonus }} 张阅读券</text>
-				</view>
-				<view class="goods-list">
-					<view v-for="(item, index) in goodsList" :key="index" class="goods-card">
-						<view v-if="isPromoActive(item)" class="goods-promo">
-							<text class="goods-promo-tag">限时特价</text>
-							<text class="goods-promo-clock">{{ promoRemainText(item) }}</text>
+			<!--
+				权益道具 / 积分兑换：分栏切换。
+				两条通道各占一整节时页面被拉得很长、每件商品又摊得开；改成页签 + 左右滑切换后
+				一屏只见一条通道，商品卡也压成一行。只有一条通道可用时（未开支付 / 没配兑换项）
+				不显示页签、直接展示可用的那个。
+			-->
+			<view v-if="hasGoodsPane || hasExchangePane" class="section">
+				<view v-if="hasGoodsPane && hasExchangePane" class="mode-tabs">
+					<view class="mode-tabs-inner">
+						<view class="mode-tab-thumb" :class="{ 'is-right': activeTab === 'exchange' }"></view>
+						<view class="mode-tab" :class="{ 'is-active': activeTab === 'goods' }"
+							@click="fnSwitchTab('goods')">
+							<text class="mode-tab-text">权益道具</text>
 						</view>
-						<view class="goods-head">
-							<text class="goods-name">{{ item.name }}</text>
-							<view class="goods-price-box">
-								<text v-if="hasOriginalPrice(item)" class="goods-price-origin">￥{{ cashPriceText(item.originalPrice) }}</text>
-								<text class="goods-price"><text class="goods-price-symbol">￥</text>{{ cashPriceText(item.price) }}</text>
+						<view class="mode-tab" :class="{ 'is-active': activeTab === 'exchange' }"
+							@click="fnSwitchTab('exchange')">
+							<text class="mode-tab-text">积分兑换</text>
+						</view>
+					</view>
+				</view>
+				<view class="mode-panel" @touchstart="fnPanelTouchStart" @touchend="fnPanelTouchEnd">
+					<!-- ── 权益道具（现金通道） ── -->
+					<view v-if="activeTab === 'goods' && hasGoodsPane" class="mode-pane">
+						<view class="pane-sub">
+							<text class="pane-sub-text">支付成功后立即到账，用于解锁「付费」文章</text>
+						</view>
+						<!--
+							会员状态：已开通显示到期时间与权益；未开通且有在售会员卡时，
+							由下面的商品卡片承担引导，这里不重复说一遍。
+						-->
+						<view v-if="membership.active" class="member-card">
+							<view class="member-head">
+								<text class="member-badge">会员</text>
+								<text class="member-expire">{{ membership.expireAt }} 到期</text>
+							</view>
+							<text class="member-days">剩余 {{ membership.daysRemaining }} 天</text>
+							<view v-if="membershipBenefits.length" class="member-benefits">
+								<text v-for="(b, i) in membershipBenefits" :key="i" class="member-benefit">· {{ b }}</text>
+							</view>
+							<text class="member-note">会员期内阅读付费文章不消耗阅读券</text>
+						</view>
+
+						<!-- 首单礼：把「第一笔多送券」摆在购买按钮之前，直接打掉第一次付钱的心理门槛 -->
+						<view v-if="firstPurchaseTicketBonus > 0" class="promo-banner">
+							<text class="promo-banner-tag">首单礼</text>
+							<text class="promo-banner-text">首次购买额外赠送 {{ firstPurchaseTicketBonus }} 张阅读券</text>
+						</view>
+						<!--
+							从「解锁订阅额度」弹窗进来时（?highlight=member）：先说清楚来这里该买哪个，
+							再把对应的会员卡高亮并滚到它——本页有券/会员/AI 定制三类商品，
+							不指认的话用户对不上「会员卡」是哪张（商品名还可能被站长改成「月卡」之类）。
+						-->
+						<view v-if="spotlightMember && memberGoodsIndex >= 0" class="spot-banner">
+							<text class="spot-banner-text">{{ memberSpotBannerText }}</text>
+						</view>
+						<view class="goods-list">
+							<view v-for="(item, index) in goodsList" :key="index" class="goods-card"
+								:class="{ 'goods-card--spotlight': spotlightMember && index === memberGoodsIndex }">
+								<view v-if="spotlightMember && index === memberGoodsIndex" class="goods-spot-tag">
+									<text class="goods-spot-tag-text">解锁订阅额度 · 买这张</text>
+								</view>
+								<view class="goods-icon" :class="goodsIconClass(item)">
+									<!-- 站长配了道具图片就优先显示（与 MP 后台道具管理同款图），否则回落类型图标；
+									     加载失败（域名未加白名单/图被删）也回落，不留一块空砖 -->
+									<image v-if="item.image" class="goods-icon-img" :src="item.image"
+										mode="aspectFill" lazy-load
+										@error="fnOnGoodsImageError(item)"></image>
+									<tm-icons v-else-if="goodsIcon(item)" :name="goodsIcon(item)"
+										:size="38" :color="goodsIconColor(item)"></tm-icons>
+									<text v-else class="goods-icon-char">{{ (item.name || '·').charAt(0) }}</text>
+								</view>
+								<view class="goods-info">
+									<view class="goods-name-row">
+										<text class="goods-name">{{ item.name }}</text>
+										<view v-if="isPromoActive(item)" class="goods-promo-chip">
+											<text class="goods-promo-chip-text">特价 {{ promoRemainText(item) }}</text>
+										</view>
+									</view>
+									<text class="goods-desc">{{ fnGoodsTip(item) }}</text>
+									<!-- 会员卡的特权徽标：文案由服务端按配置拼好（上限提升/免券/赠券），没开启的权益不会出现 -->
+									<view v-if="item.type === 'membership' && memberPerks.length" class="goods-perks">
+										<text v-for="(perk, perkIndex) in memberPerks" :key="perkIndex"
+											class="goods-perk">{{ perk }}</text>
+									</view>
+									<!-- 券包阶梯：把「单张均价」算给用户看，买过一次的人第二次自然会算这笔账 -->
+									<view v-if="unitPriceText(item)" class="goods-unit">
+										<text class="goods-unit-text">折合每张 {{ unitPriceText(item) }}</text>
+										<text v-if="savingText(item)" class="goods-unit-save">比单张省 {{ savingText(item) }}</text>
+									</view>
+								</view>
+								<view class="goods-side">
+									<view class="goods-price-box">
+										<text v-if="hasOriginalPrice(item)" class="goods-price-origin">￥{{ cashPriceText(item.originalPrice) }}</text>
+										<text class="goods-price"><text class="goods-price-symbol">￥</text>{{ cashPriceText(item.price) }}</text>
+									</view>
+									<view class="goods-buy">
+										<tm-button size="s" theme="bg-gradient-indigo-accent" :fllowTheme="false"
+											:shadow="2" block :loading="payingIndex === index"
+											@click="fnBuy(item, index)">购买</tm-button>
+									</view>
+								</view>
 							</view>
 						</view>
-						<text class="goods-desc">{{ fnGoodsTip(item) }}</text>
-						<!-- 券包阶梯：把「单张均价」算给用户看，买过一次的人第二次自然会算这笔账 -->
-						<view v-if="unitPriceText(item)" class="goods-unit">
-							<text class="goods-unit-text">折合每张 {{ unitPriceText(item) }}</text>
-							<text v-if="savingText(item)" class="goods-unit-save">比单张省 {{ savingText(item) }}</text>
+					</view>
+					<!-- ── 积分兑换（免费通道） ── -->
+					<view v-else-if="hasExchangePane" class="mode-pane">
+						<view class="pane-sub">
+							<text class="pane-sub-text">当前积分 {{ balance }} · 用攒下的积分换权益</text>
 						</view>
-						<tm-button
-							size="s"
-							theme="primary"
-							block
-							:loading="payingIndex === index"
-							@click="fnBuy(item, index)"
-						>立即购买</tm-button>
-					</view>
-				</view>
-			</view>
-
-			<!-- ===== 积分兑换阅读券 =====
-			     券此前只有「花现金」一条路（积分兑换项还要站长手工在积分商城配置），
-			     这里是未开通虚拟支付的站点上唯一的免费入口，因此始终展示。 -->
-			<view v-if="exchangeTicket" class="section">
-				<view class="section-head">
-					<text class="section-title">用积分兑换</text>
-					<text class="section-sub">当前积分 {{ balance }}</text>
-				</view>
-				<view class="exchange-card">
-					<view class="exchange-main">
-						<text class="exchange-name">{{ exchangeTicket.name }}</text>
-						<text class="exchange-desc">{{ exchangeTicket.description }}</text>
-						<text class="exchange-quota">今日已兑 {{ exchangeTicket.todayCount }}/{{ exchangeTicket.dailyMaxCount }} 次</text>
-					</view>
-					<view class="exchange-side">
-						<text class="exchange-cost">{{ exchangeTicket.points }} 积分</text>
-						<tm-button
-							size="s"
-							:theme="exchangeDisabled ? 'grey' : 'primary'"
-							:fllowTheme="!exchangeDisabled"
-							:disabled="exchangeDisabled"
-							:loading="exchanging"
-							@click="fnExchangeTickets"
-						>{{ exchangeButtonText }}</tm-button>
-					</view>
-				</view>
-			</view>
-
-			<!-- ===== 装扮商店 ===== -->
-			<view v-if="outfitStatus.items.length" class="section">
-				<view class="section-head">
-					<text class="section-title">装扮商店</text>
-					<text class="section-sub">{{ hasLimitedOutfit ? '积分兑换或现金购买 · 限时款到期自动失效' : '积分兑换或现金购买 · 永久持有' }}</text>
-				</view>
-				<!-- 消费里程碑：让「已经花了多少」变成可见的进度，用户为凑门槛会主动多买 -->
-				<view v-if="hasMilestoneOutfit" class="milestone-card">
-					<view class="milestone-head">
-						<text class="milestone-title">累计消费回馈</text>
-						<text class="milestone-value">￥{{ spentYuanText }}</text>
-					</view>
-					<text class="milestone-tip">{{ milestoneTipText }}</text>
-				</view>
-				<view class="outfit-grid">
-					<view
-						v-for="item in outfitStatus.items"
-						:key="item.key"
-						class="outfit-card"
-						:class="{ 'is-active': isActive(item), 'is-owned': isOwned(item) && !isActive(item) }"
-					>
-						<view class="outfit-preview" :class="outfitPreviewClass(item)">
-							<image v-if="item.type === 'avatar_frame'" class="outfit-avatar" :src="previewAvatar" mode="aspectFill"></image>
-							<text v-if="item.type === 'nick_frame'" class="outfit-nick">{{ nickPreviewText(item) }}</text>
-							<view v-if="item.type === 'theme'" class="outfit-theme" :style="{ background: themeSwatchStyle(item.style) }"></view>
-							<text v-if="isActive(item)" class="outfit-state">使用中</text>
-						</view>
-						<view class="outfit-body">
-							<view class="outfit-title-row">
-								<text class="outfit-name">{{ item.name }}</text>
-								<text class="outfit-tag">{{ outfitTypeLabel(item.type) }}</text>
+						<view class="exchange-card">
+							<view class="goods-icon is-ticket">
+								<tm-icons name="icon-eye" :size="38" color="indigo"></tm-icons>
 							</view>
-							<text v-if="isMilestoneLocked(item)" class="outfit-milestone">消费满 {{ item.minSpend }} 元解锁</text>
-							<text
-								v-if="isOwned(item) && (isInvalidThemeSkin(item.style) || isInvalidAvatarFrame(item.style) || isInvalidNickFrame(item.style))"
-								class="outfit-notice"
-							>该装扮样式已下线，穿戴后不生效</text>
-							<text class="outfit-price">
-								<text class="outfit-price-num">{{ item.points }}</text> 积分
-								<text v-if="isOwned(item) && !isActive(item)" class="outfit-expire"> · {{ ownedExpiryText(item) }}</text>
-								<text v-else-if="!isOwned(item) && outfitDurationLabel(item)" class="outfit-duration"> · {{ outfitDurationLabel(item) }}</text>
-							</text>
+							<view class="goods-info">
+								<text class="goods-name">{{ exchangeTicket.name }}</text>
+								<text class="goods-desc">{{ exchangeTicket.description }}</text>
+								<text class="exchange-quota">今日已兑 {{ exchangeTicket.todayCount }}/{{ exchangeTicket.dailyMaxCount }} 次</text>
+							</view>
+							<view class="goods-side">
+								<text class="exchange-cost">{{ exchangeTicket.points }}<text class="exchange-cost-unit">积分</text></text>
+								<view class="goods-buy">
+									<tm-button
+										size="s"
+										:theme="exchangeDisabled ? 'grey' : 'bg-gradient-indigo-accent'"
+										:fllowTheme="!exchangeDisabled"
+										:disabled="exchangeDisabled"
+										:loading="exchanging"
+										block
+										@click="fnExchangeTickets"
+									>{{ exchangeButtonText }}</tm-button>
+								</view>
+							</view>
 						</view>
-						<view class="outfit-actions">
-							<template v-if="!isOwned(item)">
-								<tm-button
-									size="s"
-									theme="primary"
-									block
-									:disabled="outfitBusy(item) || isMilestoneLocked(item)"
-									:loading="outfitBusy(item)"
-									@click="fnBuyWithPoints(item)"
-								>{{ isMilestoneLocked(item) ? '未达门槛' : '积分兑换' }}</tm-button>
-								<tm-button
-									v-if="payEnabled && cashGoodsOf(item) && !isMilestoneLocked(item)"
-									size="s"
-									plan
-									theme="blue-grey"
-									:fllowTheme="false"
-									block
-									:disabled="outfitBusy(item)"
-									:loading="outfitBusy(item)"
-									@click="fnBuyWithCash(item)"
-								>￥{{ cashPriceText(cashGoodsOf(item).price) }} 购买</tm-button>
-							</template>
-							<tm-button
-								v-else
-								size="s"
-								:theme="outfitButtonTheme(item)"
-								:fllowTheme="outfitButtonTheme(item) !== 'grey'"
-								block
-								:disabled="outfitBusy(item)"
-								:loading="outfitBusy(item)"
-								@click="fnToggleEquip(item)"
-							>{{ outfitButtonText(item) }}</tm-button>
+						<!-- ── 装扮商店：兑换通道与道具合并到「积分兑换」栏，现金按钮保留在卡片上 ── -->
+						<view v-if="outfitStatus.items.length" class="outfit-pane">
+							<view class="section-head">
+								<text class="section-title">装扮商店</text>
+								<text class="section-sub">{{ hasLimitedOutfit ? '积分兑换或现金购买 · 限时款到期自动失效' : '积分兑换或现金购买 · 永久持有' }}</text>
+							</view>
+							<!-- 消费里程碑：让「已经花了多少」变成可见的进度，用户为凑门槛会主动多买 -->
+							<view v-if="hasMilestoneOutfit" class="milestone-card">
+								<view class="milestone-head">
+									<text class="milestone-title">累计消费回馈</text>
+									<text class="milestone-value">￥{{ spentYuanText }}</text>
+								</view>
+								<text class="milestone-tip">{{ milestoneTipText }}</text>
+							</view>
+							<view class="outfit-grid">
+								<view
+									v-for="item in outfitStatus.items"
+									:key="item.key"
+									class="outfit-card"
+									:class="{ 'is-active': isActive(item), 'is-owned': isOwned(item) && !isActive(item) }"
+								>
+									<view class="outfit-preview" :class="outfitPreviewClass(item)">
+										<image v-if="item.type === 'avatar_frame'" class="outfit-avatar" :src="previewAvatar" mode="aspectFill"></image>
+										<text v-if="item.type === 'nick_frame'" class="outfit-nick">{{ nickPreviewText(item) }}</text>
+										<view v-if="item.type === 'theme'" class="outfit-theme" :style="{ background: themeSwatchStyle(item.style) }"></view>
+										<text v-if="isActive(item)" class="outfit-state">使用中</text>
+									</view>
+									<view class="outfit-body">
+										<view class="outfit-title-row">
+											<text class="outfit-name">{{ item.name }}</text>
+											<text class="outfit-tag">{{ outfitTypeLabel(item.type) }}</text>
+										</view>
+										<text v-if="isMilestoneLocked(item)" class="outfit-milestone">消费满 {{ item.minSpend }} 元解锁</text>
+										<text
+											v-if="isOwned(item) && (isInvalidThemeSkin(item.style) || isInvalidAvatarFrame(item.style) || isInvalidNickFrame(item.style))"
+											class="outfit-notice"
+										>该装扮样式已下线，穿戴后不生效</text>
+										<text class="outfit-price">
+											<text class="outfit-price-num">{{ item.points }}</text> 积分
+											<text v-if="isOwned(item) && !isActive(item)" class="outfit-expire"> · {{ ownedExpiryText(item) }}</text>
+											<text v-else-if="!isOwned(item) && outfitDurationLabel(item)" class="outfit-duration"> · {{ outfitDurationLabel(item) }}</text>
+										</text>
+									</view>
+									<view class="outfit-actions">
+										<template v-if="!isOwned(item)">
+											<tm-button
+												size="s"
+												theme="primary"
+												block
+												:disabled="outfitBusy(item) || isMilestoneLocked(item)"
+												:loading="outfitBusy(item)"
+												@click="fnBuyWithPoints(item)"
+											>{{ isMilestoneLocked(item) ? '未达门槛' : '积分兑换' }}</tm-button>
+											<tm-button
+												v-if="payEnabled && cashGoodsOf(item) && !isMilestoneLocked(item)"
+												size="s"
+												plan
+												theme="blue-grey"
+												:fllowTheme="false"
+												block
+												:disabled="outfitBusy(item)"
+												:loading="outfitBusy(item)"
+												@click="fnBuyWithCash(item)"
+											>￥{{ cashPriceText(cashGoodsOf(item).price) }} 购买</tm-button>
+										</template>
+										<tm-button
+											v-else
+											size="s"
+											:theme="outfitButtonTheme(item)"
+											:fllowTheme="outfitButtonTheme(item) !== 'grey'"
+											block
+											:disabled="outfitBusy(item)"
+											:loading="outfitBusy(item)"
+											@click="fnToggleEquip(item)"
+										>{{ outfitButtonText(item) }}</tm-button>
+									</view>
+								</view>
+							</view>
+
+							<view v-if="outfitStatus.orphanOwned.length" class="orphan-card">
+								<text class="orphan-title">已下架装扮</text>
+								<text class="orphan-desc">{{ outfitStatus.orphanOwned.join('、') }} 已从商店下架，无法继续穿戴；如需处理请联系站长。</text>
+							</view>
+						</view>
+
+						<!-- 兑换积分从哪来：给一条去赚积分的出口，免得「积分不足」是死路 -->
+						<view class="earn-card" @click="fnGoEarnPoints">
+							<view class="earn-main">
+								<text class="earn-title">积分怎么赚？</text>
+								<text class="earn-desc">签到、浏览文章、发表评论、邀请好友都能得积分</text>
+							</view>
+							<view class="earn-btn">
+								<text class="earn-btn-text">去赚积分</text>
+							</view>
 						</view>
 					</view>
-				</view>
-
-				<view v-if="outfitStatus.orphanOwned.length" class="orphan-card">
-					<text class="orphan-title">已下架装扮</text>
-					<text class="orphan-desc">{{ outfitStatus.orphanOwned.join('、') }} 已从商店下架，无法继续穿戴；如需处理请联系站长。</text>
 				</view>
 			</view>
 
@@ -246,6 +308,12 @@
 				ticketConfig: { firstPurchaseTickets: 0 },
 				/** 会员状态（服务端 /points/membership 下发） */
 				membership: { enabled: false, active: false, benefits: [] },
+				/**
+				 * 从「解锁订阅额度」弹窗带 ?highlight=member 进来时为 true：
+				 * 页面会指认「该买哪张卡」——横幅 + 会员卡高亮 + 自动滚过去。
+				 * 只有这一个来源传参，正常从菜单进来的用户看不到任何变化。
+				 */
+				spotlightMember: false,
 				/** 积分兑换券的兑换项（来自 /points/exchange/balance 里的 content_ticket） */
 				exchangeTicket: null,
 				exchanging: false,
@@ -256,17 +324,18 @@
 				 * 后者在商品多时会明显拖慢列表渲染。
 				 */
 				promoNow: Math.floor(Date.now() / 1000),
-				promoTimer: null
+				promoTimer: null,
+				/** 当前分栏：goods = 权益道具（现金），exchange = 积分兑换（免费） */
+				activeTab: 'goods',
+				/** 分栏左右滑手势的起点；null 表示没有进行中的手势 */
+				panelTouchX: null,
+				panelTouchY: 0
 			};
 		},
 		computed: {
 			/** 头像框预览用当前用户自己的头像 */
 			previewAvatar() {
 				return getWxLoginInfo()?.avatarUrl || '';
-			},
-			/** 装扮商店里是否存在限时装扮：决定副标题文案 */
-			hasLimitedOutfit() {
-				return this.outfitStatus.items.some((item) => Number(item.durationDays || 0) > 0);
 			},
 			/** 会员权益文案：服务端未下发时按「免券阅读」兜底，避免卡片空白 */
 			membershipBenefits() {
@@ -275,6 +344,30 @@
 					return benefits;
 				}
 				return this.membership?.active ? ['会员期内全站付费文章免券阅读'] : [];
+			},
+			/** 会员卡商品在商品列表里的下标；没有在售会员卡时为 -1 */
+			memberGoodsIndex() {
+				return this.goodsList.findIndex((item) => item && item.type === 'membership');
+			},
+			/**
+			 * 会员卡商品上的特权徽标。
+			 *
+			 * <p>直接用服务端按配置拼好的 benefits（含「分类订阅上限从 X 个提升到 Y 个」），
+			 * 前端不自己写「不限量」——上限其实是可配的硬顶，把没开启的权益写上去等于骗人。
+			 * 旧版插件不下发 benefits 时退回免券这一条硬权益。</p>
+			 */
+			memberPerks() {
+				const benefits = this.membership?.benefits;
+				if (Array.isArray(benefits) && benefits.length) {
+					return benefits.filter(Boolean);
+				}
+				return this.membership?.enabled ? ['会员期内付费文章免券阅读'] : [];
+			},
+			/** 指认横幅文案：已是会员与未开通两种说法 */
+			memberSpotBannerText() {
+				return this.membership?.active
+					? '你已是会员：订阅额度已放宽，无需再购买'
+					: '想订阅更多分类？开通下方会员卡即可，订阅上限会自动提升';
 			},
 			/** 首单礼赠送张数：0 表示不展示首单礼横幅 */
 			firstPurchaseTicketBonus() {
@@ -300,6 +393,14 @@
 				}
 				return '累计消费满 ' + next + ' 元可解锁限定装扮';
 			},
+			/** 现金通道是否可用（决定「权益道具」分栏是否展示） */
+			hasGoodsPane() {
+				return this.payEnabled === true && this.goodsList.length > 0;
+			},
+			/** 积分兑换通道是否可用：兑换券**或**装扮商店任一存在即可（装扮的兑换已并入本栏） */
+			hasExchangePane() {
+				return !!this.exchangeTicket || this.outfitStatus.items.length > 0;
+			},
 			/** 兑换是否被每日次数或积分余额挡住 */
 			exchangeDisabled() {
 				if (!this.exchangeTicket || this.exchanging) return true;
@@ -321,11 +422,23 @@
 				return '立即兑换';
 			}
 		},
-		onLoad() {
+		watch: {
+			/** 现金通道不可用而积分兑换可用时，自动落在「积分兑换」上，避免默认页签对着一片空 */
+			hasGoodsPane(val) {
+				if (!val && this.hasExchangePane && this.activeTab === 'goods') {
+					this.activeTab = 'exchange';
+				}
+			}
+		},
+		onLoad(options) {
 			if (!checkHasWxLogin()) {
 				uni.showToast({ title: '请先登录', icon: 'none' });
 				setTimeout(() => uni.navigateBack(), 800);
 				return;
+			}
+			// 只有解锁订阅额度的弹窗会带这个参数：指认会员卡，别让用户在三件商品里猜
+			if (options && options.highlight === 'member') {
+				this.spotlightMember = true;
 			}
 			this.fnLoad();
 			// 倒计时用轮询推进：只在页面存续期间跑，离开时在 onUnload 清理
@@ -341,10 +454,106 @@
 			}
 		},
 		onShow() {
-			// 从「中奖填写」等页面返回时同步一次装扮状态，避免穿戴/购买结果滞后
+			// 返回本页时同步一次装扮状态，避免穿戴/购买结果滞后
 			this.fnLoadOutfit();
 		},
 		methods: {
+			/** 页签切换（滑动切换见 fnPanelTouchEnd） */
+			fnSwitchTab(tab) {
+				this.activeTab = tab;
+			},
+			fnPanelTouchStart(e) {
+				const touch = e?.touches?.[0] || e?.changedTouches?.[0];
+				if (!touch) return;
+				this.panelTouchX = touch.clientX;
+				this.panelTouchY = touch.clientY;
+			},
+			/**
+			 * 面板左右滑切换分栏。
+			 *
+			 * <p>横向位移明显大于纵向才当作翻页手势：面板内容要纵向滚动，
+			 * 判定太松会让用户滚动列表时被「顺手」换栏。</p>
+			 */
+			fnPanelTouchEnd(e) {
+				const touch = e?.changedTouches?.[0];
+				if (!touch || this.panelTouchX === null) return;
+				const dx = touch.clientX - this.panelTouchX;
+				const dy = touch.clientY - this.panelTouchY;
+				this.panelTouchX = null;
+				if (Math.abs(dx) < 60 || Math.abs(dy) > 40) return;
+				if (dx < 0 && this.activeTab === 'goods' && this.hasExchangePane) {
+					this.activeTab = 'exchange';
+				} else if (dx > 0 && this.activeTab === 'exchange' && this.hasGoodsPane) {
+					this.activeTab = 'goods';
+				}
+			},
+			/** 商品类型 → 图标；未知类型返回空串，由模板回落商品名首字 */
+			goodsIcon(item) {
+				const map = {
+					content_ticket: 'icon-eye',
+					membership: 'icon-star-circle',
+					ai_content: 'icon-news',
+					bundle: 'icon-gift'
+				};
+				return map[item?.type] || '';
+			},
+			/**
+			 * 道具图片加载失败：清掉图片地址，卡片回落到类型图标。
+			 *
+			 * <p>失败多半是图片域名没加进小程序后台的 downloadFile 合法域名
+			 * （开发工具不校验、真机校验），或者图床上的图被删了——
+			 * 与其留一块空砖让用户以为功能坏了，不如回落图标并保持页面可用。</p>
+			 */
+			fnOnGoodsImageError(item) {
+				if (item && item.image) {
+					item.image = '';
+				}
+			},
+			/** 图标砖的配色类（与 goodsIconColor 的主题色一一对应） */
+			goodsIconClass(item) {				const map = {
+					content_ticket: 'is-ticket',
+					membership: 'is-member',
+					ai_content: 'is-ai',
+					bundle: 'is-bundle'
+				};
+				return map[item?.type] || 'is-other';
+			},
+			/** 图标主题色；全部取自已启用的颜色主题（hex 传给 tm-icons 不生效） */
+			goodsIconColor(item) {
+				const map = {
+					content_ticket: 'indigo',
+					membership: 'orange',
+					ai_content: 'teal',
+					bundle: 'green'
+				};
+				return map[item?.type] || 'blue-grey';
+			},
+			/** 「去赚积分」出口：跳任务中心；失败兜底到「我的」（任务中心在分包，理论上不会失败） */
+			fnGoEarnPoints() {
+				uni.navigateTo({
+					url: '/pagesA/task-center/task-center',
+					fail: () => uni.switchTab({ url: '/pages/tabbar/about/about' })
+				});
+			},
+			/**
+			 * 高亮定位：把会员卡滚进视野。
+			 *
+			 * <p>只在带 ?highlight=member 进入且确有会员卡在售时滚动；已在视口里时
+			 * pageScrollTo 不会动，安全可重复调（缓存渲染与网络回读各调一次）。
+			 * 旧基础库不支持 selector 时安静跳过——横幅和高亮边框仍然可见。</p>
+			 */
+			fnSpotlightScroll() {
+				if (!this.spotlightMember || this.memberGoodsIndex < 0) {
+					return;
+				}
+				setTimeout(() => {
+					uni.pageScrollTo({
+						selector: '.goods-card--spotlight',
+						duration: 300,
+						fail: () => {}
+					});
+				}, 400);
+			},
 			async fnLoad() {
 				// 先用启动时缓存的插件配置（getConfigs 已含 payConfig 与商品）即时渲染
 				const cached = (getAppConfigs()?.payConfig) || {};
@@ -352,6 +561,7 @@
 					this.payEnabled = true;
 					this.goodsList = this.normalizeGoods(cached.goods);
 					this.loading = 'success';
+					this.fnSpotlightScroll();
 				}
 				// 装扮商店与支付功能解耦：先拉装扮，保证未开通虚拟支付的站点也能积分兑换
 				this.fnLoadOutfit();
@@ -377,6 +587,7 @@
 					const goods = (body.goods && body.goods.length ? body.goods : cached?.goods) || [];
 					this.goodsList = this.normalizeGoods(goods);
 					this.loading = 'success';
+					this.fnSpotlightScroll();
 				} catch (err) {
 					this.loading = 'success';
 					const notUpgraded = err?.statusCode === 404 || err?.isHtml
@@ -688,6 +899,10 @@
 						type: item.type,
 						value: Number(item.value || 0),
 						style: item.style || '',
+						// 道具图片（插件 1.0.185+ 下发；微信后台配的图不会自动过来，缺省回落类型图标）。
+						// 只认 http(s) 绝对地址：启动快照/旧缓存里残留的相对路径会让 image 组件
+						// 把它当包内文件去加载（报渲染层网络错误），宁可回落图标也不渲染半截地址。
+						image: /^https?:\/\//i.test(item.image || '') ? item.image : '',
 						// 套餐子项（仅 bundle 有值），用于在卡片上列出包含的权益
 						items: Array.isArray(item.items) ? item.items : [],
 						// 促销字段仅用于展示：实际售价永远是 price（必须与微信后台一致）
@@ -1044,49 +1259,253 @@
 		text-align: right;
 	}
 
-	/* ===== 权益道具 ===== */
+	/* ── 权益道具 / 积分兑换 分栏 ──
+	   页签是一颗滑动的「拇指」：白色面板上按下去哪个，拇指就滑到哪，
+	   内容面板再用左右滑手势联动（fnPanelTouchEnd）。 */
+	.mode-tabs {
+		margin-bottom: 24rpx;
+		padding: 10rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-card;
+		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
+	}
+
+	.mode-tabs-inner {
+		position: relative;
+		display: flex;
+	}
+
+	.mode-tab {
+		position: relative;
+		z-index: 1;
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 72rpx;
+	}
+
+	.mode-tab-text {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: $uh-ink-3;
+		transition: color 0.2s ease;
+	}
+
+	.mode-tab.is-active .mode-tab-text {
+		color: $uh-accent-strong;
+	}
+
+	.mode-tab-thumb {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 50%;
+		height: 100%;
+		border-radius: $uh-radius-pill;
+		background: $uh-accent-weak;
+		transition: transform 0.25s ease;
+	}
+
+	.mode-tab-thumb.is-right {
+		transform: translateX(100%);
+	}
+
+	.mode-panel {
+		display: block;
+	}
+
+	.pane-sub {
+		margin-bottom: 20rpx;
+		padding: 0 4rpx;
+	}
+
+	.pane-sub-text {
+		font-size: 22rpx;
+		color: $uh-ink-3;
+	}
+
 	.goods-list {
 		display: flex;
 		flex-direction: column;
 	}
 
+	/* 商品卡：图标砖 + 信息列 + 价格/购买列，一行放下。压缩自旧版
+	   「名称/描述/特权/按钮各占一行」的纵向布局——那版一件商品摊了近三屏之一。 */
 	.goods-card {
+		position: relative;
+		display: flex;
+		align-items: center;
 		margin-bottom: 20rpx;
-		padding: 28rpx 28rpx 24rpx;
+		padding: 26rpx 24rpx;
 		border-radius: 20rpx;
 		background: $uh-card;
 		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
 	}
 
-	.goods-head {
+	.goods-icon {
+		flex-shrink: 0;
 		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
+		align-items: center;
+		justify-content: center;
+		width: 84rpx;
+		height: 84rpx;
+		margin-right: 20rpx;
+		border-radius: 22rpx;
+	}
+
+	.goods-icon.is-ticket {
+		background: #eef2fe;
+	}
+
+	.goods-icon.is-member {
+		background: #fdf0e0;
+	}
+
+	.goods-icon.is-ai {
+		background: #e2f4f0;
+	}
+
+	.goods-icon.is-bundle {
+		background: #e7f4ea;
+	}
+
+	.goods-icon.is-other {
+		background: $uh-fill;
+	}
+
+	.goods-icon-img {
+		width: 100%;
+		height: 100%;
+		border-radius: 22rpx;
+	}
+
+	.goods-icon-char {
+		font-size: 32rpx;
+		font-weight: 700;
+		color: $uh-ink-2;
+	}
+
+	.goods-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.goods-name-row {
+		display: flex;
+		align-items: center;
 	}
 
 	.goods-name {
-		font-size: 30rpx;
+		font-size: 29rpx;
 		font-weight: 600;
 		color: #1f2333;
-	}
-
-	.goods-price {
-		font-size: 40rpx;
-		font-weight: 600;
-		color: #f2542d;
-	}
-
-	.goods-price-symbol {
-		margin-right: 2rpx;
-		font-size: 24rpx;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.goods-desc {
 		display: block;
-		margin: 10rpx 0 20rpx;
-		font-size: 23rpx;
-		line-height: 1.6;
+		margin-top: 6rpx;
+		font-size: 22rpx;
+		line-height: 1.5;
 		color: #8b90a0;
+		/* 套餐/会员的说明可能很长：压成两行，卡片高度不再随文案失控 */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
+	}
+
+	/* ── 解锁订阅额度入口的「指认」样式：横幅 + 会员卡高亮 + 角标 ──
+	   只在 ?highlight=member 进入时出现，目的是让用户一眼知道该买哪张卡 */
+	.spot-banner {
+		margin-bottom: 20rpx;
+		padding: 20rpx 24rpx;
+		border-radius: 16rpx;
+		background: $uh-accent-weak;
+	}
+
+	.spot-banner-text {
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: $uh-accent-strong;
+	}
+
+	.goods-card--spotlight {
+		border: 3rpx solid $uh-accent;
+		box-shadow: 0 8rpx 28rpx rgba(47, 84, 235, 0.16);
+	}
+
+	.goods-spot-tag {
+		position: absolute;
+		top: -14rpx;
+		right: 24rpx;
+		padding: 6rpx 18rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-grad-accent;
+	}
+
+	.goods-spot-tag-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.goods-perks {
+		display: flex;
+		flex-wrap: wrap;
+		margin-top: 14rpx;
+	}
+
+	.goods-perk {
+		margin: 0 12rpx 8rpx 0;
+		padding: 4rpx 14rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-accent-weak;
+		font-size: 20rpx;
+		color: $uh-accent-strong;
+	}
+
+	/* 右侧列：价格在上、购买按钮在下，宽度钉死让中间信息列拿到最大空间 */
+	.goods-side {
+		flex-shrink: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		margin-left: 20rpx;
+	}
+
+	.goods-price-box {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+	}
+
+	.goods-price {
+		font-size: 36rpx;
+		font-weight: 700;
+		color: #f2542d;
+		line-height: 1.2;
+	}
+
+	.goods-price-symbol {
+		margin-right: 2rpx;
+		font-size: 22rpx;
+	}
+
+	.goods-price-origin {
+		font-size: 20rpx;
+		color: #b6bac7;
+		text-decoration: line-through;
+		line-height: 1.4;
+	}
+
+	.goods-buy {
+		width: 148rpx;
+		margin-top: 14rpx;
 	}
 
 	/* ===== 会员卡 ===== */
@@ -1169,45 +1588,25 @@
 		color: #b4472a;
 	}
 
-	.goods-promo {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 14rpx;
-		padding: 8rpx 16rpx;
-		border-radius: 12rpx;
+	/* 限时特价：压成名称旁的小角标（旧版是一整行横幅，太占地） */
+	.goods-promo-chip {
+		flex-shrink: 0;
+		margin-left: 12rpx;
+		padding: 2rpx 12rpx;
+		border-radius: $uh-radius-pill;
 		background: #fff1e8;
 	}
 
-	.goods-promo-tag {
-		font-size: 21rpx;
-		font-weight: 600;
-		color: #f2542d;
-	}
-
-	.goods-promo-clock {
-		font-size: 22rpx;
+	.goods-promo-chip-text {
+		font-size: 20rpx;
 		color: #e04b4b;
-		letter-spacing: 1rpx;
-	}
-
-	.goods-price-box {
-		display: flex;
-		align-items: baseline;
-	}
-
-	.goods-price-origin {
-		margin-right: 10rpx;
-		font-size: 22rpx;
-		color: #b6bac7;
-		text-decoration: line-through;
 	}
 
 	.goods-unit {
 		display: flex;
 		align-items: center;
-		margin: 0 0 20rpx;
-		font-size: 21rpx;
+		margin-top: 8rpx;
+		font-size: 20rpx;
 	}
 
 	.goods-unit-text {
@@ -1222,34 +1621,15 @@
 		color: #17a673;
 	}
 
-	/* ===== 积分兑换阅读券 ===== */
+	/* ===== 积分兑换（与商品卡同一套紧凑骨架） ===== */
 	.exchange-card {
 		display: flex;
 		align-items: center;
-		padding: 28rpx;
+		margin-bottom: 20rpx;
+		padding: 26rpx 24rpx;
 		border-radius: 20rpx;
 		background: $uh-card;
 		box-shadow: 0 6rpx 24rpx rgba(30, 40, 90, 0.06);
-	}
-
-	.exchange-main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.exchange-name {
-		display: block;
-		font-size: 29rpx;
-		font-weight: 600;
-		color: #1f2333;
-	}
-
-	.exchange-desc {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #8b90a0;
 	}
 
 	.exchange-quota {
@@ -1259,18 +1639,65 @@
 		color: #b6bac7;
 	}
 
-	.exchange-side {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		margin-left: 20rpx;
-	}
-
 	.exchange-cost {
-		margin-bottom: 14rpx;
 		font-size: 30rpx;
 		font-weight: 700;
 		color: #f2542d;
+		line-height: 1.2;
+	}
+
+	.exchange-cost-unit {
+		margin-left: 4rpx;
+		font-size: 20rpx;
+		font-weight: 500;
+	}
+
+	/* 「积分怎么赚」：兑换不可用时别让用户卡死在这，给一条去赚积分的出口 */
+	.earn-card {
+		display: flex;
+		align-items: center;
+		padding: 24rpx;
+		border-radius: 20rpx;
+		background: $uh-accent-weak;
+	}
+
+	.earn-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.earn-title {
+		display: block;
+		font-size: 27rpx;
+		font-weight: 600;
+		color: $uh-accent-strong;
+	}
+
+	.earn-desc {
+		display: block;
+		margin-top: 6rpx;
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: $uh-accent;
+	}
+
+	.earn-btn {
+		flex-shrink: 0;
+		margin-left: 20rpx;
+		padding: 12rpx 28rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-grad-accent;
+	}
+
+	.earn-btn-text {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	/* 装扮商店并入「积分兑换」栏后的容器：与上方的兑换券卡拉开一档 */
+	.outfit-pane {
+		margin-top: 32rpx;
 	}
 
 	/* ===== 消费里程碑 ===== */

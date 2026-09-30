@@ -11,26 +11,26 @@ public class PointsRulesDTO {
 
     @Builder.Default
     private PointsActionRuleDTO browse = PointsActionRuleDTO.builder()
-        .points(1).dailyMaxCount(10).dailyMaxPoints(10).build();
+        .points(1).dailyMaxCount(5).dailyMaxPoints(5).build();
 
     @Builder.Default
     private PointsActionRuleDTO comment = PointsActionRuleDTO.builder()
-        .points(5).dailyMaxCount(5).dailyMaxPoints(25).build();
+        .points(5).dailyMaxCount(2).dailyMaxPoints(10).build();
 
     @Builder.Default
     private PointsActionRuleDTO upvote = PointsActionRuleDTO.builder()
-        .points(2).dailyMaxCount(20).dailyMaxPoints(40).build();
+        .points(1).dailyMaxCount(5).dailyMaxPoints(5).build();
 
     @Builder.Default
     private PointsActionRuleDTO vote = PointsActionRuleDTO.builder()
-        .points(10).dailyMaxCount(10).dailyMaxPoints(100).build();
+        .points(5).dailyMaxCount(2).dailyMaxPoints(10).build();
 
     @Builder.Default
     private PointsSignInRuleDTO signIn = PointsSignInRuleDTO.builder()
-        .points(10)
+        .points(5)
         .consecutiveBonus(List.of(
             ConsecutiveBonusDTO.builder().days(3).bonus(5).build(),
-            ConsecutiveBonusDTO.builder().days(7).bonus(20).build()
+            ConsecutiveBonusDTO.builder().days(7).bonus(15).build()
         ))
         .build();
 
@@ -38,10 +38,6 @@ public class PointsRulesDTO {
     @Builder.Default
     private PointsActionRuleDTO newUserGift = PointsActionRuleDTO.builder()
         .points(100).dailyMaxCount(1).dailyMaxPoints(100).build();
-
-    /** 每日翻牌抽奖 */
-    @Builder.Default
-    private PointsDrawRuleDTO draw = PointsDrawRuleDTO.builder().build();
 
     /** 积分兑换（发布券 / 数据看板高级版） */
     @Builder.Default

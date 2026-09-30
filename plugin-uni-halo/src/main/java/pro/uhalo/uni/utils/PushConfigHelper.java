@@ -32,6 +32,7 @@ public final class PushConfigHelper {
     private static final int MIN_DAILY_LIMIT = 1;
     private static final int MAX_DAILY_LIMIT = 100000;
     private static final int MAX_LOOKBACK_HOURS = 168;
+    private static final int MAX_RUN_USERS = 2000;
 
     private PushConfigHelper() {
     }
@@ -51,8 +52,15 @@ public final class PushConfigHelper {
             .enabled(false)
             .templateId(DEFAULT_TEMPLATE_ID)
             .aiDigestTemplateId("")
+            .aiDigestFieldTopic("thing1")
+            .aiDigestFieldContent("thing2")
+            .aiDigestFieldTime("time3")
+            .aiDigestFieldTip("thing3")
             .newPostEnabled(true)
             .aiDigestEnabled(true)
+            .aiDigestScheduleEnabled(true)
+            .aiDigestMaxUsersPerRun(200)
+            .aiDigestPushHours("8,12,18,21")
             .checkIntervalMinutes(5)
             .maxItemsPerMessage(3)
             .dailySendLimit(500)
@@ -70,8 +78,22 @@ public final class PushConfigHelper {
             .enabled(node.path("enabled").asBoolean(false))
             .templateId(text(node.path("templateId"), fallback.getTemplateId()))
             .aiDigestTemplateId(text(node.path("aiDigestTemplateId"), ""))
+            .aiDigestFieldTopic(text(node.path("aiDigestFieldTopic"),
+                fallback.getAiDigestFieldTopic()))
+            .aiDigestFieldContent(text(node.path("aiDigestFieldContent"),
+                fallback.getAiDigestFieldContent()))
+            .aiDigestFieldTime(text(node.path("aiDigestFieldTime"),
+                fallback.getAiDigestFieldTime()))
+            .aiDigestFieldTip(text(node.path("aiDigestFieldTip"),
+                fallback.getAiDigestFieldTip()))
             .newPostEnabled(node.path("newPostEnabled").asBoolean(true))
             .aiDigestEnabled(node.path("aiDigestEnabled").asBoolean(true))
+            .aiDigestScheduleEnabled(node.path("aiDigestScheduleEnabled").asBoolean(true))
+            .aiDigestMaxUsersPerRun(clamp(
+                node.path("aiDigestMaxUsersPerRun").asInt(fallback.getAiDigestMaxUsersPerRun()),
+                1, MAX_RUN_USERS))
+            .aiDigestPushHours(text(node.path("aiDigestPushHours"),
+                fallback.getAiDigestPushHours()))
             .checkIntervalMinutes(clamp(
                 node.path("checkIntervalMinutes").asInt(fallback.getCheckIntervalMinutes()),
                 MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES))
@@ -104,6 +126,32 @@ public final class PushConfigHelper {
         var enabled = KIND_AI_DIGEST.equals(kind) ? config.isAiDigestEnabled()
             : config.isNewPostEnabled();
         return enabled && !templateOf(config, kind).isEmpty();
+    }
+
+    /**
+     * 解析用户可选的推送整点（0-23，去重升序）。
+     *
+     * <p>整点而不是任意分钟：服务端按整点分桶跑批量生成，一轮只处理「选了该时段」的用户；
+     * 开放任意分钟会让调度退化成「每分钟都要扫全量用户」。</p>
+     */
+    public static java.util.List<Integer> parsePushHours(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(raw.split("[,，;；\s]+"))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .map(s -> {
+                try {
+                    return Integer.parseInt(s);
+                } catch (NumberFormatException ex) {
+                    return -1;
+                }
+            })
+            .filter(hour -> hour >= 0 && hour <= 23)
+            .distinct()
+            .sorted()
+            .toList();
     }
 
     /** 归一化消息类型：认不出来返回空串（不猜） */

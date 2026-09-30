@@ -95,6 +95,8 @@ public final class CommercialConfigChecks {
         checkPointsEngine(points, dailyTask, checks);
         checkDuplicates(goods, mall, duplicateOutfitKeys, checks);
         checkTicketValue(content, ticket, goods, checks);
+        checkPricingBalance(goods, mall, ticket, points, dailyTask, level, outfits,
+            configs.getOrDefault(GROUP_AI_CONTENT, emptyObject()), checks);
         return List.copyOf(checks);
     }
 
@@ -410,6 +412,211 @@ public final class CommercialConfigChecks {
             }
         }
         return cheapest;
+    }
+
+    // ==================== 定价体检（积分 vs 现金） ====================
+    //
+    // 这一组回答同一个问题：**用户会不会觉得「攒积分就够了」而不掏钱？**
+    // 判断依据不是绝对值，而是「每天能赚多少」与「想要的东西要攒几天」的比值。
+
+    /** 健康区间：1 元对应的积分（低于下限 = 积分太便宜，高于上限 = 积分太难获得） */
+    private static final int RATE_MIN = 80;
+    private static final int RATE_MAX = 150;
+
+    /** 中度活跃用户的日收入估算（浏览 + 评论 + 点赞 + 签到 + 每日任务），用于换算「攒几天」 */
+    static int estimateDailyIncome(JsonNode points, JsonNode dailyTask) {
+        var rules = points.path("rules");
+        var browse = Math.min(intVal(rules.path("browse"), "dailyMaxPoints", 0),
+            intVal(rules.path("browse"), "points", 0)
+                * safeCount(intVal(rules.path("browse"), "dailyMaxCount", 0)));
+        // 评论与点赞按「一半次数」折算：中度用户不会把每项都刷满
+        var comment = Math.min(intVal(rules.path("comment"), "dailyMaxPoints", 0),
+            intVal(rules.path("comment"), "points", 0)
+                * Math.max(1, safeCount(intVal(rules.path("comment"), "dailyMaxCount", 0)) / 2));
+        var upvote = Math.min(intVal(rules.path("upvote"), "dailyMaxPoints", 0),
+            intVal(rules.path("upvote"), "points", 0)
+                * Math.max(1, safeCount(intVal(rules.path("upvote"), "dailyMaxCount", 0)) / 2));
+        var signIn = intVal(rules.path("signIn"), "points", 0);
+        // 任务按下限估算：投票不是每天都有，不计入
+        var taskPoints = arrayOf(dailyTask, "tasks").stream()
+            .filter(task -> bool(task, "enabled", true))
+            .filter(task -> !"vote".equals(text(task, "type")))
+            .mapToInt(task -> intVal(task, "points", 0))
+            .sum();
+        return browse + comment + upvote + signIn + taskPoints;
+    }
+
+    /** 0 表示「不限制次数」：按 10 估算一个正常人的量，而不是按无限算 */
+    private static int safeCount(int count) {
+        return count <= 0 ? 10 : count;
+    }
+
+    /** 确定性日消耗上限（不含幸运礼盒这类无上限的口） */
+    static int estimateDailySpend(JsonNode mall) {
+        return arrayOf(mall, "exchangeItems").stream()
+            .mapToInt(item -> intVal(item, "points", 0)
+                * Math.max(1, intVal(item, "dailyMaxCount", 1)))
+            .sum();
+    }
+
+    private static void checkPricingBalance(List<JsonNode> goods, JsonNode mall, JsonNode ticket,
+        JsonNode points, JsonNode dailyTask, JsonNode level, List<JsonNode> outfits,
+        JsonNode aiContent, List<ConfigCheckDTO> checks) {
+        if (!bool(points, "enabled", false)) {
+            // 积分系统没开：整套定价比例无从谈起，不报（避免噪音）
+            return;
+        }
+        var dailyIncome = estimateDailyIncome(points, dailyTask);
+        var dailySpend = estimateDailySpend(mall);
+        checkImplicitRate(goods, mall, ticket, checks);
+        checkInflation(dailyIncome, dailySpend, checks);
+        checkAiContentRate(goods, aiContent, checks);
+        checkFarmablePoints(points, checks);
+        checkOutfitRate(goods, outfits, dailyIncome, checks);
+    }
+
+    /**
+     * 隐含汇率：阅读券的「积分价 ÷ 现金单价」。
+     *
+     * <p>券是唯一能直接替代现金支出的东西（1 张券 = 省一次付费文章），所以它的比价
+     * 最能说明「攒积分是否比付钱划算」。低于 80 分/元 = 积分太便宜。</p>
+     */
+    private static void checkImplicitRate(List<JsonNode> goods, JsonNode mall, JsonNode ticket,
+        List<ConfigCheckDTO> checks) {
+        var ticketGoods = goods.stream()
+            .filter(item -> "content_ticket".equals(text(item, "type")))
+            .filter(item -> intVal(item, "price", 0) > 0)
+            .findFirst().orElse(null);
+        if (ticketGoods == null) {
+            return;
+        }
+        var perTicketCents = intVal(ticketGoods, "price", 0)
+            / Math.max(1, intVal(ticketGoods, "value", 1));
+        var pointsPrice = arrayOf(mall, "exchangeItems").stream()
+            .filter(item -> "content_ticket".equals(text(item, "key")))
+            .mapToInt(item -> intVal(item, "points", 0))
+            .filter(price -> price > 0)
+            .findFirst().orElse(intVal(ticket, "exchangePoints", 0));
+        if (pointsPrice <= 0 || perTicketCents <= 0) {
+            return;
+        }
+        var rate = pointsPrice * 100 / perTicketCents;
+        if (rate < RATE_MIN) {
+            checks.add(ConfigCheckDTO.warn(GROUP_MALL, "积分太便宜：用户不会用现金买券",
+                "当前 1 元 ≈ " + rate + " 积分（券 " + pointsPrice + " 积分 vs 现金 ￥"
+                    + cents(perTicketCents) + "/张），低于健康下限 " + RATE_MIN + "。"
+                    + "建议券的积分价提到 " + suggestPoints(perTicketCents) + " 分左右，"
+                    + "并同步压低「积分规则」里的每日产出。"));
+        } else if (rate > RATE_MAX) {
+            checks.add(ConfigCheckDTO.info(GROUP_MALL, "积分偏难获得：注意参与感",
+                "当前 1 元 ≈ " + rate + " 积分，高于 " + RATE_MAX
+                    + "：用户会觉得「攒积分不划算」而干脆不参与积分体系。"
+                    + "建议券的积分价调到 " + suggestPoints(perTicketCents) + " 分左右。"));
+        }
+    }
+
+    /** 通胀体检：日产出 > 确定性日消耗的 1.5 倍 → 积分只会越攒越多 */
+    private static void checkInflation(int dailyIncome, int dailySpend,
+        List<ConfigCheckDTO> checks) {
+        if (dailyIncome <= 0) {
+            return;
+        }
+        if (dailySpend <= 0) {
+            checks.add(ConfigCheckDTO.warn(GROUP_MALL, "积分没有出口，会持续通胀",
+                "估算日产出约 " + dailyIncome + " 分，但「积分商城」里没有任何兑换项。"
+                    + "积分无处可花，用户自然也不珍惜。建议至少保留「阅读券」与「数据看板」两项。"));
+            return;
+        }
+        if (dailyIncome > dailySpend * 3 / 2) {
+            checks.add(ConfigCheckDTO.warn(GROUP_MALL, "积分会持续通胀（产出 > 消耗）",
+                "估算日产出约 " + dailyIncome + " 分，确定性日消耗仅 " + dailySpend
+                    + " 分（不含幸运礼盒这类无上限的口）。差额会被用户攒下来，"
+                    + "几个月后积分就不再值钱。建议二选一：压低「积分规则」的每日封顶，"
+                    + "或提高兑换项的积分价。"));
+        }
+    }
+
+    /** AI 定制内容跨通道比价：积分价 vs 现金价（都是 30 天） */
+    private static void checkAiContentRate(List<JsonNode> goods, JsonNode aiContent,
+        List<ConfigCheckDTO> checks) {
+        var cashCents = goods.stream()
+            .filter(item -> "ai_content".equals(text(item, "type")))
+            .mapToInt(item -> intVal(item, "price", 0))
+            .filter(price -> price > 0)
+            .findFirst().orElse(0);
+        var pointsPrice = intVal(aiContent, "pointsPrice", 0);
+        if (cashCents <= 0 || pointsPrice <= 0) {
+            return;
+        }
+        var rate = pointsPrice * 100 / cashCents;
+        if (rate < RATE_MIN) {
+            checks.add(ConfigCheckDTO.warn(GROUP_AI_CONTENT, "AI 定制内容的积分价过低",
+                "积分 " + pointsPrice + " 分 vs 现金 ￥" + cents(cashCents)
+                    + "（1 元 ≈ " + rate + " 积分）：用户攒几天就能白拿一个月，"
+                    + "现金通道会卖不动。建议提到 " + suggestPoints(cashCents) + " 分左右。"));
+        }
+    }
+
+    /**
+     * 易刷项体检：浏览 + 点赞的日封顶合计。
+     *
+     * <p>这两项没有任何内容成本（点一下就算），是脚本刷分的首选；占比过高会稀释积分价值，
+     * 让认真创作的用户反而拿不到多少。</p>
+     */
+    private static void checkFarmablePoints(JsonNode points, List<ConfigCheckDTO> checks) {
+        var rules = points.path("rules");
+        var farmable = intVal(rules.path("browse"), "dailyMaxPoints", 0)
+            + intVal(rules.path("upvote"), "dailyMaxPoints", 0);
+        if (farmable > 20) {
+            checks.add(ConfigCheckDTO.warn(GROUP_POINTS, "浏览+点赞的日封顶偏高，易被刷分",
+                "两项合计 " + farmable + " 分/天，且没有内容成本（点一下就算）。"
+                    + "建议各降到 5 分（合计 10 分），把积分留给评论、投票这类有真实付出的行为。"));
+        }
+    }
+
+    /** 装扮跨通道比价：积分价 vs 现金价；并提示最便宜那档的「攒够天数」 */
+    private static void checkOutfitRate(List<JsonNode> goods, List<JsonNode> outfits,
+        int dailyIncome, List<ConfigCheckDTO> checks) {
+        var cashByStyle = new HashMap<String, Integer>();
+        for (var item : goods) {
+            if ("outfit".equals(text(item, "type"))) {
+                cashByStyle.putIfAbsent(text(item, "style"), intVal(item, "price", 0));
+            }
+        }
+        for (var outfit : outfits) {
+            var points = intVal(outfit, "points", 0);
+            var cashCents = cashByStyle.getOrDefault(text(outfit, "style"), 0);
+            if (points <= 0 || cashCents <= 0) {
+                continue;
+            }
+            var rate = points * 100 / cashCents;
+            if (rate < RATE_MIN) {
+                checks.add(ConfigCheckDTO.info(GROUP_LEVEL, "装扮的积分价低于现金等价",
+                    "「" + text(outfit, "name") + "」积分 " + points + " 分 vs 现金 ￥"
+                        + cents(cashCents) + "（1 元 ≈ " + rate + " 积分）："
+                        + "用户会用积分换而不是买。装饰品建议按「现金价 × 100」平价定价。"));
+            }
+        }
+        if (dailyIncome <= 0 || outfits.isEmpty()) {
+            return;
+        }
+        var cheapest = outfits.stream().mapToInt(o -> intVal(o, "points", 0))
+            .filter(v -> v > 0).min().orElse(0);
+        if (cheapest > 0 && (cheapest + dailyIncome - 1) / dailyIncome <= 3) {
+            checks.add(ConfigCheckDTO.info(GROUP_LEVEL, "装扮太容易获得",
+                "最便宜的装扮只要 " + cheapest + " 分，按中度活跃约 " + dailyIncome
+                    + " 分/天算，" + ((cheapest + dailyIncome - 1) / dailyIncome)
+                    + " 天就能拿到——几乎没有「攒」的过程，也就没有获得感和购买动机。"));
+        }
+    }
+
+    /** 建议积分价：按「1 元 = 100 积分」平价折算（price 的单位是「分」，故 ×1 即 ×100 积分/元） */
+    private static int suggestPoints(int cashCents) {
+        return Math.max(1, cashCents);
+    }
+
+    private static String cents(int value) {
+        return String.format("%.2f", value / 100.0);
     }
 
     // ==================== JSON 读取工具 ====================

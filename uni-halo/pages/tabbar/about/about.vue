@@ -92,47 +92,6 @@
 			</view>
 		</view>
 
-		<!-- ========== 2.6 开启盲盒（当前唯一的抽奖玩法） ========== -->
-		<!-- 抽奖类活动要求公示全部奖品与中奖概率，因此概率直接印在每个奖品上，
-		     不折叠、不跳转——公示与展示合一，避免「公示藏在二级页」的合规风险 -->
-		<view v-if="calcPointsEnabled && luckyEnabled" class="section-card lucky-card">
-			<view class="lk-head">
-				<view class="lk-title-wrap">
-					<text class="lk-emoji">🎁</text>
-					<view>
-						<text class="lk-title">开启盲盒</text>
-						<text class="lk-sub">抽完即知结果，奖品由站长发放</text>
-					</view>
-				</view>
-				<text class="lk-cost">{{ luckyCost }} 积分/次</text>
-			</view>
-
-			<scroll-view scroll-x class="lk-prizes-scroll" :show-scrollbar="false">
-				<view class="lk-prizes">
-					<view v-for="(prize, idx) in luckyPrizes" :key="idx" class="lk-prize">
-						<text class="lk-prize-emoji">{{ prize.emoji }}</text>
-						<text class="lk-prize-name">{{ prize.name }}</text>
-						<text v-if="prize.probabilityText" class="lk-prize-prob">{{ prize.probabilityText }}</text>
-					</view>
-				</view>
-			</scroll-view>
-
-			<tm-button theme="orange" :block="true" :loading="luckyBoxShow" @click="fnOpenLucky">
-				立即开启
-			</tm-button>
-
-			<!-- 抽奖记录与消耗明细（中奖信息、物流进度、每盒积分扣减都在这一页） -->
-			<view class="lk-entry" hover-class="lk-entry-hover" @click="fnToLuckyRecords">
-				<text class="lk-entry-icon">📜</text>
-				<view class="lk-entry-main">
-					<text class="lk-entry-title">抽奖记录与消耗明细</text>
-					<text class="lk-entry-sub">中奖信息 · 发货进度 · 每次开盒消耗</text>
-				</view>
-				<text v-if="pendingClaimCount > 0" class="lk-entry-badge">{{ pendingClaimCount }}</text>
-				<text class="lk-entry-arrow">›</text>
-			</view>
-		</view>
-
 		<!-- ========== 3. 我的服务 ========== -->
 		<view class="section-card">
 			<view class="sc-title">我的服务</view>
@@ -275,8 +234,6 @@
 			</view>
 		</view>
 		<points-toast></points-toast>
-		<!-- 开盒动画（与「积分兑换」页共用同一组件，交互完全一致） -->
-		<lucky-box :show.sync="luckyBoxShow" @drawn="fnOnLuckyDrawn"></lucky-box>
 		<!-- 自绘底部导航：后台「底部导航」开关关闭时不渲染，仍用微信原生底栏 -->
 		<uh-tabbar current="about"></uh-tabbar>
 	</view>
@@ -311,7 +268,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	import tmInput from '@/tm-vuetify/components/tm-input/tm-input.vue';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import PointsToast from '@/components/points-toast/points-toast.vue';
-	import LuckyBox from '@/components/lucky-box/lucky-box.vue';
 
 	export default {
 		components: {
@@ -320,7 +276,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			tmInput,
 			wxLoginDialog,
 			PointsToast,
-			LuckyBox,
 			uhTabbar,
 		},
 			data() {
@@ -345,13 +300,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				pointsTodayEarned: 0,
 				signInStatus: null,
 				signInLoading: false,
-				/** 盲盒：入口配置 + 开盒弹窗开关（开盒过程由 lucky-box 组件负责） */
-				luckyEnabled: false,
-				luckyCost: 20,
-				luckyPrizes: [],
-				luckyBoxShow: false,
-				/** 我的中奖礼品（发放进度与物流），抽奖记录的唯一入口 */
-				myClaims: [],
 				pointsApiReady: null,
 				pointsLocalMode: false,
 					navList: [],
@@ -362,15 +310,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		computed: {
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs
-			},
-			/**
-			 * 待处理的中奖单数量（待填写收货信息）。
-			 *
-			 * 中奖列表已移到「抽奖记录」页，这里只用于入口行上的角标提醒——
-			 * 「待填写」是唯一需要用户操作的状态，漏掉会让礼品一直发不出去。
-			 */
-			pendingClaimCount() {
-				return (this.myClaims || []).filter((claim) => claim && claim.status === 'pending').length;
 			},
 			wxAppConfig() {
 				return this.haloConfigs?.wxAppConfig || {};
@@ -453,15 +392,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			 */
 			calcShowPayRelated() {
 				return this.calcPayEnabled || this.haloConfigs?.contentConfig?.enabled === true;
-			},
-			/**
-			 * 是否展示「AI 定制内容」入口。
-			 *
-			 * 只看站长开没开这个功能：未购买的用户点进去是权益说明与购买引导，
-			 * 所以这里不需要判断购买态（省掉一次接口请求）。
-			 */
-			calcShowAiContent() {
-				return this.haloConfigs?.aiContentConfig?.enabled === true;
 			},
 			calcPointsBalance() {
 				if (!this.isLoggedIn) return '-';
@@ -588,19 +518,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 						requireLogin: true
 					});
 				}
-				// AI 定制内容是付费权益：站长开了这个功能才有入口，
-				// 未购买的用户点进去看到的是权益说明与购买（不是空页面），所以不额外判断购买态
-				if (this.calcShowAiContent) {
-					list.push({
-						text: 'AI 定制内容',
-						// 图标必须用图标字体里真实存在的名字（见 common/icons/*.css）：
-						// 写错不会报错，只会渲染成一个空白方块
-						icon: 'halocoloricon-classify',
-						color: 'light-blue',
-						path: '/pagesA/ai-content/ai-content',
-						requireLogin: true
-					});
-				}
 				list.push({
 					text: '应用配置',
 					icon: 'haloicon-shezhi',
@@ -627,8 +544,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnSyncPointsApiStateFromCache();
 			this.fnCheckLoginStatus();
 			this.fnRefreshPointsData();
-			// 盲盒配置属站点公开信息（未登录也能取），与登录态无关，启动时即拉
-			this.fnLoadLucky();
 			uni.$on('wx_login_status_changed', this.fnOnLoginStatusChanged);
 			uni.$on('points_updated', this.fnOnPointsUpdatedAndPublish);
 			uni.$on('points_config_ready', this.fnOnPointsConfigReady);
@@ -644,8 +559,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
-			// 从中奖填写页返回时刷新发放状态，避免列表显示过期进度
-			this.fnLoadLuckyClaims();
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnLoginStatusChanged);
@@ -728,9 +641,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					if (this.calcPointsEnabled) {
 						this.fnRefreshPointsOverview({ forceRemote: true });
 					}
-					this.fnLoadLucky();
-					// 中奖记录需要登录态才能查，登录成功后补拉一次
-					this.fnLoadLuckyClaims();
 				}
 				if (!this.isLoggedIn) {
 					this.pointsBalance = 0;
@@ -738,9 +648,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					this.signInStatus = null;
 					this.pointsApiReady = null;
 					this.pointsLocalMode = false;
-					// 抽奖配置属于站点公开信息，不需要登录；此处重置开盒状态与中奖记录
-					this.luckyBoxShow = false;
-					this.myClaims = [];
 				}
 			},
 
@@ -897,93 +804,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				await this.fnRefreshPointsOverview({ silent: true });
 			},
 
-			/**
-			 * 拉取盲盒配置（开启才显示专区；失败静默，不影响本页其它功能）。
-			 * 配置属站点公开信息，未登录也能拿到，因此不放在登录回调里。
-			 */
-			async fnLoadLucky() {
-				try {
-					const res = await this.$httpApi.v2.getLuckyConfig();
-					const data = res?.data || res || {};
-					if (!data?.enabled) {
-						this.luckyEnabled = false;
-						return;
-					}
-					this.luckyEnabled = true;
-					this.luckyCost = Number(data.costPoints || 20);
-					this.luckyPrizes = (Array.isArray(data.prizes) ? data.prizes : [])
-						.filter((prize) => prize && prize.name)
-						.map((prize) => {
-							const raw = prize.probability;
-							// 概率由服务端统一计算下发（与抽取实现同口径），前端只做展示；
-							// 0 或缺失时不显示，避免出现「中奖概率 0%」这类误导文案
-							const hasProbability = typeof raw === 'number' && isFinite(raw) && raw > 0;
-							return {
-								name: prize.name,
-								emoji: prize.emoji || '🎁',
-								desc: prize.desc || '',
-								probabilityText: hasProbability ? `${raw}%` : ''
-							};
-						});
-				} catch (err) {
-					// 静默：接口不可用时不显示盲盒专区
-					this.luckyEnabled = false;
-				}
-			},
-
-			/** 我的中奖礼品（发放进度与物流），失败静默 */
-			async fnLoadLuckyClaims() {
-				if (!this.isLoggedIn) {
-					this.myClaims = [];
-					return;
-				}
-				try {
-					const res = await this.$httpApi.v2.getMyLuckyClaims();
-					const raw = Array.isArray(res) ? res : (res?.data || res || {});
-					const list = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : []);
-					this.myClaims = list.map((item) => {
-						const normalized = Object.assign({}, item);
-						// 兼容新版 winningId / 旧接口 id 两种单号字段
-						if (!normalized.winningId && item && item.id) {
-							normalized.winningId = item.id;
-						}
-						return normalized;
-					});
-				} catch (err) {
-					// 静默：拿不到中奖记录不影响页面其它部分
-					this.myClaims = [];
-				}
-			},
-
-			/** 抽奖记录页（中奖信息 + 消耗明细） */
-			fnToLuckyRecords() {
-				if (!this.fnEnsureLogin()) return;
-				uni.navigateTo({
-					url: '/pagesA/lucky-records/lucky-records',
-					fail: () => uni.showToast({ title: '页面打开失败，请重试', icon: 'none' })
-				});
-			},
-
-			/** 打开开盒弹窗（开盒过程与结果都在 lucky-box 组件内） */
-			fnOpenLucky() {
-				if (!this.fnEnsureLogin()) return;
-				this.luckyBoxShow = true;
-			},
-
-			/**
-			 * 开盒结果回调：同步余额并刷新中奖记录。
-			 *
-			 * 余额变化同时通过 emitPointsUpdated 广播，让其它页面（身份中心、积分明细）
-			 * 不会残留过期余额——开盒是积分消耗点，这一步不能省。
-			 */
-			async fnOnLuckyDrawn(data) {
-				if (data?.balance != null && this.isLoggedIn) {
-					const balance = Number(data.balance);
-					this.fnOnPointsUpdated({ balance });
-					emitPointsUpdated({ balance });
-				}
-				await this.fnLoadLuckyClaims();
-			},
 
 			fnHandleUserCard() {
 				if (this.isLoggedIn) {
@@ -1269,7 +1089,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							confirmText: '是',
 							confirmColor: '#2F54EB'
 						})
-						.then(() => { uni.navigateTo({ url: '/pagesB/login/login' }); })
+						.then(() => {
+							// 小程序端没有独立的超管登录页（pagesB 分包不存在，跳过去是静默失败）：
+							// 走微信登录获得身份，管理员身份由绑定 Halo 账号承载
+							uni.navigateTo({
+								url: '/pagesA/setting/setting',
+								fail: () => uni.showToast({ title: '请先在设置里完成登录', icon: 'none' })
+							});
+						})
 						.catch(() => {});
 						return;
 					}
@@ -1681,7 +1508,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 	.points-actions-grid {
 		display: grid;
-		/* 「每日翻牌」已下线（抽奖玩法收敛为盲盒），三宫格改两宫格 */
+		/* 三宫格改两宫格 */
 		grid-template-columns: repeat(2, 1fr);
 		gap: 12rpx;
 		margin-top: 14rpx;
@@ -1750,163 +1577,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			background: #c9dcf6;
 			color: #5a7fbe;
 		}
-	}
-
-	/* ===== 开启盲盒专区（当前唯一的抽奖玩法） =====
-	   用暖色渐变把这张卡与周围白卡区分开，视觉重心落在唯一玩法上；
-	   正文保持深色以保证可读性（深色底 + 白字在浅色主题下观感更差）。 */
-	.lucky-card {
-		padding: 26rpx 28rpx 28rpx;
-		background: linear-gradient(160deg, #fff8ec 0%, #ffeedd 100%);
-		border: 2rpx solid #ffe0c2;
-	}
-
-	.lk-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.lk-title-wrap {
-		display: flex;
-		align-items: center;
-		min-width: 0;
-	}
-
-	.lk-emoji {
-		font-size: 48rpx;
-		margin-right: 16rpx;
-		line-height: 1;
-	}
-
-	.lk-title {
-		display: block;
-		font-size: 32rpx;
-		font-weight: 700;
-		color: #8a5a12;
-	}
-
-	.lk-sub {
-		display: block;
-		margin-top: 6rpx;
-		font-size: 21rpx;
-		color: #b08a56;
-	}
-
-	.lk-cost {
-		flex-shrink: 0;
-		font-size: 22rpx;
-		font-weight: 600;
-		color: #e8862b;
-		background: rgba(255, 255, 255, 0.85);
-		padding: 6rpx 16rpx;
-		border-radius: 999rpx;
-	}
-
-	.lk-prizes-scroll {
-		margin: 20rpx 0 6rpx;
-		white-space: nowrap;
-	}
-
-	.lk-prizes {
-		display: inline-flex;
-		padding-bottom: 4rpx;
-	}
-
-	/* 奖品项：概率直接印在奖品上，公示与展示合一（抽奖类活动必须公示全部奖品与概率） */
-	.lk-prize {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		width: 132rpx;
-		margin-right: 14rpx;
-		padding: 16rpx 8rpx 12rpx;
-		border-radius: 16rpx;
-		background: rgba(255, 255, 255, 0.92);
-		box-shadow: 0 4rpx 14rpx rgba(200, 140, 60, 0.08);
-	}
-
-	.lk-prize-emoji {
-		font-size: 44rpx;
-		line-height: 1.2;
-	}
-
-	.lk-prize-name {
-		margin-top: 6rpx;
-		font-size: 20rpx;
-		color: #7a6a52;
-		max-width: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.lk-prize-prob {
-		margin-top: 8rpx;
-		font-size: 19rpx;
-		font-weight: 600;
-		color: #e8862b;
-		background: #fff3e0;
-		padding: 2rpx 12rpx;
-		border-radius: 999rpx;
-	}
-
-	/* ===== 抽奖记录入口行（中奖列表已移到该页，专区只留入口 + 待处理角标） ===== */
-	.lk-entry {
-		display: flex;
-		align-items: center;
-		margin-top: 22rpx;
-		padding: 18rpx 20rpx;
-		border-radius: 16rpx;
-		background: rgba(255, 255, 255, 0.9);
-	}
-
-	.lk-entry-hover {
-		background: rgba(255, 255, 255, 0.7);
-	}
-
-	.lk-entry-icon {
-		font-size: 34rpx;
-		margin-right: 14rpx;
-	}
-
-	.lk-entry-main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.lk-entry-title {
-		display: block;
-		font-size: 26rpx;
-		font-weight: 600;
-		color: #8a5a12;
-	}
-
-	.lk-entry-sub {
-		display: block;
-		margin-top: 4rpx;
-		font-size: 20rpx;
-		color: #b08a56;
-	}
-
-	.lk-entry-badge {
-		flex-shrink: 0;
-		min-width: 34rpx;
-		height: 34rpx;
-		line-height: 34rpx;
-		text-align: center;
-		margin-right: 8rpx;
-		padding: 0 10rpx;
-		border-radius: 999rpx;
-		background: $uh-danger;
-		color: #fff;
-		font-size: 20rpx;
-	}
-
-	.lk-entry-arrow {
-		flex-shrink: 0;
-		font-size: 30rpx;
-		color: #cbbba3;
 	}
 
 	/* 周签到点阵：7 个点横排一行。

@@ -1297,14 +1297,6 @@ export default {
 	},
 
 	/**
-	 * 每日翻牌抽奖（每天一次）
-	 * POST /points/draw
-	 */
-	claimPointsDraw: async () => {
-		return requestPointsApi({ apiKey: 'draw', method: 'POST', data: {} });
-	},
-
-	/**
 	 * 积分兑换：扣除积分发放权益
 	 * POST /points/exchange
 	 */
@@ -1322,14 +1314,6 @@ export default {
 	 */
 	getExchangeBalance: async () => {
 		return requestPointsApi({ apiKey: 'exchangeBalance', method: 'GET' });
-	},
-
-	/**
-	 * 今日翻牌状态（不消耗积分）
-	 * GET /points/draw/status
-	 */
-	getPointsDrawStatus: async () => {
-		return requestPointsApi({ apiKey: 'drawStatus', method: 'GET' });
 	},
 
 	/**
@@ -1472,44 +1456,6 @@ export default {
 				}
 			});
 		});
-	},
-
-	/**
-	 * 幸运抽奖配置（规则公示）
-	 * GET /points/lucky/config
-	 */
-	getLuckyConfig: async () => {
-		return requestPointsApi({ apiKey: 'luckyConfig', method: 'GET' });
-	},
-
-	/**
-	 * 参与一次幸运抽奖（消耗积分）
-	 * POST /points/lucky/draw
-	 */
-	drawLuckyGift: async () => {
-		return requestPointsApi({ apiKey: 'luckyDraw', method: 'POST', data: {} });
-	},
-
-	/**
-	 * 中奖后提交收货信息
-	 * POST /points/lucky/submit
-	 */
-	submitLuckyClaim: async (data = {}) => {
-		const body = {
-			winningId: String(data.winningId || ''),
-			contactName: String(data.contactName || ''),
-			phone: String(data.phone || ''),
-			address: String(data.address || '')
-		};
-		return requestPointsApi({ apiKey: 'luckySubmit', method: 'POST', data: body });
-	},
-
-	/**
-	 * 我的中奖单列表（含待填写收货信息的提醒）
-	 * GET /points/lucky/mine
-	 */
-	getMyLuckyClaims: async () => {
-		return requestPointsApi({ apiKey: 'luckyMine', method: 'GET' });
 	},
 
 	/**
@@ -1864,8 +1810,33 @@ export default {
 				enabled: payload.enabled !== false,
 				categories: payload.categories || [],
 				sources: payload.sources || [],
-				keywords: payload.keywords || []
+				keywords: payload.keywords || [],
+				customTopics: payload.customTopics || []
 			},
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 立即生成并推送今天的简报（没有推送额度时返回 pushed=false + needQuota）。
+	 */
+	pushAiContentNow: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/push'),
+			method: 'POST',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 积分兑换「AI 定制内容」权益：扣积分 + 在现有到期时间上叠加天数。
+	 *
+	 * <p>通道未开启（pointsPrice=0）或积分不足时服务端返回可读原因。</p>
+	 */
+	redeemAiContent: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/redeem'),
+			method: 'POST',
 			header: buildOpenidHeader()
 		});
 	},

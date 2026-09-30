@@ -19,6 +19,7 @@ import pro.uhalo.uni.dto.DigestStatsDTO;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
 import pro.uhalo.uni.dto.HaloPostPublishResultDTO;
 import pro.uhalo.uni.infra.DigestPersistence;
+import pro.uhalo.uni.infra.DigestSeenStore;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.services.DigestAiClient;
 import pro.uhalo.uni.services.DigestAssetUploader;
@@ -47,6 +48,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -84,6 +86,7 @@ public class DigestServiceImpl implements DigestService {
 
     private final ReactiveSettingFetcher settingFetcher;
     private final DigestPersistence persistence;
+    private final DigestSeenStore seenStore;
     private final DigestFeedService feedService;
     private final DigestAiClient aiClient;
     private final DigestAiModelService aiModelService;
@@ -301,9 +304,12 @@ public class DigestServiceImpl implements DigestService {
         var catalog = catalogOf(config);
         var trace = new RunTrace(config);
         return feedService.fetchRecent(config.getHours())
-            .flatMap(feeds -> {
-                // 去重放在评分之前：转载的同一篇文章没必要重复评分，也不该占两个名额
-                var articles = deduplicate(feeds.getArticles(), trace);
+            .flatMap(feeds -> seenStore.recentKeys()
+                .flatMap(historicalKeys -> {
+                // 去重放在评分之前：转载的同一篇文章没必要重复评分，也不该占两个名额；
+                // 近 14 天发过的文章在这里一并过滤——时间窗（48h）与补抓（168h）天然跨天重叠，
+                // 没有这道过滤，第二天的日报会大量复述昨天的内容
+                var articles = deduplicate(feeds.getArticles(), trace, historicalKeys);
                 return ensureHasArticles(feeds)
                     .then(scoreAll(articles, config, trace))
                     .map(scored -> selectCandidates(scored, config))
@@ -313,7 +319,7 @@ public class DigestServiceImpl implements DigestService {
                         config.getMinPerCategory(), config.getMaxPerCategory(), config.getTopN(),
                         config.isRequireImage()))
                     .flatMap(selection -> supplementMissingCategories(selection, catalog,
-                        feeds.getArticles(), config, trace))
+                        feeds.getArticles(), config, trace, historicalKeys))
                     .flatMap(selection -> ensureHasSelection(selection, config)
                         .then(summarizeBatchwise(selection.articles(), config, trace))
                         .flatMap(selected -> generateOverview(selected, config, trace)
@@ -327,7 +333,7 @@ public class DigestServiceImpl implements DigestService {
                                             config, startedAt, startedMs))))))
                         .flatMap(output -> persistDraft(report, output, config))
                         .flatMap(output -> publishIfEnabled(output, config, publish)));
-            });
+                }));
     }
 
     /**
@@ -371,9 +377,14 @@ public class DigestServiceImpl implements DigestService {
      *
      * <p>同一条去重键保留**先出现**的那一份：去重发生在评分之前，此时还没有分数可比，
      * 而「先出现」至少是可预期、可复现的。</p>
+     *
+     * <p>{@code historicalKeys} 是近 14 天日报已发文章的去重键（见 {@link DigestSeenStore}）：
+     * 命中的一律跳过——隔天重复是用户最能感知的质量问题，分类缺一篇比发重复的强。</p>
      */
-    private List<DigestArticleDTO> deduplicate(List<DigestArticleDTO> articles, RunTrace trace) {
+    private List<DigestArticleDTO> deduplicate(List<DigestArticleDTO> articles, RunTrace trace,
+        Set<String> historicalKeys) {
         var kept = new java.util.LinkedHashMap<String, DigestArticleDTO>();
+        var historyFiltered = 0;
         for (var article : articles) {
             var key = DigestTextUtils.dedupKey(article.getLink(), article.getTitle());
             if (!StringUtils.hasText(key)) {
@@ -381,10 +392,18 @@ public class DigestServiceImpl implements DigestService {
                 // 否则这些「无从判断」的条目会被合成一篇、静默丢掉内容
                 key = "@" + System.identityHashCode(article);
             }
+            if (historicalKeys.contains(key)) {
+                historyFiltered++;
+                continue;
+            }
             kept.putIfAbsent(key, article);
         }
         var list = new ArrayList<>(kept.values());
-        trace.deduped = articles.size() - list.size();
+        trace.deduped = articles.size() - list.size() - historyFiltered;
+        trace.historyFiltered = historyFiltered;
+        if (historyFiltered > 0) {
+            log.info("[UniHalo][Digest] 跨天去重：{} 篇近期已发过，直接跳过", historyFiltered);
+        }
         if (trace.deduped > 0) {
             log.info("[UniHalo][Digest] 链接去重：{} 篇重复转载，保留 {} 篇参与评分",
                 trace.deduped, list.size());
@@ -409,7 +428,8 @@ public class DigestServiceImpl implements DigestService {
      */
     private Mono<DigestSelection.CategorySelection> supplementMissingCategories(
         DigestSelection.CategorySelection selection, DigestCategoryCatalog catalog,
-        List<DigestArticleDTO> fetched, DigestConfigDTO config, RunTrace trace) {
+        List<DigestArticleDTO> fetched, DigestConfigDTO config, RunTrace trace,
+        Set<String> historicalKeys) {
         if (!selection.hasMissingCategories()) {
             return Mono.just(selection);
         }
@@ -428,7 +448,7 @@ public class DigestServiceImpl implements DigestService {
         log.info("[UniHalo][Digest] 分类缺口 {} 个（{}），用 {} 小时窗口补抓一轮",
             missing.size(), labels(missing, catalog), hours);
         progressTracker.generating("分类缺口补抓中（" + labels(missing, catalog) + "）…");
-        var seen = new java.util.HashSet<String>();
+        var seen = new java.util.HashSet<String>(historicalKeys);
         for (var article : fetched) {
             seen.add(DigestTextUtils.dedupKey(article.getLink(), article.getTitle()));
         }
@@ -828,6 +848,7 @@ public class DigestServiceImpl implements DigestService {
             var article = batch.items().get(index);
             article.setTitleZh(result.path("titleZh").asText(""));
             article.setSummary(result.path("summary").asText(""));
+            article.setAiTake(result.path("aiTake").asText(""));
             article.setReason(result.path("reason").asText(""));
             var points = new ArrayList<String>();
             for (var point : result.path("points")) {
@@ -1388,7 +1409,12 @@ public class DigestServiceImpl implements DigestService {
                 output.publishState(), output.stats().getDurationMs() / 1000,
                 StringUtils.hasText(output.publishMessage())
                     ? " 未发布原因：" + output.publishMessage() : "");
-            return persistence.update(current);
+            // 生成成功即记「已发」：哪怕发布被跳过/失败，内容也已经产出（可能手工补发），
+            // 下一轮不该再选它们。写入失败不影响日报收尾（记录器内部已逐条吞错）。
+            return persistence.update(current)
+                .then(seenStore.recordAll(output.articles(),
+                    current.getMetadata() == null ? "" : current.getMetadata().getName()))
+                .thenReturn(current);
         });
     }
 
@@ -1541,6 +1567,9 @@ public class DigestServiceImpl implements DigestService {
 
         /** 因重复转载被去掉的篇数 */
         private int deduped;
+
+        /** 近 14 天日报已发过而被跨天去重拦下的篇数 */
+        private int historyFiltered;
 
         /** 补抓窗口里额外参与评分的篇数 */
         private int fallbackFetched;

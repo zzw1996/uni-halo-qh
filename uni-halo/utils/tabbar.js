@@ -99,12 +99,16 @@ export function getTabbarItems(configs, pref) {
 		return adminItems.length ? adminItems : FALLBACK_TABBAR_ITEMS;
 	}
 
-	// 用户自定义：固定项必留，可选项按用户开关收集，再按同一套 3~5 规则收敛
-	const picked = candidates.filter((item) => {
+	// 用户自定义：固定项必留，可选项按用户开关收集，再按同一套 3~5 规则收敛。
+	// 勾选范围必须先与站长的开关求交集（adminOn=false 的项不参与）——
+	// 否则用户先开了某项、站长随后关掉，残留的偏好会让它重新出现在底栏，
+	// 表现为「后台明明关了，用户端还能把它开回来」。
+	const allowedCandidates = candidates.filter((item) => item.locked || item.adminOn !== false);
+	const picked = allowedCandidates.filter((item) => {
 		if (item.locked) return true;
 		return pref.show?.[item.key] === true;
 	});
-	const normalized = normalizeKeys(picked, candidates);
+	const normalized = normalizeKeys(picked, allowedCandidates);
 	return normalized.length ? sanitizeItems(normalized) : (adminItems.length ? adminItems : FALLBACK_TABBAR_ITEMS);
 }
 
@@ -156,9 +160,16 @@ export function getTabbarCandidates(configs) {
 	return list.filter((item) => item && item.key && item.path);
 }
 
-/** 哪些可选项（非 locked）能被用户勾选，供设置页渲染开关 */
+/**
+ * 哪些可选项（非 locked）能被用户勾选，供设置页渲染开关。
+ *
+ * <p>站长在后台关掉的项（{@code adminOn === false}）不在这里出现：设置页的开关
+ * 只应该控制「站长允许显示的项」里显示哪几个，而不是能把站长关掉的项重新打开——
+ * 两层开关必须串成一条线（站长定范围 → 用户在范围内挑），否则后台配置形同虚设。</p>
+ */
 export function getToggleableCandidates(configs) {
-	return getTabbarCandidates(configs).filter((item) => !item.locked);
+	return getTabbarCandidates(configs)
+		.filter((item) => !item.locked && item.adminOn !== false);
 }
 
 /**

@@ -62,9 +62,35 @@ public class PushDiagnoseService {
                 readItem(),
                 writeProbeItem(),
                 stateItem(),
-                tokenItem())
+                tokenItem(),
+                aiContentItem(config))
             .map(tuple -> List.of(tuple.getT1(), tuple.getT2(), tuple.getT3(), tuple.getT4(),
-                tuple.getT5())));
+                tuple.getT5(), tuple.getT6())));
+    }
+
+    /**
+     * 「AI 定制内容」简报推送是否配全：模板 + 四个字段名。
+     *
+     * <p>这是最容易配漏的一项——四个字段名少填一个，微信就会在下发时报 47003，
+     * 而错误只在推送那一刻才暴露；放到自检里能提前发现。</p>
+     */
+    private Mono<PushDiagnoseItemDTO> aiContentItem(PushConfigDTO config) {
+        var fields = config.aiDigestFieldMap();
+        var detail = new StringBuilder();
+        detail.append("简报模板=").append(config.hasAiDigestTemplate()
+            ? shortId(config.getAiDigestTemplateId()) : "未配置（请单独申请，不要复用新文章模板）");
+        detail.append("；字段映射：主题=").append(orDash(fields.title()))
+            .append(" 内容=").append(orDash(fields.summary()))
+            .append(" 时间=").append(orDash(fields.time()))
+            .append(" 提示=").append(orDash(fields.tip()));
+        detail.append("；每日定时=").append(config.isAiDigestScheduleEnabled() ? "开" : "关");
+        detail.append("；可选时段=").append(config.getAiDigestPushHours());
+        return Mono.just(item("简报推送", config.hasAiDigestTemplate() && fields.usable(),
+            detail.toString()));
+    }
+
+    private static String orDash(String value) {
+        return value == null || value.isBlank() ? "未配" : value;
     }
 
     private Mono<PushDiagnoseItemDTO> configItem(PushConfigDTO config) {

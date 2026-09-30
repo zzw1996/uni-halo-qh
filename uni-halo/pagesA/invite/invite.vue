@@ -90,7 +90,7 @@
 
 				<view class="footer-tip">
 					<text>邀请新用户通过分享进入小程序并完成登录，每成功注册 1 人你获得 {{ inviteInfo.rewardPoints }} 积分；好友登录后可领取「新人见面礼」。</text>
-					<text>获得的积分可参与「幸运翻牌」抽奖、兑换中心兑换礼品。同一好友只计一次；邀请奖励自动到账，可在「积分明细」中查看。</text>
+					<text>获得的积分可在「兑换中心」兑换权益。同一好友只计一次；邀请奖励自动到账，可在「积分明细」中查看。</text>
 				</view>
 			</view>
 		</template>
@@ -544,7 +544,7 @@
 				const countText = `已邀请 ${invitedCount} 人`;
 
 				const benefit1 = `邀请成功每 1 人奖励 +${rewardPoints} 积分`;
-				const benefit2 = '积分可参与「幸运翻牌」抽奖，还能兑换礼品';
+				const benefit2 = '积分可在兑换中心兑换权益与礼品';
 
 				// 白卡片内居中文本起点
 				const pillLeft = 52;

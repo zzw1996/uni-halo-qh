@@ -86,19 +86,18 @@ public class PushScheduler implements InitializingBean {
     }
 
     private Mono<String> runOnce(PushConfigDTO config) {
+        // 简报线已移交 AiContentDailyScheduler：它按用户选的整点先「生成简报」再推送
+        // （推送的判据是「你自己的简报已生成」，而不是「站长的日报已生成」）。
+        // 这里只保留新文章线。
         var newPost = PushConfigHelper.kindEnabled(config, PushConfigHelper.KIND_NEW_POST)
             ? dispatchService.dispatchNewPosts(config).defaultIfEmpty(0)
             : Mono.just(0);
-        var aiDigest = PushConfigHelper.kindEnabled(config, PushConfigHelper.KIND_AI_DIGEST)
-            ? dispatchService.dispatchAiDigest(config).defaultIfEmpty(0)
-            : Mono.just(0);
-        // 串行执行两条线：都是「读全站数据 + 串行发消息」，并发没有意义还会互相抢资源
-        return newPost.flatMap(newPostSent -> aiDigest.map(aiDigestSent -> {
-            if (newPostSent == 0 && aiDigestSent == 0) {
+        return newPost.map(newPostSent -> {
+            if (newPostSent == 0) {
                 return "";
             }
-            return "本轮推送完成：新文章 " + newPostSent + " 条，简报 " + aiDigestSent + " 条";
-        }));
+            return "本轮推送完成：新文章 " + newPostSent + " 条";
+        });
     }
 
     private boolean intervalNotElapsed(PushConfigDTO config) {

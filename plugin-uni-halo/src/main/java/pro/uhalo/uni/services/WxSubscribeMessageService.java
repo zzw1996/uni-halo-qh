@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import pro.uhalo.uni.dto.PushConfigDTO;
 import pro.uhalo.uni.utils.RateLimiter;
 import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import reactor.core.publisher.Mono;
@@ -83,7 +84,7 @@ public class WxSubscribeMessageService {
     public record SendResult(boolean ok, int errorCode, String message, boolean quotaExhausted,
                             boolean configProblem) {
 
-        static SendResult success() {
+        public static SendResult success() {
             return new SendResult(true, 0, "", false, false);
         }
 
@@ -103,6 +104,17 @@ public class WxSubscribeMessageService {
      */
     public Mono<SendResult> send(String openid, String templateId, Message message, String page,
         String state) {
+        return send(openid, templateId, message, page, state, PushConfigDTO.FieldMap.NEW_POST_DEFAULT);
+    }
+
+    /**
+     * 同上，按指定的字段映射拼装。
+     *
+     * <p>简报模板的字段名由站长配置（公共模板库字段名不统一），因此这条路径必须带映射；
+     * 新文章线沿用 {@link PushConfigDTO.FieldMap#NEW_POST_DEFAULT}。</p>
+     */
+    public Mono<SendResult> send(String openid, String templateId, Message message, String page,
+        String state, PushConfigDTO.FieldMap fields) {
         if (!StringUtils.hasText(openid) || !StringUtils.hasText(templateId)) {
             return Mono.just(SendResult.failure(0,
                 StringUtils.hasText(openid) ? "模板未配置" : "缺少 openid", false, true));
@@ -112,7 +124,10 @@ public class WxSubscribeMessageService {
                 mask(openid));
             return Mono.just(SendResult.failure(0, "发送频率超限，稍后重试", false, false));
         }
-        var payload = buildPayload(openid, templateId, message, page, state);
+        var payload = buildPayload(openid, templateId, message, page, state, fields);
+        if (payload == null) {
+            return Mono.just(SendResult.failure(0, "模板字段未配置", false, true));
+        }
         return tokenProvider.token()
             .flatMap(token -> post(token, payload, openid, false))
             .onErrorResume(ex -> {
@@ -178,7 +193,7 @@ public class WxSubscribeMessageService {
 
     /** 按模板字段拼装请求体（字段名与站长在 MP 后台选的模板一一对应） */
     private ObjectNode buildPayload(String openid, String templateId, Message message, String page,
-        String state) {
+        String state, PushConfigDTO.FieldMap fields) {
         var payload = OBJECT_MAPPER.createObjectNode();
         payload.put("touser", openid);
         payload.put("template_id", templateId);
@@ -189,13 +204,26 @@ public class WxSubscribeMessageService {
         payload.put("miniprogram_state", StringUtils.hasText(state) ? state : "formal");
         payload.put("lang", "zh_CN");
 
+        var map = fields == null ? PushConfigDTO.FieldMap.NEW_POST_DEFAULT : fields;
         var data = payload.putObject("data");
-        data.set("thing4", value(clip(message.title())));
-        data.set("thing6", value(clip(message.summary())));
-        data.set("time3", value(formatTime(message.time())));
-        data.set("thing7", value(clip(message.source())));
-        data.set("thing5", value(clip(message.tip())));
+        // 槽位为空 = 该模板没有这个字段：跳过（多发一个不存在的字段会被判 47003）
+        putField(data, map.title(), clip(message.title()));
+        putField(data, map.summary(), clip(message.summary()));
+        putField(data, map.time(), formatTime(message.time()));
+        putField(data, map.source(), clip(message.source()));
+        putField(data, map.tip(), clip(message.tip()));
+        if (data.isEmpty()) {
+            // 一个字段都没配上：这是配置问题，别把空 data 发给微信
+            log.warn("[UniHalo][Push] 模板字段映射为空，跳过下发（请在插件后台填写模板字段名）");
+            return null;
+        }
         return payload;
+    }
+
+    private static void putField(ObjectNode data, String field, String text) {
+        if (StringUtils.hasText(field)) {
+            data.set(field.trim(), value(text));
+        }
     }
 
     private static ObjectNode value(String text) {

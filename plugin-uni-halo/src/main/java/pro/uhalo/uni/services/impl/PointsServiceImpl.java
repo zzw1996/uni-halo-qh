@@ -8,11 +8,8 @@ import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.AdminPointsRecordItemDTO;
 import pro.uhalo.uni.dto.ExchangeItemDTO;
 import pro.uhalo.uni.dto.AdminPointsRecordListResponse;
-import pro.uhalo.uni.dto.DrawPrizeDTO;
 import pro.uhalo.uni.dto.PointsActionRuleDTO;
 import pro.uhalo.uni.dto.PointsConfigDTO;
-import pro.uhalo.uni.dto.PointsDrawResponse;
-import pro.uhalo.uni.dto.PointsDrawRuleDTO;
 import pro.uhalo.uni.dto.PointsEarnRequest;
 import pro.uhalo.uni.dto.PointsEarnResponse;
 import pro.uhalo.uni.dto.PointsEarnStatusResponse;
@@ -41,7 +38,6 @@ import pro.uhalo.uni.utils.WxUserLookup;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -74,8 +70,6 @@ public class PointsServiceImpl implements PointsService {
     private static final String NEW_USER_ACTION = "new_user";
     /** 榜单奖励（周榜结算发放），幂等 ref 为「年-周」 */
     static final String RANK_REWARD_ACTION = "rank_reward";
-    private static final String DRAW_ACTION = "draw";
-    private static final String DRAW_COST_ACTION = "draw_cost";
     private static final String EXCHANGE_CONFIG_GROUP = "exchangeConfig";
     private static final String EXCHANGE_DASHBOARD = "dashboard_advanced";
     /** 积分解锁订阅额度的流水动作码（客户端 utils/points.js 里有同名中文名） */
@@ -116,7 +110,6 @@ public class PointsServiceImpl implements PointsService {
      */
     private static final int EXCHANGE_TICKETS_FALLBACK = 1;
 
-    private static final SecureRandom PRIZE_RANDOM = new SecureRandom();
 
     private final PointsPersistence persistence;
     private final ReactiveSettingFetcher settingFetcher;
@@ -352,28 +345,6 @@ public class PointsServiceImpl implements PointsService {
                 }
                 return Mono.error(ex);
             });
-    }
-
-    @Override
-    public Mono<PointsDrawResponse> drawStatus(String openid) {
-        return requireOpenid(openid)
-            .flatMap(id -> loadConfig()
-                .flatMap(config -> {
-                    ensureEnabled(config);
-                    var rule = config.getRules() == null ? null : config.getRules().getDraw();
-                    var cost = rule == null ? 10 : rule.getCost();
-                    var earnKey = buildDailyEarnKey(id, DRAW_ACTION, "daily");
-                    return persistence.findRecordByEarnKey(earnKey)
-                        .flatMap(existing -> buildAlreadyDrawnResponse(id))
-                        .switchIfEmpty(persistence.getOrCreateAccount(id)
-                            .map(account -> PointsDrawResponse.builder()
-                                .earned(0)
-                                .cost(cost)
-                                .balance(safeBalance(account))
-                                .alreadyDrawn(false)
-                                .message("今日可翻牌")
-                                .build()));
-                }));
     }
 
     // ========== 积分兑换（配置驱动：当日开通标记） ==========
@@ -695,7 +666,7 @@ public class PointsServiceImpl implements PointsService {
     }
 
     private static List<ExchangeItem> defaultExchangeItems() {
-        return List.of(new ExchangeItem(EXCHANGE_DASHBOARD, "数据看板高级版", 30, 1,
+        return List.of(new ExchangeItem(EXCHANGE_DASHBOARD, "数据看板高级版", 100, 1,
             "解锁当日数据看板高级版（30 日趋势与数据摘要导出）", EXCHANGE_TICKETS_FALLBACK));
     }
 
@@ -768,91 +739,6 @@ public class PointsServiceImpl implements PointsService {
             return Set.of(primary, PURCHASE_DASHBOARD_ACTION);
         }
         return Set.of(primary);
-    }
-
-    @Override
-    public Mono<PointsDrawResponse> draw(String openid) {
-        return requireOpenid(openid)
-            .flatMap(id -> {
-                ensureRateLimit(id, "draw", 20, "翻牌过于频繁，请稍后再试");
-                return loadConfig()
-                    .flatMap(config -> {
-                        ensureEnabled(config);
-                        var rule = config.getRules() == null ? null : config.getRules().getDraw();
-                        if (rule == null || rule.getCost() <= 0 || rule.getPrizes().isEmpty()) {
-                            return Mono.error(new WxAuthException("翻牌抽奖未配置"));
-                        }
-                        var earnKey = buildDailyEarnKey(id, DRAW_ACTION, "daily");
-                        return persistence.findRecordByEarnKey(earnKey)
-                            .flatMap(existing -> buildAlreadyDrawnResponse(id))
-                            .switchIfEmpty(Mono.defer(() -> processDraw(id, rule, earnKey)));
-                    });
-            });
-    }
-
-    private Mono<PointsDrawResponse> buildAlreadyDrawnResponse(String openid) {
-        return persistence.getOrCreateAccount(openid)
-            .map(account -> PointsDrawResponse.builder()
-                .earned(0)
-                .cost(0)
-                .balance(safeBalance(account))
-                .alreadyDrawn(true)
-                .message("今日已翻牌，明天再来吧")
-                .build());
-    }
-
-    private Mono<PointsDrawResponse> processDraw(String openid, PointsDrawRuleDTO rule, String earnKey) {
-        var prize = pickPrize(rule.getPrizes());
-        var drawCostKey = buildEarnKey(openid, DRAW_COST_ACTION, today());
-        return persistence.getOrCreateAccount(openid)
-            .flatMap(account -> {
-                var balance = safeBalance(account);
-                if (balance < rule.getCost()) {
-                    return Mono.error(new WxAuthException("积分不足，需要 " + rule.getCost() + " 积分"));
-                }
-                var newBalance = balance - rule.getCost() + prize;
-                return resolveWxUserId(openid, account)
-                    .flatMap(wxUserId -> {
-                        account.setBalance(newBalance);
-                        if (StringUtils.hasText(wxUserId) && !wxUserId.equals(account.getWxUserId())) {
-                            account.setWxUserId(wxUserId);
-                        }
-                        var prizeRecord = persistence.newRecord(openid, DRAW_ACTION, prize, newBalance,
-                            "翻牌中奖 +" + prize, "每日翻牌", earnKey, wxUserId);
-                        var costRecord = persistence.newRecord(openid, DRAW_COST_ACTION, -rule.getCost(),
-                            newBalance, "翻牌消耗 -" + rule.getCost(), "每日翻牌", drawCostKey, wxUserId);
-                        return persistence.appendRecord(prizeRecord)
-                            .then(persistence.appendRecord(costRecord))
-                            .then(persistence.saveAccount(account))
-                            .thenReturn(PointsDrawResponse.builder()
-                                .earned(prize)
-                                .cost(rule.getCost())
-                                .balance(newBalance)
-                                .alreadyDrawn(false)
-                                .message("中奖 +" + prize + " 积分")
-                                .build());
-                    });
-            });
-    }
-
-    /** 按权重随机挑选奖品（返回中奖积分数） */
-    static int pickPrize(List<DrawPrizeDTO> prizes) {
-        if (prizes == null || prizes.isEmpty()) {
-            return 0;
-        }
-        var total = prizes.stream().mapToInt(DrawPrizeDTO::getWeight).sum();
-        if (total <= 0) {
-            return prizes.get(0).getPoints();
-        }
-        var bound = PRIZE_RANDOM.nextInt(total);
-        var cursor = 0;
-        for (var prize : prizes) {
-            cursor += prize.getWeight();
-            if (bound < cursor) {
-                return prize.getPoints();
-            }
-        }
-        return prizes.get(prizes.size() - 1).getPoints();
     }
 
     private static boolean isDuplicateRecordError(Throwable ex) {

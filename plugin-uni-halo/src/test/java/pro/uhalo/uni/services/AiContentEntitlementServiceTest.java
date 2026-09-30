@@ -8,17 +8,25 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import pro.uhalo.uni.dto.AiContentRedeemResultDTO;
+import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
+import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.utils.AiContentConfigHelper;
+import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
@@ -41,12 +49,24 @@ class AiContentEntitlementServiceTest {
     @Mock
     private ReactiveSettingFetcher settingFetcher;
 
+    @Mock
+    private MembershipService membershipService;
+
+    @Mock
+    private RateLimiter rateLimiter;
+
     private AiContentEntitlementService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiContentEntitlementService(pointsPersistence, settingFetcher);
+        service = new AiContentEntitlementService(pointsPersistence, settingFetcher,
+            membershipService, rateLimiter);
         stubConfig("{\"enabled\":true}");
+        // 会员判定默认「非会员」：会员豁免单独用例里再打开
+        lenient().when(membershipService.loadMemberExpireAt(anyString()))
+            .thenReturn(Mono.empty());
+        lenient().when(rateLimiter.tryAcquire(anyString(), anyInt(), any(Duration.class)))
+            .thenReturn(true);
     }
 
     private void stubConfig(String json) {
@@ -62,8 +82,13 @@ class AiContentEntitlementServiceTest {
         var account = new UserPoints();
         account.setWxOpenid("openid-1");
         account.setAiContentExpireAt(expireAt);
+        account.setBalance(1000L);
         lenient().when(pointsPersistence.getOrCreateAccount(anyString()))
             .thenReturn(Mono.just(account));
+        lenient().when(pointsPersistence.appendRecord(any(PointsRecord.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        lenient().when(pointsPersistence.saveAccount(any(UserPoints.class)))
+            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
     }
 
     @Test
@@ -168,5 +193,69 @@ class AiContentEntitlementServiceTest {
         StepVerifier.create(service.isActive("openid-1"))
             .expectNext(false)
             .verifyComplete();
+    }
+
+    @Test
+    void memberShouldBeExemptWhenMemberFreeEnabled() {
+        stubExpireAt(null);
+        when(membershipService.loadMemberExpireAt("openid-1"))
+            .thenReturn(Mono.just(Instant.now().plus(20, ChronoUnit.DAYS)));
+
+        StepVerifier.create(service.isActive("openid-1"))
+            .expectNext(true)
+            .verifyComplete();
+
+        StepVerifier.create(service.getStatus("openid-1"))
+            .assertNext(status -> {
+                assertThat(status.isActive()).isTrue();
+                assertThat(status.isViaMember()).isTrue();
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void memberExemptionShouldBeDisabledWhenMemberFreeOff() {
+        stubConfig("{\"enabled\":true,\"memberFree\":false}");
+        stubExpireAt(null);
+        when(membershipService.loadMemberExpireAt("openid-1"))
+            .thenReturn(Mono.just(Instant.now().plus(20, ChronoUnit.DAYS)));
+
+        StepVerifier.create(service.isActive("openid-1"))
+            .expectNext(false)
+            .verifyComplete();
+    }
+
+    @Test
+    void redeemShouldDeductPointsAndExtendExpiry() {
+        stubConfig("{\"enabled\":true,\"pointsPrice\":200,\"pointsDays\":30}");
+        stubExpireAt(Instant.now().plus(10, ChronoUnit.DAYS));
+
+        StepVerifier.create(service.redeemWithPoints("openid-1"))
+            .assertNext(result -> {
+                assertThat(result.getBalance()).isEqualTo(800L);
+                assertThat(result.getDays()).isEqualTo(30);
+                assertThat(result.getMessage()).contains("200");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void redeemShouldRejectWhenInsufficientPoints() {
+        stubConfig("{\"enabled\":true,\"pointsPrice\":5000,\"pointsDays\":30}");
+        stubExpireAt(null);
+
+        StepVerifier.create(service.redeemWithPoints("openid-1"))
+            .expectError(WxAuthException.class)
+            .verify();
+    }
+
+    @Test
+    void redeemShouldRejectWhenChannelClosed() {
+        stubConfig("{\"enabled\":true,\"pointsPrice\":0}");
+        stubExpireAt(null);
+
+        StepVerifier.create(service.redeemWithPoints("openid-1"))
+            .expectError(WxAuthException.class)
+            .verify();
     }
 }

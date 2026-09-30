@@ -25,7 +25,8 @@ public final class DigestAiHelper {
         List.of("ai-ml", "security", "engineering", "tools", "opinion", "other");
 
     private static final int SCORING_DESCRIPTION_LIMIT = 300;
-    private static final int SUMMARY_DESCRIPTION_LIMIT = 800;
+    /** 成稿素材：足够长的上下文才能写出观点而不是复述摘要；与评分侧分开限制，评分成本不变 */
+    private static final int SUMMARY_DESCRIPTION_LIMIT = 2000;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -130,39 +131,44 @@ public final class DigestAiHelper {
         var articlesList = builder.toString();
 
         var langInstruction = "en".equals(lang)
-            ? "Write the overview, key points, and reason in English."
-            : "请用中文撰写概述、核心论点和推荐理由。如果原文是英文，请翻译为中文。标题翻译也用中文。";
+            ? "Write the summary, key points, AI take, and reason in English."
+            : "请用中文撰写概述、核心信息、小编看法和推荐理由。如果原文是英文，请翻译为中文。标题翻译也用中文。";
 
-        var overviewWords = Math.round(words * 0.5f);
+        var overviewWords = Math.round(words * 0.35f);
         var overviewFloor = Math.round(overviewWords * 0.85f);
-        var pointWords = Math.max(25, Math.round((words * 0.5f) / 3));
+        var pointWords = Math.max(25, Math.round((words * 0.35f) / 3));
         var pointFloor = Math.round(pointWords * 0.85f);
+        var takeWords = Math.max(80, Math.round(words * 0.3f));
+        var takeFloor = Math.round(takeWords * 0.85f);
+        var totalFloor = overviewFloor + pointFloor * 3 + takeFloor;
 
         return """
-            你是一个技术内容写作者，正在为博客撰写每日精选。请为以下文章完成四件事：
+            你是一个技术内容写作者，正在为博客撰写每日精选。请为以下文章完成五件事：
 
             1. **中文标题** (titleZh): 将英文标题翻译成自然的中文。如果原标题已经是中文则保持不变。
-            2. **概述** (summary): %d 字左右的概述段落（不少于 %d 字）。包含：
+            2. **概述** (summary): %d 字左右的客观概述段落（不少于 %d 字）。包含：
                - 文章讨论的核心问题或主题（1 句）
-               - 关键论点、技术方案或发现（2-3 句）
-               - 结论或作者的核心观点（1 句）
-            3. **核心论点** (points): 2-4 条分点，每条约 %d 字（不少于 %d 字）。写出文章里最关键的具体论点、数据、方案名称或指标，每条自成一句完整的话，可以直接被引用。
-            4. **推荐理由** (reason): 1 句话说明"为什么值得读"，区别于概述（概述说"是什么"，推荐理由说"为什么"）。
+               - 关键事实、数据或方案（1-2 句）
+               - 作者的核心结论（1 句）
+            3. **核心信息** (points): 2-4 条分点，每条约 %d 字（不少于 %d 字）。用你自己的话重新组织文章里最关键的事实、数据、方案名称或指标，每条自成一句完整的话。
+            4. **小编看法** (aiTake): %d 字左右的评论段落（不少于 %d 字）。以博客小编的身份给出你自己视角的评价与延伸：这件事为什么重要、有什么被忽略的代价或机会、对读者或行业意味着什么、下一步值得观察什么。这是你不可替代的价值——必须是原创观点，与概述里的事实严格区分。这段会以「小编看法」的署名展示，行文里不要自称 AI，也不要出现「AI」「模型」「生成式」这类字样。
+            5. **推荐理由** (reason): 1 句话说明"为什么值得读"，区别于概述（概述说"是什么"，推荐理由说"为什么"）。
 
             %s
 
             写作要求：
-            - **硬性要求**：每篇文章的「概述 + 核心论点」合计不少于 %d 字。字数不够时，补充更多技术细节、具体数据、方案对比、实现约束或行业背景，不要重复已有句子，也不要用空话凑数
+            - **版权红线**：概述与核心信息必须是彻底重新组织过的转述——禁止照搬原文的句子或段落（连续 10 字以上的原文照抄一律不允许），只保留事实与数据，语言全部重写；小编看法则必须完全脱离原文语言，只基于事实给出你的观点
+            - **硬性要求**：每篇文章的「概述 + 核心信息 + 小编看法」合计不少于 %d 字。字数不够时，补充更多技术细节、具体数据、方案对比、实现约束或行业背景，不要重复已有句子，也不要用空话凑数
             - 直接说重点，不要用"本文讨论了..."、"这篇文章介绍了..."这种开头
             - 保留关键数字和指标（如性能提升百分比、用户数、版本号、CVE 编号等）
             - 如果文章涉及对比或选型，要点出比较对象和结论
-            - 概述与分点不要重复：概述给全局印象，分点给可引用的硬信息
+            - 概述、分点与小编看法三者不要重复：概述给客观事实，分点给硬信息，小编看法给观点
             - 正文中不要使用英文半角双引号，需要引号时用中文引号「」或“”（避免破坏 JSON 结构）
 
             ## 待撰写文章
 
             """.formatted(overviewWords, overviewFloor, pointWords, pointFloor,
-            langInstruction, words) + articlesList + """
+            takeWords, takeFloor, langInstruction, totalFloor) + articlesList + """
 
             请严格按 JSON 格式返回：
             {
@@ -171,7 +177,8 @@ public final class DigestAiHelper {
                   "index": 0,
                   "titleZh": "中文翻译的标题",
                   "summary": "概述段落...",
-                  "points": ["核心论点或关键数据 1", "核心论点或关键数据 2"],
+                  "points": ["核心信息 1", "核心信息 2"],
+                  "aiTake": "小编看法段落...",
                   "reason": "推荐理由..."
                 }
               ]

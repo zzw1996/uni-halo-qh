@@ -29,6 +29,8 @@ export const POINTS_ACTION_LABELS = {
 	task: '每日任务',
 	recharge: '虚拟支付充值',
 	new_user: '新人见面礼',
+	// 以下三个是历史抽奖玩法的动作码（玩法已下线）：仅用于让老用户的积分明细
+	// 仍显示当时的中文名。删掉它们会让那些历史流水退化成「积分变动」。
 	draw: '翻牌中奖',
 	draw_cost: '翻牌消耗',
 	lucky_draw: '积分抽奖',
@@ -37,6 +39,7 @@ export const POINTS_ACTION_LABELS = {
 	purchase_outfit: '道具直购·装扮',
 	purchase_dashboard: '道具直购·数据看板',
 	purchase_ai_content: '道具直购·AI 定制内容',
+	ai_content_redeem: '积分解锁·AI 定制内容',
 	exchange_publish: '积分兑换·发布券',
 	exchange_publish_ticket: '积分兑换·发布券',
 	exchange_content_ticket: '积分兑换·阅读券',
@@ -135,8 +138,6 @@ export const resolvePointsApiPaths = (configs) => {
 		history: custom.history || '/points/history',
 		earnStatus: custom.earnStatus || '/points/earn/status',
 		newUserGift: custom.newUserGift || '/points/new-user-gift',
-		draw: custom.draw || '/points/draw',
-		drawStatus: custom.drawStatus || '/points/draw/status',
 		exchange: custom.exchange || '/points/exchange',
 		exchangeBalance: custom.exchangeBalance || '/points/exchange/balance',
 		dailyTasks: custom.dailyTasks || '/points/tasks/daily',
@@ -147,10 +148,6 @@ export const resolvePointsApiPaths = (configs) => {
 		buyOutfit: custom.buyOutfit || '/points/outfit/buy',
 		equipOutfit: custom.equipOutfit || '/points/outfit/equip',
 	inviteInfo: custom.inviteInfo || '/points/invite/info',
-	luckyConfig: custom.luckyConfig || '/points/lucky/config',
-	luckyDraw: custom.luckyDraw || '/points/lucky/draw',
-	luckySubmit: custom.luckySubmit || '/points/lucky/submit',
-	luckyMine: custom.luckyMine || '/points/lucky/mine',
 	// 阅读券（付费内容）：status 允许未登录调用，故不走 requestPointsApi
 	contentStatus: custom.contentStatus || '/points/content/status',
 	contentUnlock: custom.contentUnlock || '/points/content/unlock',
@@ -168,8 +165,6 @@ const POINTS_API_FALLBACKS = {
 	history: ['/points/history', '/getPointsHistory', '/pointsHistory'],
 	earnStatus: ['/points/earn/status', '/getPointsEarnStatus', '/pointsEarnStatus'],
 	newUserGift: ['/points/new-user-gift', '/claimNewUserGift'],
-	draw: ['/points/draw', '/drawLuckyPoints'],
-	drawStatus: ['/points/draw/status', '/getPointsDrawStatus'],
 	exchange: ['/points/exchange', '/exchangePointsItem'],
 	exchangeBalance: ['/points/exchange/balance', '/getExchangeBalance'],
 	dailyTasks: ['/points/tasks/daily', '/points/tasks', '/getDailyTasks'],
@@ -180,10 +175,6 @@ const POINTS_API_FALLBACKS = {
 	buyOutfit: ['/points/outfit/buy', '/points/buyOutfit'],
 	equipOutfit: ['/points/outfit/equip', '/points/equipOutfit'],
 	inviteInfo: ['/points/invite/info', '/getInviteInfo'],
-	luckyConfig: ['/points/lucky/config', '/getLuckyDrawConfig'],
-	luckyDraw: ['/points/lucky/draw', '/drawLuckyGift'],
-	luckySubmit: ['/points/lucky/submit', '/submitLuckyClaim'],
-	luckyMine: ['/points/lucky/mine', '/getMyLuckyClaims'],
 	contentStatus: ['/points/content/status', '/getContentLockStatus'],
 	contentUnlock: ['/points/content/unlock', '/unlockPaidContent'],
 	contentTickets: ['/points/content/tickets', '/getContentTicketBalance'],
@@ -400,58 +391,9 @@ export const tryEarnPointsByAction = async (httpApi, action, payload = {}) => {
 		return { earned: 0, error: normalizePointsApiError(err) };
 	}
 };
-
-/**
- * 查询今日翻牌状态（不消耗积分）
- */
-export const fetchPointsDrawStatus = async (httpApi) => {
-	const api = httpApi?.v2 || httpApi;
-	if (!api?.getPointsDrawStatus) {
-		return { ok: false };
-	}
-	try {
-		const res = await api.getPointsDrawStatus();
-		const data = parseDirectApiBody(res);
-		if (data?.error) {
-			return { ok: false, reason: data.error };
-		}
-		if (data.alreadyDrawn === true) {
-			markDrawDoneToday();
-		}
-		return {
-			ok: true,
-			alreadyDrawn: data.alreadyDrawn === true,
-			cost: Number(data.cost || 0) || 0,
-			balance: data.balance != null ? Number(data.balance) : null,
-			message: data.message || ''
-		};
-	} catch (err) {
-		return { ok: false, reason: normalizePointsApiError(err) };
-	}
-};
-
-const DRAW_TODAY_KEY = 'points.draw.today';
-
-/** 本地判断今日是否已翻牌（提前提示用，服务端为最终权威） */
-export const isDrawDoneToday = () => {
-	try {
-		const saved = uni.getStorageSync(DRAW_TODAY_KEY);
-		const now = new Date();
-		const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-		return saved === today;
-	} catch (e) {
-		return false;
-	}
-};
-
-const markDrawDoneToday = () => {
-	try {
-		const now = new Date();
-		uni.setStorageSync(DRAW_TODAY_KEY, `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`);
-	} catch (e) {
-		// 忽略存储异常
-	}
-};
+;
+;
+;
 
 /**
  * 兑换中心：查询余额/发布券/每日配额
@@ -518,56 +460,7 @@ export const exchangePointsItem = async (httpApi, item) => {
 		return { ok: false, reason: normalizePointsApiError(err) };
 	}
 };
-
-/**
- * 每日翻牌抽奖：后端按天幂等，返回中奖积分/消耗/余额
- * @returns {{ok:boolean, alreadyDrawn?:boolean, earned?:number, cost?:number, balance?:number, reason?:string}}
- */
-export const performPointsDraw = async (httpApi) => {
-	if (!checkHasWxLogin()) {
-		return { ok: false, reason: '请先登录' };
-	}
-	if (!isPointsEnabled()) {
-		return { ok: false, reason: '积分功能未开启' };
-	}
-	const api = httpApi?.v2 || httpApi;
-	if (!api?.claimPointsDraw) {
-		return { ok: false, reason: '翻牌接口未就绪，请先更新插件' };
-	}
-	try {
-		const res = await api.claimPointsDraw();
-		const data = parseDirectApiBody(res);
-		if (data?.error && !data?.earned) {
-			return { ok: false, reason: data.error };
-		}
-		const earned = Number(data?.earned || 0) || 0;
-		const cost = Number(data?.cost || 0) || 0;
-		if (data?.alreadyDrawn) {
-			markDrawDoneToday();
-			return {
-				ok: true,
-				alreadyDrawn: true,
-				earned: 0,
-				balance: data?.balance != null ? Number(data.balance) : null,
-				reason: data?.message || '今日已翻牌，明天再来吧'
-			};
-		}
-		if (data?.balance != null) {
-			emitPointsUpdated({ balance: Number(data.balance) });
-		}
-		markDrawDoneToday();
-		showPointsToast(earned, data?.message || `中奖 +${earned} 积分`);
-		return {
-			ok: true,
-			alreadyDrawn: false,
-			earned,
-			cost,
-			balance: data?.balance != null ? Number(data.balance) : null
-		};
-	} catch (err) {
-		return { ok: false, reason: normalizePointsApiError(err) };
-	}
-};
+;
 
 export const performPointsSignIn = async (httpApi) => {	if (!checkHasWxLogin()) {
 		return { ok: false, reason: '请先登录' };

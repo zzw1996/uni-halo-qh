@@ -3,12 +3,11 @@ package pro.uhalo.uni.services.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
 import pro.uhalo.uni.dto.UserPublishArticleRequest;
@@ -20,6 +19,7 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.DigestHaloClient;
 import pro.uhalo.uni.services.HaloPostPublisher;
 import pro.uhalo.uni.services.UserPublishService;
 import pro.uhalo.uni.services.WxContentSecurityService;
@@ -32,9 +32,9 @@ import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -99,6 +99,9 @@ public class UserPublishServiceImpl implements UserPublishService {
     /** 直接发布时的确认等待上限，避免一次请求拖太久 */
     private static final int PUBLISH_WAIT_SECONDS = 15;
 
+    /** 经 DigestHaloClient 调 Halo 接口（读瞬间/删瞬间/发瞬间/投票）的超时 */
+    private static final Duration HALO_CALL_TIMEOUT = Duration.ofSeconds(30);
+
     private final ReactiveSettingFetcher settingFetcher;
     private final WxUserService wxUserService;
     private final PointsPersistence pointsPersistence;
@@ -107,8 +110,12 @@ public class UserPublishServiceImpl implements UserPublishService {
     private final AttachmentService attachmentService;
     private final WxContentSecurityService contentSecurityService;
     private final ObjectProvider<RoleService> roleServiceProvider;
-    /** 服务端本地回环地址写 Halo API（与用户同步服务同一套做法，不依赖外部域名可达） */
-    private final WebClient webClient;
+    /**
+     * 调 Halo 接口统一走 DigestHaloClient：接口地址可在「AI 日报 - Halo 接口地址」配置
+     * （与日报同口径），默认本机回环。不能写死 127.0.0.1——部分部署（如 Docker/自定义端口）
+     * 回环不可达，写死会导致删除/发布全部「投稿失败」而日报正常。
+     */
+    private final DigestHaloClient haloClient;
 
     public UserPublishServiceImpl(ReactiveSettingFetcher settingFetcher,
                                   WxUserService wxUserService,
@@ -118,7 +125,7 @@ public class UserPublishServiceImpl implements UserPublishService {
                                   AttachmentService attachmentService,
                                   WxContentSecurityService contentSecurityService,
                                   ObjectProvider<RoleService> roleServiceProvider,
-                                  @Value("${server.port:8090}") int serverPort) {
+                                  DigestHaloClient haloClient) {
         this.settingFetcher = settingFetcher;
         this.wxUserService = wxUserService;
         this.pointsPersistence = pointsPersistence;
@@ -129,9 +136,7 @@ public class UserPublishServiceImpl implements UserPublishService {
         // 用 ObjectProvider 而不是直接注入：角色服务若在插件上下文不可用，
         // 只是退化成「读不到角色 → 走默认策略」，而不是整个插件起不来
         this.roleServiceProvider = roleServiceProvider;
-        this.webClient = WebClient.builder()
-            .baseUrl("http://127.0.0.1:" + serverPort)
-            .build();
+        this.haloClient = haloClient;
     }
 
     // ==================== 状态 ====================
@@ -146,23 +151,30 @@ public class UserPublishServiceImpl implements UserPublishService {
                     .defaultIfEmpty(new StatusContext(config, account, null)))
                 .flatMap(ctx -> resolveModes(ctx.config(), ctx.user())
                     .flatMap(modes -> countToday(id).map(counts -> {
+                        var privileged = modes.privileged();
                         var balance = safeBalance(ctx.account());
+                        var minToShow = ctx.config().minPointsToShow();
+                        // 特权用户（博主/站点所有者）不受积分门槛约束：积分不足也能看到并使用投稿入口。
+                        // 门槛本来是给普通用户设的「赚够积分才能投稿」，站长给自己设门槛没有意义。
                         var visible = ctx.config().enabled() && ctx.config().showButton()
-                            && balance >= ctx.config().minPointsToShow();
+                            && (privileged || balance >= minToShow);
                         var haloBound = ctx.user() != null
                             && StringUtils.hasText(ctx.user().getHaloUserName());
+                        // 积分与每日次数同样对特权用户按「不设限」计算，否则会给出
+                        // 「积分不足，还差 X 分」这种与实际能力不符的提示
                         var articleReason = disabledReason(ctx.config(), modes.articleMode(),
-                            haloBound, balance, ctx.config().articleCost(),
-                            counts.article(), ctx.config().dailyArticleLimit(), "文章");
+                            haloBound, balance, privileged ? 0 : ctx.config().articleCost(),
+                            counts.article(), privileged ? 0 : ctx.config().dailyArticleLimit(),
+                            "文章");
                         var momentReason = disabledReason(ctx.config(), modes.momentMode(),
-                            haloBound, balance, ctx.config().momentCost(),
-                            counts.moment(), ctx.config().dailyMomentLimit(), "瞬间");
+                            haloBound, balance, privileged ? 0 : ctx.config().momentCost(),
+                            counts.moment(), privileged ? 0 : ctx.config().dailyMomentLimit(),
+                            "瞬间");
                         return UserPublishStatusDTO.builder()
                             .enabled(ctx.config().enabled())
                             .visible(visible)
-                            .minPointsToShow(ctx.config().minPointsToShow())
-                            .pointsToUnlock(Math.max(0,
-                                ctx.config().minPointsToShow() - (int) balance))
+                            .minPointsToShow(minToShow)
+                            .pointsToUnlock(privileged ? 0 : Math.max(0, minToShow - (int) balance))
                             .articleCost(ctx.config().articleCost())
                             .momentCost(ctx.config().momentCost())
                             .balance(balance)
@@ -171,8 +183,7 @@ public class UserPublishServiceImpl implements UserPublishService {
                             .haloUserName(haloBound ? ctx.user().getHaloUserName() : "")
                             .articleMode(modes.articleMode())
                             .momentMode(modes.momentMode())
-                            .privileged(modes.privileged())
-                            .privileged(modes.privileged())
+                            .privileged(privileged)
                             .canPublishArticle(articleReason.isEmpty())
                             .canPublishMoment(momentReason.isEmpty())
                             .articleDisabledReason(articleReason)
@@ -337,7 +348,9 @@ public class UserPublishServiceImpl implements UserPublishService {
             "html", html,
             "medium", medium));
         spec.put("owner", ctx.haloUserName());
-        spec.put("releaseTime", LocalDateTime.now(ZoneId.systemDefault()).toString());
+        // 必须是带时区的 ISO-8601（Instant）：Moment 模型的 releaseTime 是 Instant 类型，
+        // 传 LocalDateTime（如 2026-09-30T16:45:12.345，无 Z）会让 Halo 反序列化失败并返回 400
+        spec.put("releaseTime", Instant.now().toString());
         // 瞬间插件没有草稿态，「待审」映射为 approved=false，由站长在瞬间管理里通过后才公开
         spec.put("approved", MODE_DIRECT.equals(mode));
         spec.put("visible", "PUBLIC");
@@ -398,42 +411,54 @@ public class UserPublishServiceImpl implements UserPublishService {
                         }))));
     }
 
+    /** WebClient 全家桶（连接失败/非 JSON 响应/HTTP 错误状态）统一转成带原因的业务异常 */
+    private WxAuthException describeWebClientError(String action, WebClientException ex) {
+        if (ex instanceof WebClientResponseException resp) {
+            // 带上 Halo 的响应体：它通常直接说明是哪个字段不合法（owner 不存在、spec 校验失败…），
+            // 只给状态码的话站长在客户端只能看到「HTTP 403」，无从下手
+            return new WxAuthException(action + "（HTTP " + resp.getStatusCode().value()
+                + summarizeBody(resp.getResponseBodyAsString()) + "）");
+        }
+        var message = ex.getMessage();
+        return StringUtils.hasText(message)
+            ? new WxAuthException(action + "：" + message)
+            : new WxAuthException(action + "失败");
+    }
+
+    /** 把 Halo 的错误响应体压成一行摘要（截断到 160 字符），供客户端提示与日志使用 */
+    private static String summarizeBody(String body) {
+        if (!StringUtils.hasText(body)) {
+            return "";
+        }
+        var oneLine = body.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= 160 ? "：" + oneLine : "：" + oneLine.substring(0, 160) + "…";
+    }
+
     /** 读取单个瞬间（删除前校验归属用）：优先公开查询 API，404 时退回标准路径 */
     private Mono<JsonNode> fetchMoment(String name) {
         if (!StringUtils.hasText(name)) {
             return Mono.error(new WxAuthException("缺少瞬间标识"));
         }
-        return loadPersonalToken().flatMap(token -> getJson(token, MOMENTS_QUERY_API + "/" + name)
+        return loadPersonalToken().flatMap(token -> haloClient
+            .get(MOMENTS_QUERY_API + "/" + name, HALO_CALL_TIMEOUT)
             .onErrorResume(WebClientResponseException.NotFound.class, ex -> {
                 log.warn("[UniHalo][UserPublish] 公开查询 API 返回 404，改用标准路径重试读取瞬间");
-                return getJson(token, MOMENTS_API + "/" + name);
+                return haloClient.get(MOMENTS_API + "/" + name, HALO_CALL_TIMEOUT);
             })
-            .onErrorMap(WebClientResponseException.class, ex -> {
-                log.warn("[UniHalo][UserPublish] 读取瞬间失败：status={}",
-                    ex.getStatusCode().value());
-                return new WxAuthException("瞬间不存在或已删除");
+            // 只捕 WebClientResponseException 会漏掉连接失败/非 JSON 响应，
+            // 它们会一路裸抛变成「投稿失败，请稍后重试」，看不出病根
+            .onErrorMap(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 读取瞬间失败：{}", ex.getMessage(), ex);
+                return describeWebClientError("读取瞬间失败", ex);
             }));
     }
 
-    /** 带令牌 GET 一个 path（含查询串），统一走 JsonNode 解码 */
-    private Mono<JsonNode> getJson(String token, String path) {
-        return webClient.get()
-            .uri(path)
-            .header("Authorization", "Bearer " + token)
-            .retrieve()
-            .bodyToMono(JsonNode.class);
-    }
-
     private Mono<Void> deleteMomentByApi(String name) {
-        return loadPersonalToken().flatMap(token -> webClient.delete()
-            .uri(MOMENTS_API + "/{name}", name)
-            .header("Authorization", "Bearer " + token)
-            .retrieve()
-            .bodyToMono(Void.class)
-            .onErrorResume(WebClientResponseException.class, ex -> {
-                log.warn("[UniHalo][UserPublish] 删除瞬间失败：status={}",
-                    ex.getStatusCode().value());
-                return Mono.error(new WxAuthException("删除失败，请稍后重试"));
+        return loadPersonalToken().flatMap(token -> haloClient
+            .delete(MOMENTS_API + "/" + name, HALO_CALL_TIMEOUT)
+            .onErrorResume(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 删除瞬间失败：{}", ex.getMessage(), ex);
+                return Mono.error(describeWebClientError("删除失败", ex));
             }));
     }
 
@@ -447,18 +472,12 @@ public class UserPublishServiceImpl implements UserPublishService {
         return wxUserService.fetchByOpenid(id)
             .switchIfEmpty(Mono.error(new WxAuthException("用户不存在，请先登录")))
             .then(loadPersonalToken())
-            .flatMap(token -> webClient.post()
-                .uri(VOTE_SUBMIT_API + "/{name}/submit", name)
-                .header("Authorization", "Bearer " + token)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(body == null ? com.fasterxml.jackson.databind.node.JsonNodeFactory
-                    .instance.objectNode() : body)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .onErrorResume(WebClientResponseException.class, ex -> {
-                    log.warn("[UniHalo][UserPublish] 提交投票失败：status={} body={}",
-                        ex.getStatusCode().value(), abbreviate(ex.getResponseBodyAsString()));
-                    return Mono.error(new WxAuthException("投票提交失败，请稍后重试"));
+            .flatMap(token -> haloClient
+                .post(VOTE_SUBMIT_API + "/" + name + "/submit",
+                    body == null ? Map.of() : body, HALO_CALL_TIMEOUT)
+                .onErrorMap(WebClientException.class, ex -> {
+                    log.warn("[UniHalo][UserPublish] 提交投票失败：{}", ex.getMessage(), ex);
+                    return describeWebClientError("投票提交失败", ex);
                 }));
     }
 
@@ -674,19 +693,11 @@ public class UserPublishServiceImpl implements UserPublishService {
 
     private Mono<String> haloWrite(String path, Object payload) {
         return loadPersonalToken()
-            .flatMap(token -> webClient.post()
-                .uri(path)
-                .header("Authorization", "Bearer " + token)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(payload)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
+            .flatMap(token -> haloClient.post(path, payload, HALO_CALL_TIMEOUT)
                 .map(node -> node.path("metadata").path("name").asText(""))
-                .onErrorResume(WebClientResponseException.class, ex -> {
-                    log.warn("[UniHalo][UserPublish] 写瞬间失败：status={} body={}",
-                        ex.getStatusCode().value(), abbreviate(ex.getResponseBodyAsString()));
-                    return Mono.error(new WxAuthException(
-                        "瞬间接口返回 " + ex.getStatusCode().value()));
+                .onErrorMap(WebClientException.class, ex -> {
+                    log.warn("[UniHalo][UserPublish] 写瞬间失败：{}", ex.getMessage(), ex);
+                    return describeWebClientError("瞬间接口调用失败", ex);
                 }));
     }
 

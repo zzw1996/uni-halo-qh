@@ -144,7 +144,7 @@
 						</uh-setting-row>
 
 						<view class="tip-box">
-							<text class="tip-text">「首页」与「我的」固定显示；其余项随意增减，但底栏总数需保持在 3~5 项之间。</text>
+							<text class="tip-text">「首页」与「我的」固定显示；其余项按习惯增减，总数保持在 3~5 项之间。站长在后台关闭的项不在列表里，也无法在这里打开。</text>
 							<view class="tip-action" @click="fnOnTabbarResetToAdmin">
 								<text class="tip-action-text">按站长配置恢复</text>
 							</view>
@@ -337,9 +337,11 @@
 			calcTabbarToggles() {
 				return getToggleableCandidates(this.haloConfig);
 			},
-			/** 当前已勾选的可选项个数：需介于 1~3 之间（固定项占 2 席，总数即 3~5） */
+			/** 当前已勾选的可选项个数：需介于 1~3 之间（固定项占 2 席，总数即 3~5）。
+				按「站长允许勾选的项」计数——残留的偏好（站长已关掉的项）不计入，
+				否则上下限守卫会被看不见的开关顶满。 */
 			calcTabbarPickedCount() {
-				return countUserPicked(getTabbarCandidates(this.haloConfig), this.appSettings.tabbar);
+				return countUserPicked(getToggleableCandidates(this.haloConfig), this.appSettings.tabbar);
 			},
 			/** 首页布局的说明跟着选中项走：光看「一行一列 / 一行两列」看不出区别在哪 */
 			/** 外观提示：跟随系统时把「当前系统是深是浅」说出来，用户才知道为什么现在是这个配色 */

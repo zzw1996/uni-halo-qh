@@ -15,13 +15,13 @@ public final class TicketRewardConfigHelper {
     public static final String GROUP_NAME = "ticketConfig";
 
     /** 内置券兑换项的默认定价（积分） */
-    public static final int DEFAULT_EXCHANGE_POINTS = 30;
+    public static final int DEFAULT_EXCHANGE_POINTS = 150;
 
     /** 连签门槛默认值：7 天（一周一次，力度可控） */
     public static final int DEFAULT_STREAK_DAYS = 7;
 
     /** 连签奖励默认张数 */
-    public static final int DEFAULT_STREAK_TICKETS = 2;
+    public static final int DEFAULT_STREAK_TICKETS = 1;
 
     private TicketRewardConfigHelper() {
     }

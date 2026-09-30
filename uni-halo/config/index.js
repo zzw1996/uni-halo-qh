@@ -106,14 +106,31 @@ export const DefaultAppConfigs = {
 	 * 服务端据此从已生成的 AI 日报内容里筛出他的每日简报。
 	 * 默认关闭——没配商品就露出一个买不了的入口，比不显示更糟。
 	 */
+	pushConfig: {
+		enabled: false,
+		templateId: '',
+		aiDigestTemplateId: '',
+		aiDigestEnabled: true,
+		aiDigestScheduleEnabled: true,
+		aiDigestPushHours: '8,12,18,21'
+	},
 	aiContentConfig: {
 		enabled: false,
 		aiIntroEnabled: true,
 		maxCategories: 5,
 		maxSources: 5,
 		maxKeywords: 10,
+		maxTopics: 3,
 		maxItems: 10,
 		windowDays: 7,
+		pointsPrice: 0,
+		pointsDays: 30,
+		presetTopics: '',
+		homeCardEnabled: true,
+		homeCardTitle: 'AI 定制内容',
+		homeCardDesc: '每天一份为你定制的技术简报',
+		fallbackGenerateEnabled: true,
+		memberFree: true,
 		benefitNote: ''
 	},
 	/** 邀请奖励配置（由插件后台 inviteConfig 下发） */

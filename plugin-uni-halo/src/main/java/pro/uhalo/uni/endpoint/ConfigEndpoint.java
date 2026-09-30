@@ -223,12 +223,6 @@ public class ConfigEndpoint implements CustomEndpoint {
                         .description("getQRCodeInfo")
                         .tag(ApiTag);
                 })
-            .GET(Constants.END_POINT_API_BASE_PATH + "/lucky-admin", this::getLuckyAdmin,
-                builder -> {
-                    builder.operationId("LuckyWinningAdminPage")
-                        .description("Lucky winning management page (HTML shell, needs personal token).")
-                        .tag(ApiTag);
-                })
             .GET(Constants.END_POINT_API_BASE_PATH + "/refund-admin", this::getRefundAdmin,
                 builder -> {
                     builder.operationId("PayOrderRefundAdminPage")
@@ -294,22 +288,6 @@ public class ConfigEndpoint implements CustomEndpoint {
                         log.warn("getInviteQRCode failed, code={}: {}", normalized, e.getMessage(), e);
                         return badRequest(resolveErrorMessage(e));
                     });
-            });
-    }
-
-    Mono<ServerResponse> getLuckyAdmin(ServerRequest request) {
-        return Mono.fromCallable(() -> {
-                var resource = new org.springframework.core.io.ClassPathResource("static/lucky-admin.html");
-                try (var in = resource.getInputStream()) {
-                    return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                }
-            })
-            .flatMap(html -> ServerResponse.ok()
-                .contentType(MediaType.TEXT_HTML)
-                .bodyValue(html))
-            .onErrorResume(ex -> {
-                log.warn("lucky-admin page failed: {}", ex.getMessage());
-                return badRequest("中奖记录管理页加载失败");
             });
     }
 

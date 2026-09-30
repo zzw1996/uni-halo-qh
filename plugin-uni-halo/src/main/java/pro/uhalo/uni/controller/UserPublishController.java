@@ -107,7 +107,9 @@ public class UserPublishController {
             .onErrorResume(WxAuthException.class, e -> badRequest(e.getReason()))
             .onErrorResume(Exception.class, e -> {
                 log.warn("user publish endpoint failed: {}", e.getMessage(), e);
-                return badRequest("投稿失败，请稍后重试");
+                // 带上异常类名：业务异常都已在此之前转成 WxAuthException，
+                // 走到这里的属于未预期 bug，类名能帮站长快速定位（完整堆栈在日志）
+                return badRequest("投稿失败：" + e.getClass().getSimpleName() + "，请稍后重试");
             });
     }
 

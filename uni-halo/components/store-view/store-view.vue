@@ -231,6 +231,13 @@
 		},
 		/** 由宿主页在显示时转发：用户可能刚从后台改完配置回来，重试一次渲染探测 */
 		methods: {
+			/** 清掉待执行的渲染探测：切走视图或重新排期时都要先取消，否则旧定时器会改错状态 */
+			fnClearProbe() {
+				if (this.probeTimer) {
+					clearTimeout(this.probeTimer);
+					this.probeTimer = null;
+				}
+			},
 			fnScheduleProbe() {
 				this.fnClearProbe();
 				// 没停在小店视图（v-show 隐藏）时不探测：隐藏节点量出来是 0 高，会误判

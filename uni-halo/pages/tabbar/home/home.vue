@@ -33,34 +33,62 @@
 			</view>
 
 			<!--
-				视频号入口（原「每日一句」区块）
-				卡片内容全部来自后台「视频号」配置；没开启或没填视频号 ID 时整块不渲染——
-				点不动的卡片比没有卡片更糟。跳转与降级见 utils/channels.js。
+				首页双卡并排：AI 定制内容 + 视频号。
+				两张都是「运营位」（站长可各自开关），并排省一半高度、首屏更快到文章列表；
+				只有一张可见时 flex:1 自然占满整行。
+				视觉分工：AI 卡浅底描边（轻），视频号卡品牌渐变（重），一深一浅有层次。
 			-->
-			<view class="channels-card ml-24 mr-24 mt-16 mb-16 round-6 card-shadow" v-if="channelsConfig"
-				hover-class="channels-card--pressed" :hover-stay-time="60" @click="fnOpenChannels">
-				<view class="channels-main flex items-center">
-					<view class="channels-avatar">
-						<image v-if="channelsAvatar" class="channels-avatar_img" :src="channelsAvatar" mode="aspectFill"></image>
-						<text v-else class="channels-avatar_text">{{ channelsAvatarText }}</text>
-						<view class="channels-avatar_play">
-							<text class="channels-avatar_triangle"></text>
+			<view class="promo-row ml-24 mr-24 mt-16 mb-16" v-if="aiCardVisible || channelsConfig">
+				<!-- AI 定制内容：已开通显示徽章；未开通点进去是购买与积分兑换的引导页 -->
+				<view v-if="aiCardVisible" class="promo-card ai-card round-6 card-shadow"
+					:class="{ 'promo-card--wide': promoIsWide }"
+					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenAiContent">
+					<view class="promo-head flex items-center">
+						<view class="ai-card-icon">
+							<text class="ai-card-icon_text">AI</text>
 						</view>
 					</view>
-					<view class="channels-meta flex-1">
-						<view class="channels-meta_head flex items-center">
-							<text class="channels-name">{{ channelsConfig.nickname }}</text>
-							<text class="channels-badge">视频号</text>
+					<view class="promo-body">
+						<view class="promo-title-row">
+							<text class="promo-title promo-title--ai">{{ aiCardContent.title }}</text>
+							<text v-if="aiContentActive" class="ai-card-badge">已开通</text>
 						</view>
-						<text v-if="channelsConfig.desc" class="channels-desc">{{ channelsConfig.desc }}</text>
+						<text v-if="aiCardContent.desc" class="promo-desc promo-desc--ai">{{ aiCardContent.desc }}</text>
 					</view>
-					<view class="channels-enter flex items-center">
-						<text class="channels-enter_text">{{ channelsButtonText }}</text>
-						<text class="channels-enter_arrow">›</text>
+					<view class="promo-action flex items-center">
+						<text class="promo-action_text promo-action_text--ai">{{ aiContentActive ? '去看看' : '立即体验' }}</text>
+						<text class="promo-action_arrow promo-action_arrow--ai">›</text>
 					</view>
 				</view>
-				<view class="channels-foot flex items-center">
-					<text class="channels-foot_tip">{{ channelsTip }}</text>
+
+				<!--
+					视频号入口（原「每日一句」区块）
+					卡片内容全部来自后台「视频号」配置；没开启或没填视频号 ID 时整块不渲染——
+					点不动的卡片比没有卡片更糟。跳转与降级见 utils/channels.js。
+				-->
+				<view v-if="channelsConfig" class="promo-card channels-card round-6 card-shadow"
+					:class="{ 'promo-card--wide': promoIsWide }"
+					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenChannels">
+					<view class="promo-head flex items-center">
+						<view class="channels-avatar">
+							<image v-if="channelsAvatar" class="channels-avatar_img" :src="channelsAvatar" mode="aspectFill"></image>
+							<text v-else class="channels-avatar_text">{{ channelsAvatarText }}</text>
+							<view class="channels-avatar_play">
+								<text class="channels-avatar_triangle"></text>
+							</view>
+						</view>
+					</view>
+					<view class="promo-body">
+						<view class="promo-title-row">
+							<text class="promo-title promo-title--channels">{{ channelsConfig.nickname }}</text>
+							<text class="channels-badge">视频号</text>
+						</view>
+						<text class="promo-desc promo-desc--channels">{{ channelsConfig.desc || channelsTip }}</text>
+					</view>
+					<view class="promo-action flex items-center">
+						<text class="promo-action_text promo-action_text--channels">{{ channelsButtonText }}</text>
+						<text class="promo-action_arrow promo-action_arrow--channels">›</text>
+					</view>
 				</view>
 			</view>
 
@@ -281,6 +309,35 @@ export default {
 					nickname: (cfg.nickname || '').trim() || '我的视频号'
 				};
 			},
+			/**
+			 * AI 定制内容运营位卡：插件开启本功能 + 站长没关首页卡时返回，
+			 * 否则整张卡不渲染（未开通的用户点进去是购买/兑换引导页）。
+			 */
+			aiCardConfig() {
+				return this.haloConfigs?.aiContentConfig || {};
+			},
+			aiCardVisible() {
+				return this.aiCardConfig.enabled === true
+					&& this.aiCardConfig.homeCardEnabled === true;
+			},
+			aiCardContent() {
+				return {
+					title: (this.aiCardConfig.homeCardTitle || '').trim() || 'AI 定制内容',
+					desc: (this.aiCardConfig.homeCardDesc || '').trim()
+				};
+			},
+			/** 是否已开通（在定制页加载过权益后写入本地，首页不多打一次接口） */
+			aiContentActive() {
+				try {
+					return uni.getStorageSync('ai.content.active') === '1';
+				} catch (e) {
+					return false;
+				}
+			},
+			/** 两张运营位卡只剩一张时切横排：整行竖排卡会显得空旷 */
+			promoIsWide() {
+				return !(this.aiCardVisible && this.channelsConfig);
+			},
 			/** 头像地址（Halo 返回的是相对路径，交给 utils 补全域名） */
 			channelsAvatar() {
 				const url = this.channelsConfig?.avatarUrl;
@@ -314,7 +371,7 @@ export default {
 		},
 		created() {
 			this.fnSyncWxUser();
-			uni.$on('wx_login_status_changed', this.fnSyncWxUser);
+			uni.$on('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
 			// 订阅是在分类页改的：改完切回首页要立刻生效，不能等下拉刷新
 			uni.$on('category_subscription_changed', this.fnOnSubscriptionChanged);
 			this.fnQuery();
@@ -327,7 +384,7 @@ export default {
 			this.fnCheckSubscriptionChanged();
 		},
 		onUnload() {
-			uni.$off('wx_login_status_changed', this.fnSyncWxUser);
+			uni.$off('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
 			uni.$off('category_subscription_changed', this.fnOnSubscriptionChanged);
 		},
 		onPullDownRefresh() {
@@ -352,6 +409,20 @@ export default {
 		methods: {
 			fnSyncWxUser() {
 				this.wxUserInfo = checkHasWxLogin() ? getWxLoginInfo() : null;
+			},
+			/**
+			 * 登录态变化：除同步用户信息外，登录回来还要重拉订阅并刷新内容流。
+			 *
+			 * <p>为什么必须重拉：开发者工具「清除缓存」/重装会清掉本地登录态，而启动页的
+			 * 静默登录是异步的——首页首查经常发生在登录回来之前，这一查就落到了
+			 * 「未登录 → 全站热门 + 订阅引导」上；订阅本身在服务端并没有丢，
+			 * 登录态恢复后不重拉，用户就会一直看到「没有订阅」的提示。</p>
+			 */
+			fnOnWxLoginStatusChanged(info) {
+				this.fnSyncWxUser();
+				if (info && info.openid) {
+					this.fnQuery();
+				}
 			},
 			/**
 			 * 首页数据入口。
@@ -866,6 +937,12 @@ export default {
 					uni.$tm.toast(res.reason);
 				}
 			},
+			/** 进 AI 定制页：未登录/未开通时页面自己会给出购买与兑换引导 */
+			fnOpenAiContent() {
+				uni.navigateTo({
+					url: '/pagesA/ai-content/ai-content'
+				});
+			},
 
 			/**
 			 * 活动公告弹窗：后端插件「基本配置 → 活动公告弹窗」开关控制，
@@ -1061,10 +1138,161 @@ export default {
 		color: $uh-accent;
 	}
 
-	/* ===== 视频号入口卡片 =====
-	   整页唯一一块渐变卡：视频号是「站外内容」的入口，用品牌色块比白卡更容易被看见。
-	   文字一律白色——皮肤生成器不会把 color 上的 #ffffff 重染色，
-	   所以深色皮肤下依然是「白字 + 品牌色底」，不会出现白字压白底。 */
+	/* ===== 首页双卡并排：AI 定制内容 + 视频号 =====
+	   并排省高度、首屏更快看到文章列表；只有一张可见时 flex:1 自然占满整行。
+	   视觉分工：AI 卡浅底描边（轻），视频号卡品牌渐变（重），一深一浅有层次。 */
+	.promo-row {
+		display: flex;
+		align-items: stretch;
+	}
+
+	.promo-card {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+		padding: 22rpx;
+	}
+
+	/* 两张卡之间的缝；只有一张时这条不生效 */
+	.promo-card + .promo-card {
+		margin-left: 16rpx;
+	}
+
+	/* 点击反馈：卡片整体是热区，按下时压一点透明度比换色更稳 */
+	.promo-card--pressed {
+		opacity: 0.92;
+	}
+
+	.promo-head {
+		/* 顶部一行固定高度：两卡的标题因此始终对齐 */
+		min-height: 76rpx;
+	}
+
+	.promo-body {
+		margin-top: 14rpx;
+		min-width: 0;
+	}
+
+	/* 标题与徽章同行：徽章跟着标题走，横排/竖排两种布局都不用改结构 */
+	.promo-title-row {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.promo-title {
+		min-width: 0;
+		font-size: 28rpx;
+		font-weight: 700;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.promo-desc {
+		margin-top: 8rpx;
+		font-size: 21rpx;
+		line-height: 1.5;
+		/* 最多两行：后台文案可能写很长，不能让它把卡片撑高 */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
+	}
+
+	/* 动作行永远贴底：两卡文案长短不一时高度差由它吸收 */
+	.promo-action {
+		margin-top: auto;
+		padding-top: 16rpx;
+	}
+
+	/*
+		只有一张卡可见时它占满整行，竖排会显得空旷：
+		切成「图标左 / 文字中 / 动作右」的横排，比拉长的竖排饱满得多。
+	*/
+	.promo-card--wide {
+		flex-direction: row;
+		align-items: center;
+		padding: 28rpx 32rpx;
+	}
+
+	.promo-card--wide .promo-head {
+		min-height: 0;
+		flex-shrink: 0;
+	}
+
+	.promo-card--wide .promo-body {
+		flex: 1;
+		margin: 0 0 0 20rpx;
+	}
+
+	.promo-card--wide .promo-action {
+		margin: 0 0 0 16rpx;
+		padding-top: 0;
+		flex-shrink: 0;
+	}
+
+	.promo-action_text {
+		font-size: 22rpx;
+		font-weight: 600;
+	}
+
+	.promo-action_arrow {
+		margin-left: 4rpx;
+		font-size: 26rpx;
+		line-height: 1;
+	}
+
+	/* ── AI 定制内容：浅色卡 + 渐变方块 ── */
+	.ai-card {
+		position: relative;
+		overflow: hidden;
+		background: $uh-card;
+		border: 1rpx solid $uh-accent-weak;
+	}
+
+	.ai-card-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 76rpx;
+		height: 76rpx;
+		border-radius: 18rpx;
+		background-image: $uh-grad-accent;
+	}
+
+	.ai-card-icon_text {
+		font-size: 28rpx;
+		font-weight: 800;
+		color: #ffffff;
+	}
+
+	.ai-card-badge {
+		flex-shrink: 0;
+		margin-left: 12rpx;
+		padding: 2rpx 14rpx;
+		border-radius: $uh-radius-pill;
+		background: $uh-success-weak;
+		font-size: 20rpx;
+		color: $uh-success;
+	}
+
+	.promo-title--ai {
+		color: $uh-ink-1;
+	}
+
+	.promo-desc--ai {
+		color: $uh-ink-3;
+	}
+
+	.promo-action_text--ai,
+	.promo-action_arrow--ai {
+		color: $uh-accent;
+	}
+
+	/* ── 视频号：品牌渐变卡 + 白色文字 ──
+	   皮肤生成器不会把 color 上的 #ffffff 重染色，深色皮肤下依然是「白字 + 品牌色底」。 */
 	.channels-card {
 		position: relative;
 		overflow: hidden;
@@ -1074,37 +1302,27 @@ export default {
 		&:before {
 			content: '';
 			position: absolute;
-			top: -90rpx;
-			right: -70rpx;
-			width: 240rpx;
-			height: 240rpx;
+			top: -80rpx;
+			right: -60rpx;
+			width: 200rpx;
+			height: 200rpx;
 			border-radius: 50%;
 			background-color: rgba(255, 255, 255, 0.12);
 		}
 	}
 
-	/* 点击反馈：卡片整体是热区，按下时压一点透明度比换色更稳 */
-	.channels-card--pressed {
-		opacity: 0.92;
-	}
-
-	.channels-main {
-		position: relative;
-		padding: 24rpx;
-	}
-
 	.channels-avatar {
 		position: relative;
 		flex-shrink: 0;
-		width: 96rpx;
-		height: 96rpx;
+		width: 76rpx;
+		height: 76rpx;
 	}
 
 	.channels-avatar_img {
 		display: block;
-		width: 96rpx;
-		height: 96rpx;
-		border-radius: 28rpx;
+		width: 76rpx;
+		height: 76rpx;
+		border-radius: 22rpx;
 		border: 2rpx solid rgba(255, 255, 255, 0.7);
 		box-sizing: border-box;
 	}
@@ -1113,13 +1331,13 @@ export default {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 96rpx;
-		height: 96rpx;
-		border-radius: 28rpx;
+		width: 76rpx;
+		height: 76rpx;
+		border-radius: 22rpx;
 		border: 2rpx solid rgba(255, 255, 255, 0.7);
 		box-sizing: border-box;
 		background-color: rgba(255, 255, 255, 0.22);
-		font-size: 40rpx;
+		font-size: 34rpx;
 		font-weight: 600;
 		color: #ffffff;
 	}
@@ -1127,13 +1345,13 @@ export default {
 	/* 头像右下角的播放角标：一眼看出这是视频入口 */
 	.channels-avatar_play {
 		position: absolute;
-		right: -8rpx;
-		bottom: -8rpx;
+		right: -6rpx;
+		bottom: -6rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 38rpx;
-		height: 38rpx;
+		width: 32rpx;
+		height: 32rpx;
 		border-radius: 50%;
 		background-color: #ffffff;
 	}
@@ -1141,28 +1359,10 @@ export default {
 	.channels-avatar_triangle {
 		width: 0;
 		height: 0;
-		margin-left: 4rpx;
-		border-top: 8rpx solid transparent;
-		border-bottom: 8rpx solid transparent;
-		border-left: 13rpx solid $uh-accent;
-	}
-
-	.channels-meta {
-		min-width: 0;
-		padding: 0 16rpx 0 20rpx;
-	}
-
-	.channels-meta_head {
-		min-width: 0;
-	}
-
-	.channels-name {
-		font-size: 30rpx;
-		font-weight: 600;
-		color: #ffffff;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		margin-left: 3rpx;
+		border-top: 7rpx solid transparent;
+		border-bottom: 7rpx solid transparent;
+		border-left: 11rpx solid $uh-accent;
 	}
 
 	.channels-badge {
@@ -1175,52 +1375,17 @@ export default {
 		color: #ffffff;
 	}
 
-	.channels-desc {
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		line-height: 1.5;
+	.promo-title--channels {
+		color: #ffffff;
+	}
+
+	.promo-desc--channels {
 		color: rgba(255, 255, 255, 0.82);
-		/* 简介最多两行：后台可能写很长，不能让它把卡片撑高 */
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		overflow: hidden;
 	}
 
-	.channels-enter {
-		flex-shrink: 0;
-		padding: 12rpx 20rpx;
-		border-radius: $uh-radius-pill;
-		background-color: #ffffff;
-	}
-
-	.channels-enter_text {
-		font-size: 24rpx;
-		font-weight: 600;
-		color: $uh-accent;
-	}
-
-	.channels-enter_arrow {
-		margin-left: 4rpx;
-		font-size: 28rpx;
-		line-height: 1;
-		color: $uh-accent;
-	}
-
-	.channels-foot {
-		position: relative;
-		padding: 14rpx 24rpx;
-		background-color: rgba(255, 255, 255, 0.14);
-	}
-
-	.channels-foot_tip {
-		flex: 1;
-		min-width: 0;
-		font-size: 21rpx;
-		color: rgba(255, 255, 255, 0.85);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.promo-action_text--channels,
+	.promo-action_arrow--channels {
+		color: #ffffff;
 	}
 
 	.nav-box {		background-color: $uh-card;

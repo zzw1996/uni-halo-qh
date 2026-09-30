@@ -32,15 +32,52 @@ public class AiContentPreferenceViewDTO {
     /** 权益说明文案（未开通页展示；留空时前端用通用文案） */
     private String benefitNote;
 
+    /** 预设定制主题选项（站长配置，前端一键加入自己的定制主题） */
+    private List<String> presetTopics;
+
+    /** 积分兑换通道（pointsPrice=0 表示未开启） */
+    private Redeem redeem;
+
+    /** 推送设置：可选整点、模板是否配好、用户当前的推送偏好由 preference 带回 */
+    private PushSettings push;
+
     @Data
     @Builder
     public static class Limits {
         private int maxCategories;
         private int maxSources;
         private int maxKeywords;
+        private int maxTopics;
         private int maxItems;
         private int windowDays;
         /** 是否开启 AI 导语（关闭时页面要说明「本次为纯筛选」） */
         private boolean aiIntroEnabled;
+    }
+
+    /** 每日推送的可选项与可用状态 */
+    @Data
+    @Builder
+    public static class PushSettings {
+        /** 用户可选的整点列表（站长配置） */
+        private List<Integer> hourOptions;
+        /** 简报模板与字段是否配好（没配好时前端不显示推送入口） */
+        private boolean ready;
+    }
+
+    /** 积分解锁 AI 定制内容的通道参数 */
+    @Data
+    @Builder
+    public static class Redeem {
+        /** 每次兑换需要的积分；0 = 通道关闭 */
+        private int pointsPrice;
+        /** 每次兑换延长多少天 */
+        private int pointsDays;
+        /**
+         * 当前积分余额（未登录为 null）。
+         *
+         * <p>下发它是为了「点击兑换时就能判断够不够」——否则用户要等确认弹窗之后再被服务端拒绝，
+         * 白点一次。服务端仍会做权威校验（余额可能已经变了），这里只是把已知信息提前给前端。</p>
+         */
+        private Long pointsBalance;
     }
 }

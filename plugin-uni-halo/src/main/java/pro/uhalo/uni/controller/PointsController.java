@@ -13,7 +13,6 @@ import pro.uhalo.uni.dto.ClaimDailyTaskRequest;
 import pro.uhalo.uni.dto.ContentUnlockRequest;
 import pro.uhalo.uni.dto.MembershipStatusDTO;
 import pro.uhalo.uni.dto.ExchangeRequest;
-import pro.uhalo.uni.dto.LuckyClaimRequest;
 import pro.uhalo.uni.dto.OutfitBuyRequest;
 import pro.uhalo.uni.dto.OutfitEquipRequest;
 import pro.uhalo.uni.dto.PointsEarnRequest;
@@ -25,7 +24,6 @@ import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.DailyTaskService;
 import pro.uhalo.uni.services.InviteService;
 import pro.uhalo.uni.services.LevelService;
-import pro.uhalo.uni.services.LuckyDrawService;
 import pro.uhalo.uni.services.PointsService;
 import pro.uhalo.uni.services.UniHaloService;
 import pro.uhalo.uni.utils.WxRequestParser;
@@ -46,7 +44,6 @@ public class PointsController {
     private final DailyTaskService dailyTaskService;
     private final LevelService levelService;
     private final InviteService inviteService;
-    private final LuckyDrawService luckyDrawService;
     private final ContentTicketService contentTicketService;
     private final MembershipService membershipService;
     private final UniHaloService uniHaloService;
@@ -80,16 +77,6 @@ public class PointsController {
             .flatMap(this::jsonOk));
     }
 
-    public Mono<ServerResponse> draw(ServerRequest request) {
-        return withOpenid(request, openid -> pointsService.draw(openid)
-            .flatMap(this::jsonOk));
-    }
-
-    public Mono<ServerResponse> drawStatus(ServerRequest request) {
-        return withOpenid(request, openid -> pointsService.drawStatus(openid)
-            .flatMap(this::jsonOk));
-    }
-
     public Mono<ServerResponse> exchange(ServerRequest request) {
         return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
             .flatMap(raw -> WxRequestParser.parseBody(raw, ExchangeRequest.class))
@@ -106,7 +93,7 @@ public class PointsController {
     public Mono<ServerResponse> history(ServerRequest request) {
         var page = parseIntParam(request, "page", 0);
         var size = parseIntParam(request, "size", 10);
-        // 可选动作码过滤：如 action=lucky_draw 只取抽奖消耗明细
+        // 可选动作码过滤：如 action=sign_in 只取签到明细
         var action = request.queryParam("action").orElse(null);
         return withOpenid(request, openid -> pointsService.listHistory(openid, action, page, size)
             .flatMap(this::jsonOk));
@@ -219,32 +206,6 @@ public class PointsController {
                     DataBufferUtils.release(dataBuffer);
                 }
             });
-    }
-
-    public Mono<ServerResponse> luckyConfig(ServerRequest request) {
-        return luckyDrawService.getConfig()
-            .flatMap(this::jsonOk)
-            .onErrorResume(Exception.class, e -> {
-                log.warn("lucky config failed: {}", e.getMessage());
-                return badRequest("抽奖配置加载失败");
-            });
-    }
-
-    public Mono<ServerResponse> luckyDraw(ServerRequest request) {
-        return withOpenid(request, openid -> luckyDrawService.draw(openid)
-            .flatMap(this::jsonOk));
-    }
-
-    public Mono<ServerResponse> luckySubmit(ServerRequest request) {
-        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
-            .flatMap(raw -> WxRequestParser.parseBody(raw, LuckyClaimRequest.class))
-            .flatMap(body -> luckyDrawService.submitClaim(openid, body))
-            .flatMap(this::jsonOk));
-    }
-
-    public Mono<ServerResponse> luckyMine(ServerRequest request) {
-        return withOpenid(request, openid -> luckyDrawService.getMyClaims(openid)
-            .flatMap(this::jsonOk));
     }
 
     /**

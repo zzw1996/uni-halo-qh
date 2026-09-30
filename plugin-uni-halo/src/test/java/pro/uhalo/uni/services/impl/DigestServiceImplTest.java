@@ -12,6 +12,7 @@ import pro.uhalo.uni.dto.DigestPostResultDTO;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
 import pro.uhalo.uni.dto.HaloPostPublishResultDTO;
 import pro.uhalo.uni.infra.DigestPersistence;
+import pro.uhalo.uni.infra.DigestSeenStore;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.services.DigestAiClient;
 import pro.uhalo.uni.services.DigestAssetUploader;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -53,6 +55,9 @@ class DigestServiceImplTest {
 
     @Mock
     private DigestPersistence persistence;
+
+    @Mock
+    private DigestSeenStore seenStore;
 
     @Mock
     private DigestFeedService feedService;
@@ -80,8 +85,12 @@ class DigestServiceImplTest {
     @BeforeEach
     void setUp() throws Exception {
         progressTracker = new DigestProgressTracker();
-        service = new DigestServiceImpl(settingFetcher, persistence, feedService, aiClient,
-            aiModelService, new DigestRenderer(), assetUploader, publisher, progressTracker);
+        service = new DigestServiceImpl(settingFetcher, persistence, seenStore, feedService,
+            aiClient, aiModelService, new DigestRenderer(), assetUploader, publisher,
+            progressTracker);
+        // 跨天去重：测试默认「没有历史记录」
+        lenient().when(seenStore.recentKeys()).thenReturn(Mono.just(java.util.Set.of()));
+        lenient().when(seenStore.recordAll(any(), any())).thenReturn(Mono.empty());
         when(settingFetcher.get("aiDigestConfig")).thenReturn(Mono.just(MAPPER.readTree("""
             {"enabled":true,"publishMode":"per-article","publishEnabled":true,
              "postOwner":"admin","postTitleTemplate":"AI 日报 · {date}","publishWaitSeconds":600}

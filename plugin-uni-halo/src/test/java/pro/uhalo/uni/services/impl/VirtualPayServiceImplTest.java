@@ -25,6 +25,7 @@ import pro.uhalo.uni.utils.WxAccessTokenProvider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import run.halo.app.infra.ExternalLinkProcessor;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
 import java.time.Instant;
@@ -75,6 +76,10 @@ class VirtualPayServiceImplTest {
 
     @Mock
     private AiContentEntitlementService aiContentEntitlementService;
+
+    /** 相对路径 → 外链的解析器 mock：默认无解析能力（返回 null 时相对路径会被丢弃）。 */
+    @Mock
+    private ExternalLinkProcessor externalLinkProcessor;
 
     @InjectMocks
     private VirtualPayServiceImpl virtualPayService;
@@ -885,6 +890,97 @@ class VirtualPayServiceImplTest {
         assertThat(VirtualPayServiceImpl.resolvePromoEndsAt(
             MAPPER.readTree("{\"goodsId\":\"g1\",\"promoEndsAt\":\"下个月底\"}")))
             .isNull();
+    }
+
+    // ==================== 道具图片 URL 校验（商品卡展示用，非法值必须丢弃） ====================
+
+    /** 合法 http(s) 地址原样下发；两端空白会裁掉。 */
+    @Test
+    void goodsImageShouldAcceptHttpUrls() {
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "https://cdn.example.com/goods/member.png", "g1", null))
+            .isEqualTo("https://cdn.example.com/goods/member.png");
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "  http://cdn.example.com/goods/ticket.png  ", "g1", null))
+            .isEqualTo("http://cdn.example.com/goods/ticket.png");
+    }
+
+    /** Halo 附件库本地存储给的是相对路径：经 processLink 拼上站点外链（小程序解析不了相对路径）。 */
+    @Test
+    void goodsImageShouldResolveSiteRelativePathWithExternalUrl() {
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "/upload/2026/09/member.webp", "g1",
+            (path) -> "https://blog.example.com" + path))
+            .isEqualTo("https://blog.example.com/upload/2026/09/member.webp");
+    }
+
+    /** 拿不到外链解析器（或解析不出绝对地址）时相对路径只能丢弃，不能把半截路径下发给小程序。 */
+    @Test
+    void goodsImageShouldDropRelativePathWithoutResolver() {
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "/upload/2026/09/member.webp", "g1", null))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "/upload/2026/09/member.webp", "g1", (path) -> path))
+            .isNull();
+    }
+
+    /** 留空是常态（图片可选）：返回 null 让前端回落类型图标，而不是塞个空串。 */
+    @Test
+    void goodsImageShouldReturnNullForBlank() {
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(null, "g1", null)).isNull();
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage("", "g1", null)).isNull();
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage("   ", "g1", null)).isNull();
+    }
+
+    /** 相对文件名、内联 data URI、协议相对地址等都不是合法图床地址，丢弃并按 null 处理。 */
+    @Test
+    void goodsImageShouldRejectNonHttpValues() {
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "static/tabbar/home.png", "g1", null))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "data:image/png;base64,iVBORw0KGgo=", "g1", null))
+            .isNull();
+        // "//cdn.example.com/a.png" 是协议相对地址，小程序 image 不支持
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "//cdn.example.com/a.png", "g1", null))
+            .isNull();
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(
+            "ftp://cdn.example.com/a.png", "g1", null))
+            .isNull();
+    }
+
+    /** 超长 URL（基本是贴错了内容）丢弃，防止把巨大的内联内容塞进下发给全量用户的配置。 */
+    @Test
+    void goodsImageShouldRejectOverlongUrls() {
+        var longUrl = "https://cdn.example.com/" + "a".repeat(600) + ".png";
+        assertThat(VirtualPayServiceImpl.sanitizeGoodsImage(longUrl, "g1", null))
+            .isNull();
+    }
+
+    /** 端到端：附件库选的相对路径图片经 processLink 拼上站点外链后下发；没配图片字段时不影响商品本身。 */
+    @Test
+    void goodsShouldCarryImageResolvedAgainstExternalUrl() throws Exception {
+        when(externalLinkProcessor.processLink("/upload/2026/09/member.webp"))
+            .thenReturn("https://www.lxfzzw.com/upload/2026/09/member.webp");
+        stubPayConfig("""
+            {"enabled":true,"offerId":"offer-1","appKey":"key-1","env":0,"goods":[
+              {"goodsId":"g_member","name":"月卡","price":600,"type":"membership","value":30,
+               "image":"/upload/2026/09/member.webp"},
+              {"goodsId":"g_ticket","name":"阅读券","price":300,"type":"content_ticket","value":1}
+            ]}
+            """);
+
+        StepVerifier.create(virtualPayService.getPublicConfig())
+            .assertNext(config -> {
+                assertThat(config.getGoods()).hasSize(2);
+                assertThat(config.getGoods().get(0).getImage())
+                    .isEqualTo("https://www.lxfzzw.com/upload/2026/09/member.webp");
+                // 没配图片的商品下发 null，前端回落类型图标
+                assertThat(config.getGoods().get(1).getImage()).isNull();
+            })
+            .verifyComplete();
     }
 
     /** 端到端：配置里的日期时间字符串要一路走到下发的商品上。 */

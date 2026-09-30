@@ -49,4 +49,10 @@ public class AiContentItemDTO {
 
     /** AI 给这条写的一句话推荐理由；未开启 AI 或该条未被选中时为空 */
     private String reason;
+
+    /** 是否为「AI 按用户定制主题直接生成」的条目（无原文出处，内容私有只归该用户） */
+    private Boolean generated;
+
+    /** AI 生成的正文（仅 generated=true 时有值；不下发给其他用户，海报只带摘要） */
+    private String body;
 }
