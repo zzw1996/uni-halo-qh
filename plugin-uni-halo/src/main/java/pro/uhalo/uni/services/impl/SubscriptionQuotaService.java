@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.SubscriptionConfigDTO;
 import pro.uhalo.uni.dto.SubscriptionLimitsDTO;
 import pro.uhalo.uni.infra.PointsPersistence;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.utils.SubscriptionConfigHelper;
@@ -38,6 +39,16 @@ public class SubscriptionQuotaService {
 
     private final ReactiveSettingFetcher settingFetcher;
     private final PointsPersistence pointsPersistence;
+    /** 特权判定：站点所有者/管理员订阅不限量（见 PrivilegeService） */
+    private final PrivilegeService privilegeService;
+
+    /**
+     * 特权用户的订阅上限。
+     *
+     * <p>取 {@link Integer#MAX_VALUE} 而不是某个大数字：后续与「已订阅数」比较时
+     * 任何实际数量都远小于它，等价于不限量，也不会在计算里溢出。</p>
+     */
+    static final int UNLIMITED_QUOTA = Integer.MAX_VALUE;
 
     /** 读取额度配置（读不到按默认，绝不让它挡住订阅保存） */
     public Mono<SubscriptionConfigDTO> loadConfig() {
@@ -130,15 +141,18 @@ public class SubscriptionQuotaService {
                     config.limitFor(0)));
             }
             var normalized = openid.trim();
-            // defer + onErrorResume：账户读取出问题（含依赖被替换成返回 null 的桩）
-            // 只该降级成免费额度，不能让「首页还能看」被一次读失败打挂
-            return Mono.defer(() -> pointsPersistence.findAccountByOpenid(normalized))
+            // 站点所有者/管理员：订阅不限量。上架前自测、以及「站长自己当然能订全站」
+            // 这两件事都不该被额度挡住。
+            return privilegeService.isPrivileged(normalized)
+                .flatMap(privileged -> Mono.defer(() -> pointsPersistence
+                    .findAccountByOpenid(normalized))
                 .defaultIfEmpty(new UserPoints())
                 .map(account -> {
                     var expireAt = account.getMemberExpireAt();
                     var memberActive = MemberConfigHelper.isActive(expireAt);
                     var purchased = clampPurchased(account.getSubscribeQuota(), config);
-                    var limit = memberActive ? config.memberLimit() : config.limitFor(purchased);
+                    var limit = privileged ? UNLIMITED_QUOTA
+                        : (memberActive ? config.memberLimit() : config.limitFor(purchased));
                     return new QuotaState(config, purchased,
                         account.getBalance() == null ? 0L : account.getBalance(),
                         memberActive, memberActive ? expireAt : null, limit);
@@ -148,7 +162,7 @@ public class SubscriptionQuotaService {
                         mask(normalized), ex.getMessage());
                     return Mono.just(new QuotaState(config, 0, 0L, false, null,
                         config.limitFor(0)));
-                });
+                }));
         });
     }
 

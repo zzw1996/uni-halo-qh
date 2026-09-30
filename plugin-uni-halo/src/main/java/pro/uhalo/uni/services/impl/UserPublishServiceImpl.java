@@ -2,7 +2,6 @@ package pro.uhalo.uni.services.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
@@ -21,13 +20,13 @@ import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
 import pro.uhalo.uni.services.DigestHaloClient;
 import pro.uhalo.uni.services.HaloPostPublisher;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.services.UserPublishService;
 import pro.uhalo.uni.services.WxContentSecurityService;
 import pro.uhalo.uni.services.WxUserService;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.User;
 import run.halo.app.core.extension.service.AttachmentService;
-import run.halo.app.core.user.service.RoleService;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
@@ -109,13 +108,14 @@ public class UserPublishServiceImpl implements UserPublishService {
     private final ReactiveExtensionClient extensionClient;
     private final AttachmentService attachmentService;
     private final WxContentSecurityService contentSecurityService;
-    private final ObjectProvider<RoleService> roleServiceProvider;
     /**
      * 调 Halo 接口统一走 DigestHaloClient：接口地址可在「AI 日报 - Halo 接口地址」配置
      * （与日报同口径），默认本机回环。不能写死 127.0.0.1——部分部署（如 Docker/自定义端口）
      * 回环不可达，写死会导致删除/发布全部「投稿失败」而日报正常。
      */
     private final DigestHaloClient haloClient;
+    /** 特权判定收口在这里（本站所有者 / 管理员），见 PrivilegeService 的说明 */
+    private final PrivilegeService privilegeService;
 
     public UserPublishServiceImpl(ReactiveSettingFetcher settingFetcher,
                                   WxUserService wxUserService,
@@ -124,8 +124,8 @@ public class UserPublishServiceImpl implements UserPublishService {
                                   ReactiveExtensionClient extensionClient,
                                   AttachmentService attachmentService,
                                   WxContentSecurityService contentSecurityService,
-                                  ObjectProvider<RoleService> roleServiceProvider,
-                                  DigestHaloClient haloClient) {
+                                  DigestHaloClient haloClient,
+                                  PrivilegeService privilegeService) {
         this.settingFetcher = settingFetcher;
         this.wxUserService = wxUserService;
         this.pointsPersistence = pointsPersistence;
@@ -135,8 +135,8 @@ public class UserPublishServiceImpl implements UserPublishService {
         this.contentSecurityService = contentSecurityService;
         // 用 ObjectProvider 而不是直接注入：角色服务若在插件上下文不可用，
         // 只是退化成「读不到角色 → 走默认策略」，而不是整个插件起不来
-        this.roleServiceProvider = roleServiceProvider;
         this.haloClient = haloClient;
+        this.privilegeService = privilegeService;
     }
 
     // ==================== 状态 ====================
@@ -529,16 +529,7 @@ public class UserPublishServiceImpl implements UserPublishService {
      * 命中即为特权：发布免费、直接公开、不受每日上限约束、跳过内容检测。</p>
      */
     private Mono<Boolean> isPrivileged(WxUser user, Set<String> roles) {
-        if (roles.stream().anyMatch(r -> PRIVILEGED_ROLES.contains(r.toLowerCase(Locale.ROOT)))) {
-            return Mono.just(true);
-        }
-        return settingFetcher.get("wxAppConfig")
-            .map(config -> {
-                var ownerOpenid = trim(config.path("ownerOpenid").asText(""));
-                return StringUtils.hasText(ownerOpenid)
-                    && ownerOpenid.equals(trim(user.getOpenid()));
-            })
-            .defaultIfEmpty(false);
+        return privilegeService.isPrivileged(user, roles);
     }
 
     /** 解析发布方式与特权身份（特权=博主/管理员：免费、直发、不限次） */
@@ -579,42 +570,11 @@ public class UserPublishServiceImpl implements UserPublishService {
         return normalizeMode(config.defaultMode());
     }
 
-    /** 读取用户角色：优先官方 RoleService，取不到再读 User 上的角色注解 */
+    /** 读取用户角色（委托给统一实现，见 PrivilegeService） */
     private Mono<Set<String>> resolveRoles(String haloUserName) {
-        var roleService = roleServiceProvider.getIfAvailable();
-        Mono<Set<String>> viaService = roleService == null
-            ? Mono.just(Set.<String>of())
-            : roleService.getRolesByUsername(haloUserName)
-                .collectList()
-                .map(list -> (Set<String>) new LinkedHashSet<String>(list))
-                .onErrorResume(ex -> {
-                    log.warn("[UniHalo][UserPublish] 读取角色失败（RoleService）：{}", ex.getMessage());
-                    return Mono.just(Set.<String>of());
-                });
-        return viaService.flatMap(roles -> roles.isEmpty() ? rolesFromAnnotation(haloUserName)
-            : Mono.just(roles));
+        return privilegeService.rolesOf(haloUserName);
     }
 
-    private Mono<Set<String>> rolesFromAnnotation(String haloUserName) {
-        return extensionClient.fetch(User.class, haloUserName)
-            .map(user -> {
-                var annotations = user.getMetadata().getAnnotations();
-                var raw = annotations == null ? null : annotations.get(ROLE_NAMES_ANNO);
-                if (!StringUtils.hasText(raw)) {
-                    // 注解格式形如 "author,contributor"
-                    return Set.<String>of();
-                }
-                var normalized = new LinkedHashSet<String>();
-                for (var part : raw.split(",")) {
-                    var name = trim(part);
-                    if (StringUtils.hasText(name)) {
-                        normalized.add(name);
-                    }
-                }
-                return (Set<String>) normalized;
-            })
-            .defaultIfEmpty(Set.of());
-    }
 
     private Mono<Void> ensureDailyLimit(String openid, String action, int limit, String label) {
         if (limit <= 0) {

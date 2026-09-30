@@ -82,11 +82,18 @@ class ContentTicketServiceImplTest {
     @Mock
     private MembershipService membershipService;
 
+    /** 特权判定：默认非特权（站长/管理员豁免由 PrivilegeServiceImplTest 覆盖） */
+    @Mock
+    private pro.uhalo.uni.services.PrivilegeService privilegeService;
+
     @InjectMocks
     private ContentTicketServiceImpl service;
 
     @BeforeEach
     void setUp() {
+        // 特权判定默认「非特权」：既有用例考察普通用户路径，豁免行为另有专门用例
+        lenient().when(privilegeService.isPrivileged(any(String.class)))
+            .thenReturn(Mono.just(false));
         // 每个用例都会走判定链路：读配置 → 查文章 → 解析付费标签
         lenient().when(settingFetcher.get(eq(ContentTicketConfigHelper.GROUP_NAME)))
             .thenReturn(Mono.just(enabledConfigNode()));

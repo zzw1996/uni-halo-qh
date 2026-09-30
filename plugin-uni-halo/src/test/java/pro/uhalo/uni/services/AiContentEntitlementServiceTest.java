@@ -60,7 +60,7 @@ class AiContentEntitlementServiceTest {
     @BeforeEach
     void setUp() {
         service = new AiContentEntitlementService(pointsPersistence, settingFetcher,
-            membershipService, rateLimiter);
+            membershipService, rateLimiter, privilegeStub());
         stubConfig("{\"enabled\":true}");
         // 会员判定默认「非会员」：会员豁免单独用例里再打开
         lenient().when(membershipService.loadMemberExpireAt(anyString()))
@@ -258,4 +258,29 @@ class AiContentEntitlementServiceTest {
             .expectError(WxAuthException.class)
             .verify();
     }
+    /** 特权判定桩：默认非特权；豁免行为由 PrivilegeServiceImplTest 单独覆盖 */
+    private static pro.uhalo.uni.services.PrivilegeService privilegeStub() {
+        return new pro.uhalo.uni.services.PrivilegeService() {
+            @Override
+            public Mono<Boolean> isPrivileged(String openid) {
+                return Mono.just(false);
+            }
+
+            @Override
+            public Mono<Boolean> isPrivileged(pro.uhalo.uni.scheme.WxUser user,
+                java.util.Set<String> roles) {
+                return Mono.just(false);
+            }
+
+            @Override
+            public Mono<java.util.Set<String>> rolesOf(String haloUserName) {
+                return Mono.just(java.util.Set.of());
+            }
+
+            @Override
+            public void evict(String openid) {
+            }
+        };
+    }
+
 }

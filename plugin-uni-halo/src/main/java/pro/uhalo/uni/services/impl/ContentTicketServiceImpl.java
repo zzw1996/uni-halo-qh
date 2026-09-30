@@ -14,6 +14,7 @@ import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.services.ContentTicketService;
 import pro.uhalo.uni.services.MembershipService;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.utils.ContentTicketConfigHelper;
 import pro.uhalo.uni.utils.MemberConfigHelper;
@@ -100,6 +101,8 @@ public class ContentTicketServiceImpl implements ContentTicketService {
     private final WxUserService wxUserService;
     private final RateLimiter rateLimiter;
     private final MembershipService membershipService;
+    /** 特权判定：站点所有者/管理员免券读全站付费内容（见 PrivilegeService） */
+    private final PrivilegeService privilegeService;
 
     /** 付费标签的 metadata.name 集合（由 slug 反查得到），带 TTL 缓存 */
     private final AtomicReference<TagCache> paidTagNamesCache = new AtomicReference<>();
@@ -571,15 +574,31 @@ public class ContentTicketServiceImpl implements ContentTicketService {
 
     /** 当前用户是否为文章作者（博主豁免）。 */
     private Mono<Boolean> isOwnerOf(ContentTicketConfigDTO config, Post post, String openid) {
-        if (!Boolean.TRUE.equals(config.getFreeForOwner()) || !StringUtils.hasText(openid)) {
+        if (!StringUtils.hasText(openid)) {
             return Mono.just(false);
         }
-        var owner = post.getSpec() == null ? null : post.getSpec().getOwner();
-        if (!StringUtils.hasText(owner)) {
-            return Mono.just(false);
-        }
-        // wxAppConfig 中没有 ownerOpenid 字段，因此用「微信用户绑定的 Halo 用户名」
-        // 与文章 owner 比对，这是后端唯一可用的博主身份依据
+        // 站点所有者/管理员：全站付费内容都可读。两件事都要求这样：
+        // ① 站长本来就该能看自己站里的所有内容；② 上架前要能逐篇自测付费墙。
+        // 这一层不受 freeForOwner 开关影响——那个开关管的是「文章作者免券」，是给投稿者的。
+        return privilegeService.isPrivileged(openid)
+            .flatMap(privileged -> {
+                if (privileged) {
+                    return Mono.just(true);
+                }
+                if (!Boolean.TRUE.equals(config.getFreeForOwner())) {
+                    return Mono.just(false);
+                }
+                var owner = post.getSpec() == null ? null : post.getSpec().getOwner();
+                if (!StringUtils.hasText(owner)) {
+                    return Mono.just(false);
+                }
+                // 作者豁免：用「微信用户绑定的 Halo 用户名」与文章 owner 比对
+                return authorOf(openid, owner);
+            });
+    }
+
+    /** 文章作者判定（微信用户绑定的 Halo 用户名 == 文章 owner） */
+    private Mono<Boolean> authorOf(String openid, String owner) {
         return wxUserService.fetchByOpenid(openid)
             .map(wxUser -> StringUtils.hasText(wxUser.getHaloUserName())
                 && owner.equals(wxUser.getHaloUserName()))

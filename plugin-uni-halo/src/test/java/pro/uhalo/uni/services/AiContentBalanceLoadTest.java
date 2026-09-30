@@ -50,7 +50,7 @@ class AiContentBalanceLoadTest {
     @BeforeEach
     void setUp() {
         service = new AiContentEntitlementService(pointsPersistence, settingFetcher,
-            membershipService, rateLimiter);
+            membershipService, rateLimiter, privilegeStub());
         lenient().when(membershipService.loadMemberExpireAt(anyString())).thenReturn(Mono.empty());
         // 限流器是 mock：默认返回 false 会让兑换在限流那一步就被拦下
         lenient().when(rateLimiter.tryAcquire(anyString(), org.mockito.ArgumentMatchers.anyInt(),
@@ -120,4 +120,29 @@ class AiContentBalanceLoadTest {
                 .contains("积分不足").contains("需要 800").contains("当前 300").contains("还差 500"))
             .verify();
     }
+    /** 特权判定桩：默认非特权；豁免行为由 PrivilegeServiceImplTest 单独覆盖 */
+    private static pro.uhalo.uni.services.PrivilegeService privilegeStub() {
+        return new pro.uhalo.uni.services.PrivilegeService() {
+            @Override
+            public Mono<Boolean> isPrivileged(String openid) {
+                return Mono.just(false);
+            }
+
+            @Override
+            public Mono<Boolean> isPrivileged(pro.uhalo.uni.scheme.WxUser user,
+                java.util.Set<String> roles) {
+                return Mono.just(false);
+            }
+
+            @Override
+            public Mono<java.util.Set<String>> rolesOf(String haloUserName) {
+                return Mono.just(java.util.Set.of());
+            }
+
+            @Override
+            public void evict(String openid) {
+            }
+        };
+    }
+
 }

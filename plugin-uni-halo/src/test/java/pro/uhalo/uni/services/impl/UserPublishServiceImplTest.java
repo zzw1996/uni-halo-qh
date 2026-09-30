@@ -6,20 +6,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
 import pro.uhalo.uni.scheme.WxUser;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.services.WxUserService;
 import pro.uhalo.uni.services.DigestHaloClient;
 import pro.uhalo.uni.services.HaloPostPublisher;
 import pro.uhalo.uni.services.WxContentSecurityService;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.core.extension.service.AttachmentService;
-import run.halo.app.core.user.service.RoleService;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.plugin.ReactiveSettingFetcher;
 
@@ -68,11 +66,9 @@ class UserPublishServiceImplTest {
     @Mock
     private WxContentSecurityService contentSecurityService;
 
+    /** 特权判定已收口到 PrivilegeService（本站所有者/管理员），这里按身份返回结论 */
     @Mock
-    private ObjectProvider<RoleService> roleServiceProvider;
-
-    @Mock
-    private RoleService roleService;
+    private PrivilegeService privilegeService;
 
     @Mock
     private DigestHaloClient haloClient;
@@ -103,10 +99,13 @@ class UserPublishServiceImplTest {
         when(wxUserService.fetchByOpenid("openid-1")).thenReturn(Mono.just(user));
     }
 
-    private void stubRoles(String... roles) {
-        when(roleServiceProvider.getIfAvailable()).thenReturn(roleService);
-        lenient().when(roleService.getRolesByUsername(org.mockito.ArgumentMatchers.any()))
-            .thenReturn(Flux.fromArray(roles));
+    /** 把该用户标记为特权（站点所有者/管理员）或普通用户 */
+    private void stubPrivileged(boolean privileged) {
+        lenient().when(privilegeService.rolesOf(org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(privileged ? java.util.Set.of("admin") : java.util.Set.of()));
+        lenient().when(privilegeService.isPrivileged(
+                org.mockito.ArgumentMatchers.any(WxUser.class), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(privileged));
     }
 
     /** 管理员积分不足，也必须能看到入口、能发布，且不显示「还差多少积分」。 */
@@ -115,7 +114,7 @@ class UserPublishServiceImplTest {
         stubConfig();
         stubAccount(0L);
         stubUser("admin-user");
-        stubRoles("admin");
+        stubPrivileged(true);
 
         StepVerifier.create(userPublishService.getStatus("openid-1"))
             .assertNext(status -> {
@@ -137,7 +136,7 @@ class UserPublishServiceImplTest {
         stubConfig();
         stubAccount(100L);
         stubUser("normal-user");
-        stubRoles("user");
+        stubPrivileged(false);
 
         StepVerifier.create(userPublishService.getStatus("openid-1"))
             .assertNext(status -> {
@@ -156,7 +155,7 @@ class UserPublishServiceImplTest {
         stubConfig();
         stubAccount(600L);
         stubUser("normal-user");
-        stubRoles("user");
+        stubPrivileged(false);
 
         StepVerifier.create(userPublishService.getStatus("openid-1"))
             .assertNext(status -> {

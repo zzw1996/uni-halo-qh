@@ -12,6 +12,7 @@ import pro.uhalo.uni.dto.DigestSubscriptionDTO;
 import pro.uhalo.uni.dto.SubscriptionLockedDTO;
 import pro.uhalo.uni.dto.SubscriptionWallConfigDTO;
 import pro.uhalo.uni.services.ContentTicketService;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.services.MembershipService;
 import pro.uhalo.uni.services.SubscriptionWallService;
 import pro.uhalo.uni.utils.MemberConfigHelper;
@@ -45,6 +46,8 @@ public class SubscriptionWallServiceImpl implements SubscriptionWallService {
     private final DigestSubscriptionService digestSubscriptionService;
     private final MembershipService membershipService;
     private final ContentTicketService contentTicketService;
+    /** 特权判定：站点所有者/管理员放行（见 PrivilegeService） */
+    private final PrivilegeService privilegeService;
 
     @Override
     public Mono<SubscriptionLockedDTO> resolveLockIfRequired(String openid, String articleName) {
@@ -65,14 +68,16 @@ public class SubscriptionWallServiceImpl implements SubscriptionWallService {
         });
     }
 
-    /** 身份类豁免：站长 openid、有效会员、以及「不拦游客」的配置 */
+    /** 身份类豁免：站长/管理员、有效会员、以及「不拦游客」的配置 */
     private Mono<Boolean> passByExemption(SubscriptionWallConfigDTO config, String openid) {
         if (openid == null) {
             // 游客没有身份可豁免，只看配置要不要拦
             return Mono.just(!Boolean.TRUE.equals(config.getGateGuests()));
         }
-        return isOwnerOpenid(openid).flatMap(owner -> {
-            if (owner) {
+        // 站点所有者与管理员一律放行：既要能看全站（他们就是站主），
+        // 也要能上架前自测墙的效果——不会有人愿意为了测试先给自己买一份订阅
+        return privilegeService.isPrivileged(openid).flatMap(privileged -> {
+            if (privileged) {
                 return Mono.just(true);
             }
             if (!Boolean.TRUE.equals(config.getMemberFree())) {
@@ -82,21 +87,6 @@ public class SubscriptionWallServiceImpl implements SubscriptionWallService {
         });
     }
 
-    /**
-     * 站长豁免：{@code wxAppConfig.ownerOpenid} 显式声明的 openid。
-     *
-     * <p>只认站长声明、不做角色查询——角色判定要额外查 RoleService，
-     * 而站长测试自己的站点用 ownerOpenid 一处配置就够。</p>
-     */
-    private Mono<Boolean> isOwnerOpenid(String openid) {
-        return settingFetcher.get("wxAppConfig")
-            .map(config -> {
-                var ownerOpenid = config.path("ownerOpenid").asText("").trim();
-                return StringUtils.hasText(ownerOpenid) && ownerOpenid.equals(openid);
-            })
-            .defaultIfEmpty(false)
-            .onErrorResume(ex -> Mono.just(false));
-    }
 
     /** 会员豁免只看会员是否在有效期；不再叠加 memberConfig.freeContent 开关，让两套权益互不牵连 */
     private Mono<Boolean> isMemberActive(String openid) {

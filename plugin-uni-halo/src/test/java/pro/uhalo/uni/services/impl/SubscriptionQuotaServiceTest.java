@@ -43,6 +43,10 @@ class SubscriptionQuotaServiceTest {
     @Mock
     private PointsPersistence pointsPersistence;
 
+    /** 特权判定桩：默认非特权（「管理员不限量」由专门用例覆盖） */
+    @Mock
+    private pro.uhalo.uni.services.PrivilegeService privilegeService;
+
     @InjectMocks
     private SubscriptionQuotaService service;
 
@@ -51,6 +55,12 @@ class SubscriptionQuotaServiceTest {
         stubConfig("""
             {"enabled":true,"freeQuota":5,"quotaPrice":50,"maxQuota":10,"memberMaxQuota":30}
             """);
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubNonPrivileged() {
+        lenient().when(privilegeService.isPrivileged(any(String.class)))
+            .thenReturn(Mono.just(false));
     }
 
     private void stubConfig(String json) {

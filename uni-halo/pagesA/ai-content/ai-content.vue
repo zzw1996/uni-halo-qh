@@ -21,7 +21,8 @@
 					</view>
 				</view>
 				<view v-if="status && status.active" class="hero-meta-row">
-					<text v-if="status.viaMember" class="hero-pill">会员期内免费</text>
+					<text v-if="status.viaPrivilege" class="hero-pill">管理员</text>
+					<text v-else-if="status.viaMember" class="hero-pill">会员期内免费</text>
 					<block v-else>
 						<text v-if="status.permanent" class="hero-pill">永久有效</text>
 						<text v-else class="hero-pill">到期 {{ status.expireAt }}</text>
@@ -503,6 +504,7 @@
 				if (!this.status.active) {
 					return this.status.expired ? '已过期' : '未开通';
 				}
+				if (this.status.viaPrivilege) return '管理员';
 				if (this.status.viaMember) return '会员免费';
 				return this.status.permanent ? '永久' : '生效中';
 			},

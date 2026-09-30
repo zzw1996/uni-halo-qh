@@ -36,4 +36,12 @@ public class AiContentStatusDTO {
 
     /** 当前有效性来自「会员期内免条件使用」而非已购道具（前端展示「会员期内免费」） */
     private boolean viaMember;
+
+    /**
+     * 是否因「站点所有者 / 管理员」身份而开通。
+     *
+     * <p>特权身份无需购买即为已开通（便于上架前自测），前端可用它把状态文案
+     * 显示成「管理员」而不是「剩余 N 天」。</p>
+     */
+    private boolean viaPrivilege;
 }

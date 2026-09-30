@@ -11,6 +11,7 @@ import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.utils.AiContentConfigHelper;
 import pro.uhalo.uni.utils.MemberConfigHelper;
+import pro.uhalo.uni.services.PrivilegeService;
 import pro.uhalo.uni.utils.RateLimiter;
 import reactor.core.publisher.Mono;
 import run.halo.app.plugin.ReactiveSettingFetcher;
@@ -53,6 +54,8 @@ public class AiContentEntitlementService {
     private final ReactiveSettingFetcher settingFetcher;
     private final MembershipService membershipService;
     private final RateLimiter rateLimiter;
+    /** 特权判定：站点所有者/管理员豁免付费门槛（便于上架前自测，见 PrivilegeService） */
+    private final PrivilegeService privilegeService;
 
     /** 读取配置；读取失败按关闭处理（宁可少给权益，不可误拦用户） */
     public Mono<AiContentConfigDTO> loadConfig() {
@@ -78,31 +81,46 @@ public class AiContentEntitlementService {
             if (!StringUtils.hasText(openid)) {
                 return Mono.just(statusOf(null));
             }
-            return pointsPersistence.getOrCreateAccount(openid.trim())
-                .map(account -> statusOf(account.getAiContentExpireAt()))
-                .onErrorResume(ex -> {
-                    log.warn("[UniHalo][AiContent] 读取权益状态失败，按未开通展示: openid={}, {}",
-                        maskOpenid(openid), ex.getMessage());
-                    return Mono.just(statusOf(null));
-                })
-                // 道具不在有效期时再看会员：会员期内免条件使用（站长可用 memberFree 关掉）
-                .flatMap(status -> {
-                    if (status.isActive() || !config.isMemberFree()
-                        || !StringUtils.hasText(openid)) {
-                        return Mono.just(status);
-                    }
-                    return memberActive(openid.trim())
-                        .map(member -> {
-                            if (member) {
-                                status.setActive(true);
-                                status.setViaMember(true);
-                            }
-                            return status;
-                        });
-                });
+            var normalized = openid.trim();
+            // 站点所有者/管理员：直接按「已开通」展示。他们本来就有全部权限，
+            // 上架前自测不该先给自己买一份。
+            return privilegeService.isPrivileged(normalized)
+                .flatMap(privileged -> privileged
+                    ? Mono.just(privilegedStatus())
+                    : loadStatusOf(normalized, config));
         });
     }
 
+    /** 常规用户的权益状态：道具有效期 → 会员兜底（memberFree 关掉时只看道具） */
+    private Mono<AiContentStatusDTO> loadStatusOf(String openid, AiContentConfigDTO config) {
+        return pointsPersistence.getOrCreateAccount(openid)
+            .map(account -> statusOf(account.getAiContentExpireAt()))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 读取权益状态失败，按未开通展示: openid={}, {}",
+                    maskOpenid(openid), ex.getMessage());
+                return Mono.just(statusOf(null));
+            })
+            .flatMap(status -> {
+                if (status.isActive() || !config.isMemberFree()) {
+                    return Mono.just(status);
+                }
+                return memberActive(openid).map(member -> {
+                    if (member) {
+                        status.setActive(true);
+                        status.setViaMember(true);
+                    }
+                    return status;
+                });
+            });
+    }
+
+    /** 特权用户的状态：已开通、无到期时间（前端据此显示「已开通」，不需要再算剩余天数） */
+    private AiContentStatusDTO privilegedStatus() {
+        var status = statusOf(null);
+        status.setActive(true);
+        status.setViaPrivilege(true);
+        return status;
+    }
     /**
      * 读取到期时间；未登录或读不到返回空。
      *
@@ -159,7 +177,10 @@ public class AiContentEntitlementService {
                     return Mono.just(false);
                 }
                 var normalized = openid.trim();
-                return loadExpireAt(normalized).map(AiContentConfigHelper::isActive)
+                // 站点所有者/管理员：一律视为已开通（与 getStatus 同一口径）
+                return privilegeService.isPrivileged(normalized)
+                    .flatMap(privileged -> privileged ? Mono.just(true)
+                        : loadExpireAt(normalized).map(AiContentConfigHelper::isActive))
                     .defaultIfEmpty(false)
                     .flatMap(active -> {
                         if (active || !config.isMemberFree()) {

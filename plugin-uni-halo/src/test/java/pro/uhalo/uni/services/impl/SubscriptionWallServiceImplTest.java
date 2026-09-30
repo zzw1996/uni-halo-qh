@@ -53,12 +53,16 @@ class SubscriptionWallServiceImplTest {
     @Mock
     private ContentTicketService contentTicketService;
 
+    @org.mockito.Mock
+    private pro.uhalo.uni.services.PrivilegeService privilegeService;
+
     private SubscriptionWallServiceImpl service;
 
     @BeforeEach
     void setUp() {
+        when(privilegeService.isPrivileged(any(String.class))).thenReturn(Mono.just(false));
         service = new SubscriptionWallServiceImpl(settingFetcher, client,
-            digestSubscriptionService, membershipService, contentTicketService);
+            digestSubscriptionService, membershipService, contentTicketService, privilegeService);
         lenient().when(contentTicketService.isPaidPost(any(Post.class)))
             .thenReturn(Mono.just(false));
         lenient().when(settingFetcher.get("wxAppConfig")).thenReturn(Mono.empty());
