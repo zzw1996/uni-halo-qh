@@ -590,10 +590,19 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			/** 拉取投稿状态；未登录或接口不可用时置空（入口不显示，不打扰用户） */
 			async fnRefreshPublishStatus() {
 				if (!this.isLoggedIn) {
+					const wasNull = this.publishStatus == null;
 					this.publishStatus = null;
+					// 退出登录后入口要消失（navList 不会因 publishStatus 变化自动重建）
+					if (!wasNull) {
+						this.fnGetNavList();
+					}
 					return;
 				}
 				this.publishStatus = await fetchUserPublishStatus(this.$httpApi.v2);
+				// 「投稿文章」入口的显隐挂在 publishStatus 上，而 navList 只在 haloConfigs
+				// 变化时重建（immediate watcher 在页面创建时先跑一遍，那时状态还没回来，
+				// 入口会按「不显示」定格）。状态到达后必须重建一次，否则普通用户永远看不到入口。
+				this.fnGetNavList();
 			},
 
 			fnEnsureLogin() {
