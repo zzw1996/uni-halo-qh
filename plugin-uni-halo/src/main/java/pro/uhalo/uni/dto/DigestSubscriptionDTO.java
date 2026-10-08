@@ -34,8 +34,12 @@ public class DigestSubscriptionDTO {
     /** 从邀请人继承来的站点分类（只读展示用，用户不能直接改，只能退订） */
     private List<String> inheritedCategories;
 
-    /** 邀请人 openid；为空表示当前没有继承项 */
-    private String inheritedFrom;
+    // ⚠️ 这里刻意没有 inheritedFrom 字段，请不要加回来。
+    // 它是邀请人的 openid，而下发对象正是被邀请人——等于把另一个用户的身份标识交给调用方。
+    // 本插件的用户接口以 `Wechat-Session-Id: <openid>` 请求头认人（见 PayController.resolveOpenid），
+    // 拿到他人 openid 即可冒充其身份。前端展示"好友推荐"只需 inheritedCategories，
+    // 小程序与后台控制台都没有读过这个字段。
+    // 继承关系到此为止：服务端内部仍用 DigestSubscription.inheritedFrom 计算继承项。
 
     /**
      * 首页<b>实际生效</b>的分类：自己订阅的（最多 5 个）在前，继承来的（最多 3 个）在后，

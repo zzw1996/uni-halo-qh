@@ -369,7 +369,6 @@ public class DigestSubscriptionService {
             .sources(orEmpty(subscription.getSources()))
             .postCategories(postCategories)
             .inheritedCategories(inherited)
-            .inheritedFrom(subscription.getInheritedFrom())
             .effectiveCategories(effectiveOf(postCategories, inherited, maxOwn))
             .updatedAt(subscription.getUpdatedAt() == null ? null
                 : subscription.getUpdatedAt().atZone(ZONE).format(TIME_FMT))

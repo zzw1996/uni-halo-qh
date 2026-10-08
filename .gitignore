@@ -14,6 +14,8 @@ extensions/*.jar
 
 # 本地会话/工具目录
 .zcode/
+.tmp-*/
+dsh-usage/
 
 # 根目录下的隐藏排查脚本（体积/样式一次性分析，不入库）
 .*.py
