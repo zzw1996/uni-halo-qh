@@ -103,10 +103,8 @@
 			fnOnImageError() {
 				if (this.comment?.owner) {
 					const defaultUrl = this.imageConfigs?.defaultAvatarUrl || '';
-					if (defaultUrl.indexOf('?') === -1) {
-						this.comment.owner.avatar = `${defaultUrl}?next-v=${new Date().getTime()}`;
-					} else {
-						this.comment.owner.avatar = `${defaultUrl}&next-v=${new Date().getTime()}`;
+					if (defaultUrl) {
+						this.comment.owner.avatar = defaultUrl;
 					}
 				}
 			}

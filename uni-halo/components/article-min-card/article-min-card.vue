@@ -1,7 +1,7 @@
 <template>
     <view class="article-min-card" @click="fnClickEvent('card')">
         <view class="left">
-            <cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover)" :fileMd5="article.spec.cover"
+            <cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover, false, 300)" :fileMd5="article.spec.cover"
                          mode="aspectFill"></cache-image>
         </view>
         <view class="right">

@@ -119,15 +119,8 @@ export default {
     created() {
         this.queryParams.name = this.postName;
         this.fnGetData();
-        uni.$on('comment_list_refresh', () => {
-            this.fnOnSort(true);
-        });
     },
     methods: {
-        fnOnSort(refresh = false) {
-            if (refresh === false) return;
-            this.fnGetData();
-        },
         fnGetData() {
             this.loading = 'loading';
             this.$httpApi.v2.getPostCommentList(this.queryParams)

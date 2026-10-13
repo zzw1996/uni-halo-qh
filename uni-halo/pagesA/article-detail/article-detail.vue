@@ -478,10 +478,10 @@ import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 import tmActionSheet from '@/tm-vuetify/components/tm-actionSheet/tm-actionSheet.vue';
 import PointsToast from '@/components/points-toast/points-toast.vue';
-import ArticleDouban from '@/components/article-douban/article-douban.vue';
-import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
+import ArticleDouban from '@/pagesA/components/article-douban/article-douban.vue';
+import contentReactionBar from '@/pagesA/components/content-reaction-bar/content-reaction-bar.vue';
  
-import barrage from '@/components/barrage/barrage.vue';
+import barrage from '@/pagesA/components/barrage/barrage.vue';
 import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
 import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, isQuotaFull, quotaText } from '@/utils/categorySubscription.js';
 import { getCommentAuthorInfo } from '@/utils/comment.js';
@@ -492,7 +492,7 @@ import { getPointsConfig, isPointsEnabled, tryEarnPointsByAction, checkPointsEar
 import { getDomainOnly } from '@/utils/url.params.js'
 import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName } from '@/utils/restrictRead';
 import HaloTokenConfig from '@/config/uhalo.config';
-import RestrictReadSkeleton from '@/components/restrict-read-skeleton/restrict-read-skeleton.vue';
+import RestrictReadSkeleton from '@/pagesA/components/restrict-read-skeleton/restrict-read-skeleton.vue';
 import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
 
 export default {

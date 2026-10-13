@@ -49,7 +49,7 @@ export default {
 }
 .waveTop {
 	background-size: 50% 45px;
-	background-image: url('~@/static/wave/wave-1.png');
+	background-image: url('@/pagesA/static/wave/wave-1.png');
 }
 .waveAnimation .waveTop {
 	animation: move_wave 4s linear infinite;
@@ -70,7 +70,7 @@ export default {
 }
 .waveMiddle {
 	background-size: 50% 40px;
-	background-image: url('~@/static/wave/wave-2.png');
+	background-image: url('@/pagesA/static/wave/wave-2.png');
 }
 .waveAnimation .waveMiddle {
 	animation: move_wave 3.5s linear infinite;
@@ -81,7 +81,7 @@ export default {
 }
 .waveBottom {
 	background-size: 50% 35px;
-	background-image: url('~@/static/wave/wave-1.png');
+	background-image: url('@/pagesA/static/wave/wave-1.png');
 }
 .waveAnimation .waveBottom {
 	animation: move_wave 2s linear infinite;

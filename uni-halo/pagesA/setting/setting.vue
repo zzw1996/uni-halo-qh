@@ -198,7 +198,7 @@
 	import tmSheet from '@/tm-vuetify/components/tm-sheet/tm-sheet.vue';
 	import tmGroupradio from '@/tm-vuetify/components/tm-groupradio/tm-groupradio.vue';
 	import tmRadio from '@/tm-vuetify/components/tm-radio/tm-radio.vue';
-	import uhSettingRow from '@/components/uh-setting-row/uh-setting-row.vue';
+	import uhSettingRow from '@/pagesA/components/uh-setting-row/uh-setting-row.vue';
 	import { APPEARANCE_MODES, appearanceState, appearanceLabelOf, applyAppearanceMode } from '@/utils/skin.js';
 	import { pushAppearanceMode } from '@/utils/appSettingsSync.js';
 

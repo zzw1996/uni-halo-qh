@@ -125,7 +125,7 @@
 </template>
 
 <script>
-	import wave from '@/components/wave/wave.vue';
+	import wave from '@/pagesA/components/wave/wave.vue';
 
 	export default {
 		components: {

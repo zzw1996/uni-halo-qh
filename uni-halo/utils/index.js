@@ -29,35 +29,64 @@ const utils = {
         return url
     },
 
-    // 检查封面图
-    checkThumbnailUrl: function (thumbnail, mustRealUrl = false) {
+    /**
+     * 判断是否为静态图片 URL（以图片扩展名结尾）。
+     * 静态图可走 HTTP 缓存；随机图 API（如 tenapi.cn/v2/acg）需每次重新请求。
+     */
+    isStaticImageUrl: function (url) {
+        if (!url) return false;
+        // 去掉已有 query/hash 后看路径结尾
+        const path = url.split('?')[0].split('#')[0];
+        return /\.(jpe?g|png|gif|webp|bmp|svg|ico)(\.[a-z]+)?$/i.test(path);
+    },
+
+    /**
+     * 解析默认图片配置：静态图直出（命中浏览器/小程序 HTTP 缓存），
+     * 随机图 API 追加时间戳避免被缓存成同一张。
+     */
+    resolveDefaultImage: function (url) {
+        const _url = this.checkUrl(url);
+        if (!_url || this.isStaticImageUrl(_url)) return _url;
+        const sep = _url.indexOf('?') === -1 ? '?' : '&';
+        return `${_url}${sep}next-v=${Date.now()}`;
+    },
+
+    /**
+     * 按显示宽度给图片 URL 追加 CDN 缩放/压缩参数。
+     * 支持阿里云 OSS / 腾讯云 COS / 七牛云；未知域名原样返回（保守）。
+     * 已有 query 的 URL 不追加（可能已被处理或为随机图 API）。
+     */
+    resizeImageUrl: function (url, width, quality = 80) {
+        if (!url || !width || !this.checkIsUrl(url)) return url;
+        if (url.indexOf('?') !== -1) return url;
+        const w = Math.round(width);
+        const q = Math.round(quality);
+        if (/\.aliyuncs\.com|\.alicdn\.com/i.test(url)) {
+            return `${url}?x-oss-process=image/resize,w_${w}/quality,q_${q}/format,webp`;
+        }
+        if (/\.myqcloud\.com/i.test(url)) {
+            return `${url}?imageMogr2/thumbnail/${w}x/quality/${q}/format/webp`;
+        }
+        if (/(qiniup|qbox|qtlcdn|pkul)\.com|7-cdn|sinaimg/i.test(url)) {
+            return `${url}?imageView2/2/w/${w}/q/${q}/format/webp`;
+        }
+        return url;
+    },
+
+    // 检查封面图（resizeWidth>0 时按 CDN 类型追加缩放参数）
+    checkThumbnailUrl: function (thumbnail, mustRealUrl = false, resizeWidth = 0) {
         if (!thumbnail && mustRealUrl) {
             return this.checkUrl(getAppConfigs().imagesConfig.defaultStaticThumbnailUrl);
         }
-        let _url = this.checkUrl(getAppConfigs().imagesConfig.defaultThumbnailUrl);
-        if (_url) {
-            if (_url.indexOf('?') === -1) {
-                _url += `?next-v=${new Date().getTime()}`
-            } else {
-                _url += `&next-v=${new Date().getTime()}`
-            }
-        }
-        if (!thumbnail) return _url;
-        if (!this.checkIsUrl(thumbnail)) return HaloTokenConfig.BASE_API + thumbnail;
-        return thumbnail
+        if (!thumbnail) return this.resolveDefaultImage(getAppConfigs().imagesConfig.defaultThumbnailUrl);
+        let _url = this.checkIsUrl(thumbnail) ? thumbnail : HaloTokenConfig.BASE_API + thumbnail;
+        if (resizeWidth) _url = this.resizeImageUrl(_url, resizeWidth);
+        return _url;
     },
 
     // 检查图片
     checkImageUrl: function (image) {
-        let _url = this.checkUrl(getAppConfigs().imagesConfig.defaultImageUrl);
-        if (_url) {
-            if (_url.indexOf('?') === -1) {
-                _url += `?next-v=${new Date().getTime()}`
-            } else {
-                _url += `&next-v=${new Date().getTime()}`
-            }
-        }
-        if (!image) return _url;
+        if (!image) return this.resolveDefaultImage(getAppConfigs().imagesConfig.defaultImageUrl);
         if (!this.checkIsUrl(image)) return HaloTokenConfig.BASE_API + image;
         return image
     },
@@ -65,15 +94,7 @@ const utils = {
     // 检查头像
     checkAvatarUrl: function (avatar) {
         if (!avatar) {
-            let _url = this.checkUrl(getAppConfigs().imagesConfig.defaultAvatarUrl);
-            if (_url) {
-                if (_url.indexOf('?') === -1) {
-                    _url += `?next-v=${new Date().getTime()}`
-                } else {
-                    _url += `&next-v=${new Date().getTime()}`
-                }
-            }
-            return _url;
+            return this.resolveDefaultImage(getAppConfigs().imagesConfig.defaultAvatarUrl);
         }
         if (!this.checkIsUrl(avatar)) return HaloTokenConfig.BASE_API + avatar;
         return avatar

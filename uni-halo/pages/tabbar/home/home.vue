@@ -120,11 +120,12 @@
 			</view>
 			<block v-else>
 				<view :class="globalAppSettings.layout.home">
-					<tm-translate v-for="(article, index) in articleList" :key="index" class="ani-item"
-						animation-name="fadeUp" :wait="calcAniWait(index)">
+					<view v-for="(article, index) in articleList" :key="index"
+						class="ani-item" :class="{ 'ani-fade-up': index < 10 }"
+						:style="index < 10 ? 'animation-delay:' + (index * 50 + 50) + 'ms' : ''">
 						<article-card from="home" :article="article" :post="article" :show-category="true"
 							@on-click="fnToArticleDetail"></article-card>
-					</tm-translate>
+					</view>
 				</view>
 				<view class="load-text mt-12">{{ loadMoreText }}</view>
 			</block>
@@ -173,7 +174,6 @@
 <script>
 	import tmMenubars from '@/tm-vuetify/components/tm-menubars/tm-menubars.vue';
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
-	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmGrid from '@/tm-vuetify/components/tm-grid/tm-grid.vue';
@@ -204,7 +204,6 @@ export default {
 		components: {
 			tmMenubars,
 			tmSkeleton,
-			tmTranslate,
 			tmIcons,
 			tmEmpty,
 			tmGrid,
@@ -405,12 +404,11 @@ export default {
 			}
 		},
 		watch: {
-			haloConfigs: {
+			'haloConfigs.basicConfig.notifyConfig': {
 				handler(val) {
 					if (!val) return;
 					this.fnInitNotify();
 				},
-				deep: true,
 				immediate: true,
 			},
 			/**
@@ -432,20 +430,19 @@ export default {
 		created() {
 			this.fnSyncWxUser();
 			uni.$on('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
-			uni.$on('wx_login_status_changed', this.fnRefreshPublishPermission);
-			// 订阅是在分类页改的：改完切回首页要立刻生效，不能等下拉刷新
-			uni.$on('category_subscription_changed', this.fnOnSubscriptionChanged);
-			// 投稿门槛按余额算：赚够积分（或花掉）之后要能立刻看到/收起入口
-			uni.$on('points_updated', this.fnRefreshPublishPermission);
+			// 订阅在分类页改的，不需要事件：改订阅的页面一定会写版本号，
+			// 而回到本页时 onShow 的 fnCheckSubscriptionChanged 必定对得上（事件反而可能在
+			// 页面生命周期边界上错过，还会让首页在后台 tab 上白拉一次列表）。
+			// 积分则只把节流窗口作废：门槛按余额算，赚够/花光之后切回首页自然拿到新结论，
+			// 不必在此刻（本页通常在后台）发请求。
+			uni.$on('points_updated', this.fnExpirePublishPermRefresh);
 			// 投稿成功返回列表：把新文章带进来
 			uni.$on('article_list_should_refresh', this.fnReloadArticleList);
 			this.fnQuery();
 		},
 		onShow() {
 			this.fnSyncWxUser();
-			// 订阅是在分类页改的，本页可能还停在旧结果上。
-			// 事件通知可能因为页面生命周期错过（例如首页还没创建就改了订阅），
-			// 所以切回本 tab 时再按版本号对一次，双保险。
+			// 订阅是在分类页改的，本页可能还停在旧结果上：按版本号对一次，变了就重取。
 			this.fnCheckSubscriptionChanged();
 			// 入口的显示条件全在服务端，进页面取一次最新结论
 			this.fnRefreshPublishPermission();
@@ -464,9 +461,7 @@ export default {
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
-			uni.$off('wx_login_status_changed', this.fnRefreshPublishPermission);
-			uni.$off('category_subscription_changed', this.fnOnSubscriptionChanged);
-			uni.$off('points_updated', this.fnRefreshPublishPermission);
+			uni.$off('points_updated', this.fnExpirePublishPermRefresh);
 			uni.$off('article_list_should_refresh', this.fnReloadArticleList);
 		},
 		onPullDownRefresh() {
@@ -506,6 +501,8 @@ export default {
 				this.fnSyncWxUser();
 				if (info && info.openid) {
 					this.fnQuery();
+					// 换了账号，能不能投稿的结论要跟着换；登录对话框也可能就开在本页上
+					this.fnRefreshPublishPermission(true);
 				}
 			},
 			/**
@@ -515,13 +512,21 @@ export default {
 			 * 每日额度都在服务端算好）。未登录或接口不可用时拿到 null，入口不显示——
 			 * 与「发表瞬间」一致，不在客户端另拼一套条件。</p>
 			 */
-			async fnRefreshPublishPermission() {
+			async fnRefreshPublishPermission(force) {
 				if (this.calcAuditModeEnabled) {
 					this.canPublishArticle = false;
 					return;
 				}
+				const now = Date.now();
+				if (!force && this._lastPublishPermRefresh && now - this._lastPublishPermRefresh < 30000) {
+					return;
+				}
+				this._lastPublishPermRefresh = now;
 				const status = await fetchUserPublishStatus(this.$httpApi.v2);
 				this.canPublishArticle = !!(status && status.canPublishArticle && status.visible);
+			},
+			fnExpirePublishPermRefresh() {
+				this._lastPublishPermRefresh = 0;
 			},
 			fnToPublishArticle() {
 				if (!this.canPublishArticle || this.calcAuditModeEnabled) {
@@ -811,7 +816,7 @@ export default {
 			 * 订阅在分类页被改过之后：重取分类与列表。
 			 *
 			 * <p>首页与分类页是两个 tab，改完订阅切回来时首页还停在旧结果上，
-			 * 靠这个事件当场刷新，不用等下拉或重启小程序。</p>
+			 * 由 onShow 的版本号比对触发这里，不用等下拉或重启小程序。</p>
 			 */
 			async fnOnSubscriptionChanged() {
 				this.feedPages = {};
@@ -1215,6 +1220,21 @@ export default {
 				z-index: 0;
 			}
 		}
+	}
+
+	/* ===== CSS 入场动画（替代 tm-translate 组件，零 JS 开销）===== */
+	@keyframes fadeUp {
+		from {
+			opacity: 0;
+			transform: translateY(40rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	.ani-fade-up {
+		animation: fadeUp 0.5s ease-out both;
 	}
 
 	.h_row_col2 {

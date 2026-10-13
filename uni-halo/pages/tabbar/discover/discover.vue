@@ -297,6 +297,8 @@ export default {
 			/** 解锁进行中：防连点（服务端按额度序号幂等，这里只是体验） */
 			unlocking: false,
 			loggedIn: false,
+			/** 已经取过的那份订阅对应的版本号（见 onShow 的去重） */
+			subscriptionRev: '',
 			/** onShow 里跳过首次展示（首次由 created 负责加载） */
 			pageShown: false,
 			/** 保存进行中：保存是整体替换，期间禁用开关，避免连点交错 */
@@ -562,11 +564,15 @@ export default {
 		};
 	},
 	/**
-	 * 每次切回本 tab 都重新对一次登录态与订阅状态。
+	 * 每次切回本 tab 都对一次登录态与订阅状态。
 	 *
 	 * 这两个东西都可能在别的页面被改掉：用户可能是在「我的」里登录的，
 	 * 而本页在 created 时拿到的 loggedIn 还是 false —— 那样点订阅按钮只会弹登录框，
 	 * 看起来就像「订阅之后无法取消订阅」。
+	 *
+	 * <p>但「对一次」不等于「打一次接口」：本页是常驻 tab 页，来回切两次 tab 也会走到这里。
+	 * 订阅唯一的变化入口都会写本地版本号（分类页保存成功、邀请页接受关注），
+	 * 所以版本号没变、登录态也没变时直接跳过，切 tab 就是零请求。</p>
 	 */
 	onShow() {
 		// 首次展示由 created() 负责，避免启动时重复请求
@@ -574,6 +580,8 @@ export default {
 			this.pageShown = true;
 			return;
 		}
+		const rev = uni.getStorageSync('category.subscription.rev') || '';
+		if (rev === this.subscriptionRev && checkHasWxLogin() === this.loggedIn) return;
 		this.fnLoadSubscribed();
 	},
 	methods: {
@@ -686,6 +694,8 @@ export default {
 			} catch (e) {
 				this.loggedIn = false;
 			}
+			// 记下「这份订阅状态对应哪个版本号」，onShow 据此决定要不要再取一次
+			this.subscriptionRev = uni.getStorageSync('category.subscription.rev') || '';
 			if (!this.loggedIn) {
 				this.fnApplySubscribed([]);
 				return;
@@ -1115,7 +1125,9 @@ export default {
 				// 首页可能正停在旧的筛选结果上：写一个版本号（切回首页时据它重取），
 				// 同时发事件（首页还活着时立刻刷新）。两条路都留着——
 				// 事件在页面生命周期边界上可能错过，版本号则一定对得上。
-				uni.setStorageSync('category.subscription.rev', String(Date.now()));
+				const rev = String(Date.now());
+				uni.setStorageSync('category.subscription.rev', rev);
+				this.subscriptionRev = rev;
 				uni.$emit('category_subscription_changed');
 				// 刚订阅完是最自然的授权时机：此时弹「有更新时通知你」用户不会觉得被打扰。
 				// 只在「首次订阅成功且还没额度」时请求，避免每次点订阅都弹窗。

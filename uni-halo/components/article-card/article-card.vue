@@ -1,7 +1,7 @@
 <template>
 	<view class="article-card " :class="cardType" @click="fnClickEvent('card')">
 		<view class="left" v-if="calcShowArticleCover">
-			<cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
+			<cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover, false, 400)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
 			<!-- <image class="thumbnail" lazy-load :src="$utils.checkThumbnailUrl(article.spec.cover)" mode="aspectFill"></image> -->
 			<!-- 分类标识：浮在封面左上角，绝对定位，不占卡片任何布局空间 -->
 			<text class="cat-badge" v-if="calcShowCategoryBadge">{{ categoryLabel }}</text>

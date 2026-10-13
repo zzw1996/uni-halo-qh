@@ -43,8 +43,8 @@
 				</view>
 				<block v-else>
 					<!-- 卡片 -->
-					<tm-translate v-for="(moment, index) in displayList" :key="moment.metadata.name"
-						animation-name="fadeUp" :wait="calcAniWait(index)">
+					<view v-for="(moment, index) in displayList" :key="moment.metadata.name"
+						class="ani-fade-up" :style="'animation-delay:' + (index * 50 + 50) + 'ms'">
 						<view class="moment-card">
 							<view class="moment-card__head">
 								<view class="moment-card__user">
@@ -120,7 +120,7 @@
 								@need-login="fnOnMomentNeedLogin"
 							></moment-interaction>
 						</view>
-					</tm-translate>
+					</view>
 					<view class="load-text">{{ loadMoreText }}</view>
 				</block>
 			</view>
@@ -200,7 +200,6 @@
 	import storeView from '@/components/store-view/store-view.vue';
 	import { consumePendingTabbarMode, getTabbarItems, tabbarBottomOffsetPx, tabbarViewRequest } from '@/utils/tabbar.js';
 	import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
-	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmTags from '@/tm-vuetify/components/tm-tags/tm-tags.vue';
 
@@ -235,7 +234,6 @@
 		components: {
 			tmSkeleton,
 			tmFlotbutton,
-			tmTranslate,
 			tmEmpty,
 			tmTags,
 			mpHtml,
@@ -438,10 +436,13 @@
 		created() {
 			uni.$on('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
 			uni.$on('moments_list_should_refresh', this.fnReloadMomentList);
+			// 发布门槛按积分算：只作废节流窗口，切回本 tab 时 onShow 会顺着取新结论
+			uni.$on('points_updated', this.fnExpirePublishPermRefresh);
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
 			uni.$off('moments_list_should_refresh', this.fnReloadMomentList);
+			uni.$off('points_updated', this.fnExpirePublishPermRefresh);
 			this.pageVisible = false;
 		},
 		onHide() {
@@ -520,7 +521,8 @@
 			},
 			fnOnWxLoginStatusChanged(userInfo) {
 				this.fnSyncWxUser(userInfo);
-				this.fnRefreshPublishPermission();
+				// 换了账号，能不能发的结论要跟着换
+				this.fnRefreshPublishPermission(true);
 			},
 			fnSyncWxUser(userInfo) {
 				this.wxUserInfo = userInfo || (checkHasWxLogin() ? getWxLoginInfo() : null);
@@ -533,18 +535,28 @@
 			 * 一律以服务端结论为准：能不能发看 status，是不是特权用户看 status.privileged。
 			 * 删除权限本身由服务端校验，这里只决定按钮显不显示。</p>
 			 */
-			async fnRefreshPublishPermission() {
+			async fnRefreshPublishPermission(force) {
 				if (!this.uniHaloPluginAvailable || this.calcAuditModeEnabled) {
 					this.canPublishMoment = false;
 					this.momentOwnerName = '';
 					this.publishPrivileged = false;
 					return;
 				}
+				// 本页是常驻 tab 页，onLoad 与随后的 onShow 会连着各取一次；
+				// 结论变化频率远低于切 tab 的频率，所以 30 秒内只取一次。
+				const now = Date.now();
+				if (!force && this._lastPublishPermRefresh && now - this._lastPublishPermRefresh < 30000) {
+					return;
+				}
+				this._lastPublishPermRefresh = now;
 				const status = await fetchUserPublishStatus(this.$httpApi.v2);
 				this.canPublishMoment = !!(status && status.canPublishMoment && status.visible);
 				this.publishPrivileged = !!(status && status.privileged);
 				// 用于「我的瞬间」标注：普通用户就是自己的 Halo 用户名，博主/管理员不限制
 				this.momentOwnerName = (this.wxUserInfo?.haloUserName || '').trim();
+			},
+			fnExpirePublishPermRefresh() {
+				this._lastPublishPermRefresh = 0;
 			},
 			fnCanDeleteMoment(moment) {
 				return canDeleteMoment(moment, {
@@ -894,6 +906,14 @@
 </script>
 
 <style lang="scss" scoped>
+	@keyframes fadeUp {
+		from { opacity: 0; transform: translateY(40rpx); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.ani-fade-up {
+		animation: fadeUp 0.5s ease-out both;
+	}
+
 	/* 小店视图里 store-home 要撑满，整页改成固定高度（其他视图照旧随内容增高） */
 	.app-page.is-host-fixed {
 		height: 100vh;

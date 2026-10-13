@@ -58,12 +58,23 @@
 				show: false
 			};
 		},
-		onLoad() {
-			this.fnRefresh();
+		created() {
 			uni.$on('wx_login_status_changed', this.fnRefresh);
 		},
-		onUnload() {
+		beforeDestroy() {
 			uni.$off('wx_login_status_changed', this.fnRefresh);
+		},
+		watch: {
+			/**
+			 * contentName 是父页异步取到的文章/动态名，小程序端组件里写 onLoad 并不会执行，
+			 * 页面 onLoad 时它也还是空串——只能靠 watcher，immediate 兼顾「挂载时就已经有值」。
+			 */
+			contentName: {
+				handler(val) {
+					if (val) this.fnRefresh();
+				},
+				immediate: true
+			}
 		},
 		methods: {
 			async fnRefresh() {

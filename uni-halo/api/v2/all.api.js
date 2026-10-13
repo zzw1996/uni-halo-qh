@@ -318,16 +318,25 @@ const requestCommentApi = async (path, { method = 'POST', data } = {}) => {
 };
 
 /**
- * 积分 API 请求（支持多路径 fallback）
+ * 积分 API 请求（支持多路径 fallback + sticky primary）
+ *
+ * 记住每个 apiKey 上次成功的路径，下次优先命中，避免每次都从候选列表第一个开始试
+ * （旧实现在插件版本切换期会让单次请求延迟翻倍：3-4 个候选全部串行试探）。
  */
+const _stickyPointsPaths = new Map();
+
 const requestPointsApi = async ({ apiKey, method = 'GET', data, params }) => {
 	const openid = getOpenid();
 	if (!openid) {
 		return Promise.reject({ error: '请先登录' });
 	}
 	const candidates = getPointsApiPathCandidates(apiKey);
+	const sticky = _stickyPointsPaths.get(apiKey);
+	const ordered = sticky && candidates.includes(sticky)
+		? [sticky, ...candidates.filter((p) => p !== sticky)]
+		: candidates;
 	let lastError = null;
-	for (const path of candidates) {
+	for (const path of ordered) {
 		let url = buildUniHaloUrl(path);
 		if (params && method === 'GET') {
 			const query = qs.stringify(params);
@@ -336,7 +345,7 @@ const requestPointsApi = async ({ apiKey, method = 'GET', data, params }) => {
 			}
 		}
 		try {
-			return await directRequest({
+			const res = await directRequest({
 				url,
 				method,
 				data,
@@ -344,9 +353,12 @@ const requestPointsApi = async ({ apiKey, method = 'GET', data, params }) => {
 					'Wechat-Session-Id': openid
 				}
 			});
+			_stickyPointsPaths.set(apiKey, path);
+			return res;
 		} catch (err) {
 			lastError = err;
 			if (!isPointsApiError(err)) {
+				_stickyPointsPaths.delete(apiKey);
 				throw err;
 			}
 		}
@@ -358,11 +370,13 @@ const requestPointsApi = async ({ apiKey, method = 'GET', data, params }) => {
 };
 
 /**
- * 阅读券（付费内容）API 请求，支持多路径 fallback。
+ * 阅读券（付费内容）API 请求，支持多路径 fallback + sticky primary。
  *
  * <p>不复用 requestPointsApi 的原因：那个函数在缺少 openid 时直接 reject「请先登录」，
  * 而付费文章的状态查询<b>必须允许未登录调用</b>——否则未登录用户打开付费文章时
  * 页面只能显示登录错误态，拿不到「本文需阅读券」的引导信息。</p>
+ *
+ * <p>sticky primary 与 requestPointsApi 共享同一份路径记忆表（key 是 apiKey，不同 API 间不会冲突）。</p>
  *
  * @param {object}  options        { apiKey, method, data, params }
  * @param {boolean} allowAnonymous true 时无 openid 也发请求（状态/余额查询用）
@@ -373,8 +387,12 @@ const requestContentApi = async ({ apiKey, method = 'GET', data, params }, allow
 		return Promise.reject({ error: '请先登录' });
 	}
 	const candidates = getPointsApiPathCandidates(apiKey);
+	const sticky = _stickyPointsPaths.get(apiKey);
+	const ordered = sticky && candidates.includes(sticky)
+		? [sticky, ...candidates.filter((p) => p !== sticky)]
+		: candidates;
 	let lastError = null;
-	for (const path of candidates) {
+	for (const path of ordered) {
 		let url = buildUniHaloUrl(path);
 		if (params && method === 'GET') {
 			const query = qs.stringify(params);
@@ -393,6 +411,7 @@ const requestContentApi = async ({ apiKey, method = 'GET', data, params }, allow
 			// 但解锁/兑换失败（券不足、功能未开启、文章不存在）若原样 resolve，
 			// 页面 .then() 会误报「解锁成功」。这里统一转成 reject，让页面 .catch() 正确提示。
 			if (isDirectRequestSuccess(res?.statusCode)) {
+				_stickyPointsPaths.set(apiKey, path);
 				return res;
 			}
 			if (res?.statusCode === 400) {
@@ -403,12 +422,14 @@ const requestContentApi = async ({ apiKey, method = 'GET', data, params }, allow
 					data: res.data
 				};
 			}
+			_stickyPointsPaths.set(apiKey, path);
 			return res;
 		} catch (err) {
 			lastError = err;
 			// 404/被拦截说明该路径不可用，继续尝试下一个候选；
 			// 其余错误（如 400 业务错误）直接抛出，避免无意义的重复请求
 			if (!isPointsApiError(err)) {
+				_stickyPointsPaths.delete(apiKey);
 				throw err;
 			}
 		}

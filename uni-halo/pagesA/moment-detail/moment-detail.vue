@@ -109,7 +109,7 @@
 		generateUUID
 	} from '@/utils/uuid.js';
 	import { normalizeMomentListItem } from '@/utils/momentPublish.js';
-	import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
+	import contentReactionBar from '@/pagesA/components/content-reaction-bar/content-reaction-bar.vue';
 
 	export default {
 		components: {

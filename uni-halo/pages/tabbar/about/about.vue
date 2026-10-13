@@ -269,6 +269,13 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 	import PointsToast from '@/components/points-toast/points-toast.vue';
 
+	/**
+	 * 「我的」是常驻 tabBar 页，每次切回来都走一遍 onShow。
+	 * 等级/装扮、投稿资格、积分总览这三组数据变化频率远低于切 tab 频率，
+	 * 所以按时间窗去重；确实变了的事（签到、购买装扮、换账号）由事件或用户动作显式 force。
+	 */
+	const TAB_REFRESH_INTERVAL_MS = 30 * 1000;
+
 	export default {
 		components: {
 			tmButton,
@@ -582,12 +589,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnCheckLoginStatus();
 			this.fnRefreshPointsData();
 			uni.$on('wx_login_status_changed', this.fnOnLoginStatusChanged);
-			uni.$on('points_updated', this.fnOnPointsUpdated);
+			uni.$on('points_updated', this.fnOnPointsChangedExternally);
 			uni.$on('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onShow() {
 			this.fnSyncPointsApiStateFromCache();
 			this.fnCheckLoginStatus();
+			// 「我的」是常驻 tab 页，来回切两次 tab 也算「进页面」，所以这三组按时间窗去重，
+			// 否则每次切换都是 4 个请求。真变了的事由 points_updated / 登录把窗口清零。
 			this.fnProbePayEnabled();
 			this.fnRefreshIdentity();
 			this.fnRefreshMyArticlesEntry();
@@ -597,13 +606,19 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnLoginStatusChanged);
-			uni.$off('points_updated', this.fnOnPointsUpdated);
+			uni.$off('points_updated', this.fnOnPointsChangedExternally);
 			uni.$off('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onPullDownRefresh() {
 			uni.$tm.vx.actions('config/fetchConfigs').finally(() => {
 				this.fnRefreshPointsData();
 			});
+			// 主动下拉就是要最新状态，跳过节流
+			this.fnRefreshIdentity(true);
+			this.fnRefreshMyArticlesEntry(true);
+			if (this.calcPointsEnabled && this.isLoggedIn) {
+				this.fnRefreshPointsOverview({ silent: true, force: true });
+			}
 		},
 		methods: {
 			fnToSettings() {
@@ -613,6 +628,11 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			/** 登录态变化：刷新登录信息与积分状态 */
 			fnOnLoginStatusChanged(info) {
 				this.fnCheckLoginStatus(info);
+				// 换了账号等于换了等级/装扮/投稿资格，全部作废重来；
+				// 本页可能还在后台 tab 上，所以只作废旧值、不立刻发请求，切回来再取。
+				this._identityRefreshAt = 0;
+				this._myArticlesRefreshAt = 0;
+				this._overviewRefreshAt = 0;
 			},
 
 			fnEnsureLogin() {
@@ -697,6 +717,32 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				}
 			},
 
+			/**
+			 * 总线上的积分变化（别的地方赚了/花了积分、买了装扮）。
+			 *
+			 * <p>本页自己拉到的总览不走这里：那样会在每次刷新后又把时间窗清零，节流等于没做。
+			 * 这里只把窗口作废、不发请求，等下一次 onShow 顺带取最新值。</p>
+			 */
+			fnOnPointsChangedExternally(payload) {
+				this.fnOnPointsUpdated(payload);
+				if (this._applyingOverview) return;
+				this._identityRefreshAt = 0;
+				this._myArticlesRefreshAt = 0;
+				this._overviewRefreshAt = 0;
+			},
+
+			/**
+			 * 时间窗去重：返回 true 表示「这一次确实该发请求」，并重新计时。
+			 *
+			 * <p>下划线开头的实例属性没有写进 data，不是响应式的，赋值不会触发渲染。</p>
+			 */
+			fnClaimTabRefresh(key, force = false) {
+				const now = Date.now();
+				if (!force && this[key] && now - this[key] < TAB_REFRESH_INTERVAL_MS) return false;
+				this[key] = now;
+				return true;
+			},
+
 			fnOnPointsConfigReady() {
 				if (this.isLoggedIn) {
 					this.fnRefreshPointsOverview({ silent: isPointsApiReady() === true });
@@ -705,9 +751,20 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 			async fnRefreshPointsOverview(options = {}) {
 				if (!this.calcPointsEnabled || !this.isLoggedIn) return;
-				const overview = options.forceRemote
-					? await syncPointsAfterLogin(this.$httpApi.v2)
-					: await fetchPointsOverview(this.$httpApi.v2);
+				let overview;
+				// 取总览时，utils/points.js 内部会自己 $emit('points_updated')。
+				// 那条广播必须跳过这里的窗口失效处理，否则每次刷完都把自己的时间窗清零，节流等于没做。
+				this._applyingOverview = true;
+				try {
+					if (options.forceRemote) {
+						overview = await syncPointsAfterLogin(this.$httpApi.v2);
+					} else {
+						if (!this.fnClaimTabRefresh('_overviewRefreshAt', options.force)) return;
+						overview = await fetchPointsOverview(this.$httpApi.v2);
+					}
+				} finally {
+					this._applyingOverview = false;
+				}
 				this.pointsApiReady = isPointsApiReady();
 				this.pointsLocalMode = getPointsApiMode() === 'local';
 				if (overview) {
@@ -731,7 +788,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			},
 
 			/** 拉取等级/装扮状态（失败静默，不影响页面） */
-			async fnRefreshIdentity() {
+			async fnRefreshIdentity(force = false) {
 				if (!this.isLoggedIn) {
 					this.levelStatus = null;
 					this.outfitStatus = null;
@@ -739,6 +796,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					applyThemeSkin('');
 					return;
 				}
+				if (!this.fnClaimTabRefresh('_identityRefreshAt', force)) return;
 				try {
 					const [levelRes, outfitRes] = await Promise.all([
 						this.$httpApi.v2.getLevelStatus(),
@@ -783,7 +841,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			 * （发一篇扣 50 分、门槛 600 分），发过稿的人可能今天不达标了，但已投的文章
 			 * 还得能编辑、能撤回，不能因为一次门槛波动就把入口收走。</p>
 			 */
-			async fnRefreshMyArticlesEntry() {
+			async fnRefreshMyArticlesEntry(force = false) {
 				if (this.calcMyArticlesEntryMode !== 'eligible' || this.calcAuditModeEnabled) {
 					return;
 				}
@@ -792,6 +850,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					this.myArticlesProbed = false;
 					return;
 				}
+				if (!this.fnClaimTabRefresh('_myArticlesRefreshAt', force)) return;
 				const status = await fetchUserPublishStatus(this.$httpApi.v2);
 				if (status && status.canPublishArticle && status.visible) {
 					this.myArticlesEntryVisible = true;
@@ -854,7 +913,9 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					signInStatus: result.signInStatus,
 					localMode: result.localMode
 				});
-				await this.fnRefreshPointsOverview({ silent: true });
+				await this.fnRefreshPointsOverview({ silent: true, force: true });
+				// 签到会加经验，等级徽章要当场跟着变
+				this.fnRefreshIdentity(true);
 			},
 
 
@@ -879,7 +940,9 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				this.isLoggedIn = true;
 				this.profileDialogShow = false;
 				this.fnRefreshPointsData();
-				this.fnRefreshMyArticlesEntry();
+				// 等级/装扮/投稿入口都是按账号算的，未登录时被清成了空值，登录成功要立刻取回来
+				this.fnRefreshIdentity(true);
+				this.fnRefreshMyArticlesEntry(true);
 			},
 
 			fnOpenHaloBindDialog() {

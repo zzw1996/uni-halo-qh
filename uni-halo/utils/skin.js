@@ -370,8 +370,14 @@ export const applyNativeChrome = (id) => {
 export const syncTmDark = (skin) => {
 	const dark = !!(skin && skin.dark);
 	try {
-		if (uni.$tm && uni.$tm.vx && uni.$tm.vx.commit) {
-			uni.$tm.vx.commit('setTmVuetifyBlack', dark);
+		const vx = uni.$tm && uni.$tm.vx;
+		// 全局混入在每个页面 onLoad/onShow 都会同步一次原生栏，也就顺带走到这里；
+		// 框架状态已经是目标值时直接返回，省下 commit + setStorageSync（后者是阻塞的磁盘写）。
+		const state = vx && vx.state ? vx.state() : null;
+		const current = state && state.tmVuetify ? state.tmVuetify.black : null;
+		if (current === dark) return dark;
+		if (vx && vx.commit) {
+			vx.commit('setTmVuetifyBlack', dark);
 		}
 		uni.setStorageSync('setTmVuetifyBlack', dark);
 	} catch (err) {

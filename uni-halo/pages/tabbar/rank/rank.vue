@@ -50,11 +50,11 @@
 					</view>
 				</view>
 				<view class="rank-list">
-					<tm-translate
+					<view
 						v-for="(item, index) in sortedRankList"
 						:key="item.name"
-						animation-name="fadeUp"
-						:wait="calcAniWait(index)"
+						class="ani-fade-up"
+						:style="'animation-delay:' + (index * 50 + 50) + 'ms'"
 					>
 						<view class="rank-item flex" :class="{ 'is-first': index === 0 }" @click="fnToArticle(item)">
 							<text class="rank-no" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</text>
@@ -70,7 +70,7 @@
 							<text class="rank-title">{{ item.title || item.name }}</text>
 							<text class="rank-value">{{ fnMetricText(item) }}</text>
 						</view>
-					</tm-translate>
+					</view>
 				</view>
 			</block>
 		</block>
@@ -103,11 +103,11 @@
 			</view>
 			<template v-else-if="userRankReady">
 				<view class="rank-list">
-					<tm-translate
+					<view
 						v-for="(item, index) in userRank.items"
 						:key="item.rank"
-						animation-name="fadeUp"
-						:wait="calcAniWait(index)"
+						class="ani-fade-up"
+						:style="'animation-delay:' + (index * 50 + 50) + 'ms'"
 					>
 						<view class="rank-item flex" :class="{ 'is-first': index === 0 }">
 							<text class="rank-no" :class="{ 'is-top': index < 3 }">{{ item.rank }}</text>
@@ -119,7 +119,7 @@
 							</view>
 							<text v-if="calcShowScore" class="rank-value">{{ fnUserValueText(item) }}</text>
 						</view>
-					</tm-translate>
+					</view>
 				</view>
 				<view v-if="userRankThinTip" class="rank-thin-tip flex flex-center">
 					<text>{{ userRankThinTip }}</text>
@@ -176,8 +176,8 @@
 				<tm-empty icon="icon-commentlines-fill" :label="wallEmptyText"></tm-empty>
 			</view>
 			<view v-else class="rank-list">
-				<tm-translate v-for="(item, index) in wallList" :key="index" animation-name="fadeUp"
-					:wait="calcAniWait(index)">
+				<view v-for="(item, index) in wallList" :key="index" class="ani-fade-up"
+					:style="'animation-delay:' + (index * 50 + 50) + 'ms'">
 					<view class="rank-item wall-item flex" :class="{ 'is-first': index === 0 }"
 						@click="fnToActivityTarget(item)">
 						<image class="user-avatar" :class="fnAvatarFrameClass(item)" :src="fnItemAvatar(item)"
@@ -192,7 +192,7 @@
 						</view>
 						<text class="wall-time">{{ fnRelativeTime(item.time) }}</text>
 					</view>
-				</tm-translate>
+				</view>
 			</view>
 		</block>
 
@@ -212,7 +212,6 @@
 <script>
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
-	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 
@@ -233,7 +232,6 @@
 	export default {
 		components: {
 			tmSkeleton,
-			tmTranslate,
 			tmEmpty,
 			tmButton,
 			wxLoginDialog,
@@ -734,6 +732,14 @@
 </script>
 
 <style lang="scss" scoped>
+	@keyframes fadeUp {
+		from { opacity: 0; transform: translateY(40rpx); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.ani-fade-up {
+		animation: fadeUp 0.5s ease-out both;
+	}
+
 	.app-page {
 		box-sizing: border-box;
 		width: 100vw;

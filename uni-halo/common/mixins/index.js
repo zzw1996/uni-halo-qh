@@ -19,7 +19,6 @@ export default {
         Vue.mixin({
             data() {
                 return {
-                    _isWechat: true,
                     _aniWaitIndex: 0
                 };
             },
@@ -79,14 +78,6 @@ export default {
                  * 两条路一起兜。</p>
                  */
                 syncNativeChrome()
-            },
-            created() {
-                // #ifdef MP-WEIXIN
-                this._isWechat = true;
-                // #endif
-                // #ifndef MP-WEIXIN
-                this._isWechat = false;
-                // #endif
             },
             onShow() {
                 this.fnResetSetAniWaitIndex()
