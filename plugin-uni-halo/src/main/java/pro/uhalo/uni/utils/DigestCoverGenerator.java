@@ -48,6 +48,11 @@ public final class DigestCoverGenerator {
 
     private static final int MARGIN = 88;
 
+    /** 公众号封面：900×383 = 2.35:1（微信大图推荐比例，上传后不裁切） */
+    private static final int WIDE_WIDTH = 900;
+    private static final int WIDE_HEIGHT = 383;
+    private static final int WIDE_MARGIN = 56;
+
     private static final String FORMAT = "png";
 
     private static final String LATIN_FALLBACK = "AI DIGEST";
@@ -105,6 +110,114 @@ public final class DigestCoverGenerator {
             throw new IOException("PNG 编码器不可用，无法生成封面卡片");
         }
         return output.toByteArray();
+    }
+
+    /**
+     * 绘制<b>公众号封面卡片</b>（900×383，2.35:1）。
+     *
+     * <p>公众号的封面按 2.35:1 裁切展示，用 16:9 的日报卡片会被裁掉两侧——标题一长就
+     * 正好切在字上。这里给公众号单独出一张横向卡片，尺寸即微信推荐的大图比例，
+     * 上传后不裁切、也不出现白边。</p>
+     *
+     * @param categoryKey   方向 key（只用来决定配色）
+     * @param categoryLabel 方向显示名（可为空）
+     * @param title         标题（可为空）
+     * @param sourceName    来源站点名（可为空）
+     * @param dateText      日期文案（如 2026-10-09）
+     * @param siteName      站点名（可为空）
+     * @return PNG 字节
+     */
+    public static byte[] renderWideCard(String categoryKey, String categoryLabel, String title,
+        String sourceName, String dateText, String siteName) throws IOException {
+        var canvas = new BufferedImage(WIDE_WIDTH, WIDE_HEIGHT, BufferedImage.TYPE_INT_RGB);
+        var graphics = canvas.createGraphics();
+        try {
+            applyHints(graphics);
+            paintWideBackground(graphics, categoryKey);
+
+            // 分类名（左上）+ 下划线
+            var categoryRun = textRun(categoryLabel, Font.BOLD, 26);
+            if (categoryRun != null) {
+                graphics.setFont(categoryRun.font());
+                graphics.setColor(new Color(255, 255, 255, 224));
+                graphics.drawString(categoryRun.text(), WIDE_MARGIN, 78);
+                graphics.setColor(new Color(255, 255, 255, 150));
+                graphics.fillRoundRect(WIDE_MARGIN, 94, 78, 5, 5, 5);
+            }
+
+            // 标题（最多 2 行，字号 38）
+            var titleRun = textRun(title, Font.BOLD, 38);
+            if (titleRun != null) {
+                var font = titleRun.font();
+                graphics.setFont(font);
+                var lines = wrap(graphics, titleRun.text(), font,
+                    WIDE_WIDTH - 2 * WIDE_MARGIN, 2);
+                var metrics = graphics.getFontMetrics(font);
+                var lineHeight = metrics.getHeight() + 8;
+                var baseline = lines.size() > 1 ? 196 : 216;
+                for (var line : lines) {
+                    graphics.setColor(new Color(0, 0, 0, 60));
+                    graphics.drawString(line, WIDE_MARGIN + 2, baseline + 2);
+                    graphics.setColor(Color.WHITE);
+                    graphics.drawString(line, WIDE_MARGIN, baseline);
+                    baseline += lineHeight;
+                }
+            }
+
+            // 页脚：来源 · 日期（左）与站点名（右）
+            var left = new StringBuilder();
+            if (StringUtils.hasText(sourceName)) {
+                left.append(sourceName.trim());
+            }
+            if (StringUtils.hasText(dateText)) {
+                if (!left.isEmpty()) {
+                    left.append(" · ");
+                }
+                left.append(dateText);
+            }
+            var footerRun = textRun(left.isEmpty() ? LATIN_FALLBACK : left.toString(),
+                Font.PLAIN, 20);
+            if (footerRun != null) {
+                var font = footerRun.font();
+                graphics.setFont(font);
+                graphics.setColor(new Color(255, 255, 255, 200));
+                var baseline = WIDE_HEIGHT - WIDE_MARGIN + 4;
+                graphics.drawString(footerRun.text(), WIDE_MARGIN, baseline);
+
+                var siteRun = textRun(siteName, Font.PLAIN, 20);
+                if (siteRun != null) {
+                    var metrics = graphics.getFontMetrics(font);
+                    var width = metrics.stringWidth(siteRun.text());
+                    if (width < WIDE_WIDTH / 2) {
+                        graphics.setColor(new Color(255, 255, 255, 176));
+                        graphics.drawString(siteRun.text(),
+                            WIDE_WIDTH - WIDE_MARGIN - width, baseline);
+                    }
+                }
+            }
+        } finally {
+            graphics.dispose();
+        }
+
+        var output = new ByteArrayOutputStream();
+        if (!ImageIO.write(canvas, FORMAT, output)) {
+            throw new IOException("PNG 编码器不可用，无法生成封面卡片");
+        }
+        return output.toByteArray();
+    }
+
+    /** 公众号封面的底色：与 16:9 卡片同一套色相规则，只是换了画布比例 */
+    private static void paintWideBackground(Graphics2D graphics, String categoryKey) {
+        var hue = hueOf(categoryKey);
+        var from = Color.getHSBColor(hue, 0.62f, 0.26f);
+        var to = Color.getHSBColor((hue + 0.07f) % 1f, 0.72f, 0.56f);
+        graphics.setPaint(new GradientPaint(0, 0, from, WIDE_WIDTH, WIDE_HEIGHT, to));
+        graphics.fillRect(0, 0, WIDE_WIDTH, WIDE_HEIGHT);
+
+        graphics.setColor(new Color(255, 255, 255, 20));
+        graphics.fillOval(WIDE_WIDTH - 300, -180, 460, 460);
+        graphics.setColor(new Color(255, 255, 255, 14));
+        graphics.fillOval(WIDE_WIDTH - 150, 120, 260, 260);
     }
 
     /** 服务端有没有能显示中文的字体（后台自检与日志用） */

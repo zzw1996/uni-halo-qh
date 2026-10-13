@@ -199,9 +199,42 @@ public class DigestHaloClient {
     public static String describe(Throwable ex) {
         if (ex instanceof WebClientResponseException responseException) {
             return "HTTP " + responseException.getStatusCode().value() + " "
-                + snippet(responseException.getResponseBodyAsString());
+                + summarize(responseException.getResponseBodyAsString());
         }
         return ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+    }
+
+    /**
+     * 把 Halo 的错误响应压成一行有用信息。
+     *
+     * <p>原始响应体是一整串 JSON（detail / instance / requestId / timestamp …），
+     * 塞进客户端弹窗里既读不懂也放不下。这里只留「title：detail + requestId」——
+     * requestId 是 Halo 日志里的检索键，排障时必须带上；解析不出来就退回截断原文。</p>
+     */
+    private static String summarize(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        try {
+            var node = OBJECT_MAPPER.readTree(text);
+            var title = node.path("title").asText("");
+            var detail = node.path("detail").asText("");
+            var requestId = node.path("requestId").asText("");
+            var message = title;
+            if (!detail.isBlank() && !detail.equals(title)) {
+                message = message.isBlank() ? detail : message + "：" + detail;
+            }
+            if (!requestId.isBlank()) {
+                message = message.isBlank() ? "requestId=" + requestId
+                    : message + "（requestId=" + requestId + "）";
+            }
+            if (!message.isBlank()) {
+                return snippet(message);
+            }
+        } catch (Exception ignored) {
+            // 不是 JSON（网关 HTML、纯文本报错等）时按原文截断
+        }
+        return snippet(text);
     }
 
     private static String snippet(String text) {

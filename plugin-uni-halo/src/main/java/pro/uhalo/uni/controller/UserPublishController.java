@@ -51,6 +51,49 @@ public class UserPublishController {
             .flatMap(this::jsonOk));
     }
 
+    /** 「我的投稿」列表：只包含当前用户自己的文章（含待审草稿） */
+    public Mono<ServerResponse> listMyArticles(ServerRequest request) {
+        return withOpenid(request, openid -> userPublishService.listMyArticles(openid)
+            .flatMap(articles -> jsonOk(Map.of("items", articles))));
+    }
+
+    /** 删除（回收）投稿文章：仅本人，博主/管理员可代删 */
+    public Mono<ServerResponse> deleteArticle(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return withOpenid(request, openid -> userPublishService.deleteArticle(openid, name)
+            .then(jsonOk(Map.of("success", true))));
+    }
+
+    /** 单篇投稿详情：带 Markdown 正文原文，供编辑回填。仅本人，博主/管理员可代查 */
+    public Mono<ServerResponse> getArticle(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return withOpenid(request, openid -> userPublishService.getArticle(openid, name)
+            .flatMap(this::jsonOk));
+    }
+
+    /** 保存对已有投稿的修改：不扣积分；已发布文章的改动是否立即生效由角色策略决定 */
+    public Mono<ServerResponse> updateArticle(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return withOpenid(request, openid -> WxRequestParser.readRawBody(request)
+            .flatMap(raw -> WxRequestParser.parseBody(raw, UserPublishArticleRequest.class))
+            .flatMap(body -> userPublishService.updateArticle(openid, name, body))
+            .flatMap(this::jsonOk));
+    }
+
+    /** 立即发布 / 重新发布一篇投稿（仅直发权限的角色，待审投稿不能自行上线） */
+    public Mono<ServerResponse> publishMyArticle(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return withOpenid(request, openid -> userPublishService.publishArticleNow(openid, name)
+            .flatMap(this::jsonOk));
+    }
+
+    /** 撤回发布：文章回到草稿态，站点上不再可见（内容保留，可再次发布） */
+    public Mono<ServerResponse> unpublishMyArticle(ServerRequest request) {
+        var name = request.pathVariable("name");
+        return withOpenid(request, openid -> userPublishService.unpublishArticle(openid, name)
+            .then(jsonOk(Map.of("success", true))));
+    }
+
     /** 瞬间配图上传：multipart，字段名 file */
     public Mono<ServerResponse> uploadMomentImage(ServerRequest request) {
         return withOpenid(request, openid -> request.multipartData()

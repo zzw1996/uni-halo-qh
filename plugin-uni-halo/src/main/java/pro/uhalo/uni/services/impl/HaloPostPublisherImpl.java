@@ -176,6 +176,114 @@ public class HaloPostPublisherImpl implements HaloPostPublisher {
             });
     }
 
+    @Override
+    public Mono<HaloPostPublishResultDTO> update(String postName, HaloPostPublishDTO post,
+        boolean republish, int waitSeconds) {
+        var budget = Duration.ofSeconds(Math.max(60, waitSeconds));
+        log.info("[UniHalo][Digest] 保存文章修改：name={} 标题=「{}」 正文 {} 字 保存后重新发布={}",
+            postName, post.getTitle(), post.getMarkdown() == null ? 0 : post.getMarkdown().length(),
+            republish);
+        return resolveRefs(post)
+            .flatMap(refs -> fetchPost(postName)
+                // 文章不存在（404）与返回空体走同一条出口，报同一句话
+                .onErrorResume(WebClientResponseException.NotFound.class, ex -> Mono.empty())
+                .switchIfEmpty(Mono.error(new IllegalStateException("Halo 中找不到文章：" + postName)))
+                .flatMap(node -> putPostUpdate(postName, node, post, refs)))
+            .flatMap(updated -> {
+                if (!republish) {
+                    return Mono.just(HaloPostPublishResultDTO.builder()
+                        .postName(updated.postName())
+                        .permalink(updated.permalink())
+                        .state("SAVED")
+                        .message("修改已保存，尚未发布生效")
+                        .build());
+                }
+                return triggerPublish(updated, true)
+                    .then(awaitRelease(updated, budget))
+                    .flatMap(state -> {
+                        if (state.released()) {
+                            return Mono.just(state);
+                        }
+                        log.warn("[UniHalo][Digest] 保存后等待发布确认超时，补触发一次 name={}", postName);
+                        var retryBudget = Duration.ofSeconds(Math.max(60, budget.getSeconds() / 2));
+                        return triggerPublish(updated, false)
+                            .then(awaitRelease(updated, retryBudget));
+                    })
+                    .map(state -> HaloPostPublishResultDTO.builder()
+                        .postName(updated.postName())
+                        .permalink(StringUtils.hasText(state.permalink())
+                            ? state.permalink() : updated.permalink())
+                        .state(state.released() ? "PUBLISHED" : "PENDING")
+                        .message(state.released()
+                            ? "修改已保存并已发布"
+                            : "修改已保存，但未能在 " + budget.getSeconds()
+                                + " 秒内确认发布完成（" + state.message() + "）")
+                        .build());
+            });
+    }
+
+    /**
+     * 保存修改：把读回来的文章整份回传，只替换本插件负责的字段。
+     *
+     * <p>为什么必须整份回传：控制台的更新接口最后是 {@code client.update(post)} 整体替换，
+     * 只发几个字段会把 Halo 自己维护的部分（published 标签、快照名、作者、htmlMetas…）
+     * 一起清空——那是「文章突然从前台消失」这类事故的常见来源。</p>
+     *
+     * <p>slug 刻意不动：它是永久链接的一部分，跟着标题改会让已经分享出去的链接全部 404；
+     * 正文走同一个请求的 {@code content} 字段，由 Halo 自己决定是新建快照还是改写 head 快照
+     * （release == head 时新建、否则原地改），插件不重复实现这套快照链逻辑。</p>
+     */
+    private Mono<CreatedPost> putPostUpdate(String postName, JsonNode current,
+        HaloPostPublishDTO post, ResolvedRefs refs) {
+        var currentName = current.path("metadata").path("name").asText("");
+        if (!postName.equals(currentName) || !current.path("spec").isObject()) {
+            return Mono.error(new IllegalStateException(
+                "读取到的文章内容不完整，已放弃保存以免覆盖：" + postName + "（读到 " + currentName + "）"));
+        }
+        var root = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        var postNode = current.deepCopy();
+        var spec = (ObjectNode) postNode.get("spec");
+        spec.put("title", post.getTitle());
+        spec.put("cover", post.getCover() == null ? "" : post.getCover());
+        spec.put("allowComment", post.isAllowComment());
+        var categories = spec.putArray("categories");
+        refs.categories().forEach(categories::add);
+        var tags = spec.putArray("tags");
+        refs.tags().forEach(tags::add);
+        root.set("post", postNode);
+
+        var raw = post.getMarkdown() == null ? "" : post.getMarkdown();
+        var content = root.putObject("content");
+        content.put("raw", raw);
+        // 与建稿同口径：content 是给前台展示的 HTML，Halo 服务端不渲染 markdown
+        content.put("content", markdownRenderer.render(raw));
+        content.put("rawType", RAW_TYPE_MARKDOWN);
+
+        log.info("[UniHalo][Digest] 调用 Halo 更新接口：PUT {}/{}（正文 {} 字符）",
+            POST_API, postName, raw.length());
+        return haloClient.put(POST_API + "/" + postName, root, CREATE_TIMEOUT)
+            .map(response -> {
+                var node = response.has("post") ? response.path("post") : response;
+                var name = node.path("metadata").path("name").asText("");
+                var headSnapshot = node.path("spec").path("headSnapshot").asText("");
+                var permalink = node.path("status").path("permalink").asText("");
+                if (!StringUtils.hasText(name) || !StringUtils.hasText(headSnapshot)) {
+                    // 没有新快照名就无法重新发布，也不该让调用方以为保存成功了
+                    throw new IllegalStateException("保存修改失败：Halo 未返回文章快照信息："
+                        + abbreviate(response.toString(), 300));
+                }
+                log.info("[UniHalo][Digest] 修改已保存：name={} headSnapshot={}", name, headSnapshot);
+                return new CreatedPost(name, headSnapshot, permalink);
+            });
+    }
+
+    @Override
+    public Mono<Void> unpublish(String postName) {
+        log.info("[UniHalo][Digest] 撤回发布：PUT {}/{}/unpublish", POST_API, postName);
+        return haloClient.put(POST_API + "/" + postName + "/unpublish", null, PUBLISH_TIMEOUT)
+            .then();
+    }
+
     /**
      * 建稿前对文章作者做一次「尽力而为」的检查。
      *

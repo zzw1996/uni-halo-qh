@@ -8,7 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import pro.uhalo.uni.constants.Constants;
 import pro.uhalo.uni.dto.HaloPostPublishDTO;
+import pro.uhalo.uni.dto.HaloPostPublishResultDTO;
+import pro.uhalo.uni.dto.UserPublishArticleDTO;
+import pro.uhalo.uni.dto.UserPublishArticleDetailDTO;
 import pro.uhalo.uni.dto.UserPublishArticleRequest;
 import pro.uhalo.uni.dto.UserPublishMomentRequest;
 import pro.uhalo.uni.dto.UserPublishResultDTO;
@@ -41,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 用户投稿实现：阅读赚积分 → 花积分发文章 / 发瞬间。
@@ -84,17 +89,34 @@ public class UserPublishServiceImpl implements UserPublishService {
     private static final String MOMENTS_QUERY_API = "/apis/api.moment.halo.run/v1alpha1/moments";
     private static final String VOTE_SUBMIT_API =
         "/apis/api.vote.kunkunyu.com/v1alpha1/votes";
+    /** 投稿管理用的 console 文章接口：列表按页拉、删除走 /recycle */
+    private static final String CONSOLE_POSTS_API = "/apis/api.console.halo.run/v1alpha1/posts";
+    /**
+     * 核心组文章接口：按 metadata.name 读单篇（含草稿）。
+     *
+     * <p>编辑要走「读回来 → 改 → 整份回传」，而公开读接口（api.content.halo.run）对未发布文章
+     * 一律 404，这个前缀才能读到待审草稿。写回仍走 {@link #CONSOLE_POSTS_API}。</p>
+     */
+    private static final String CORE_POSTS_API = Constants.HALO_CORE_POST_API_PREFIX;
+    /** 「我的投稿」每页拉多少条；归属过滤在本地，所以要多翻几页 */
+    private static final int MY_ARTICLES_PAGE_SIZE = 100;
+    /** 最多翻几页（站点文章量级远小于 5×100） */
+    private static final int MY_ARTICLES_MAX_PAGES = 5;
     /** 特权角色：站点管理员等同于博主，发布不扣分、直接公开 */
     private static final Set<String> PRIVILEGED_ROLES = Set.of("super-role", "admin");
     private static final String ROLE_NAMES_ANNO = User.ROLE_NAMES_ANNO;
 
     /** 默认值：配置缺省时的兜底，保证「没配也能跑，但不会放开」 */
-    private static final int DEFAULT_ARTICLE_COST = 50;
-    private static final int DEFAULT_MOMENT_COST = 20;
+    private static final int DEFAULT_ARTICLE_COST = 50;    private static final int DEFAULT_MOMENT_COST = 20;
     private static final int DEFAULT_MAX_TITLE_LENGTH = 60;
     private static final int DEFAULT_MAX_ARTICLE_LENGTH = 5000;
     private static final int DEFAULT_MAX_MOMENT_LENGTH = 500;
     private static final int DEFAULT_MAX_MOMENT_IMAGES = 9;
+
+    /** 一次投稿最多带几个分类 / 标签（界面同口径；服务端再挡一道） */
+    private static final int MAX_ARTICLE_CATEGORIES = 3;
+
+    private static final int MAX_ARTICLE_TAGS = 5;
     /** 直接发布时的确认等待上限，避免一次请求拖太久 */
     private static final int PUBLISH_WAIT_SECONDS = 15;
 
@@ -260,8 +282,15 @@ public class UserPublishServiceImpl implements UserPublishService {
                                                             UserPublishArticleRequest request) {
         var dto = HaloPostPublishDTO.builder()
             .title(title)
+            // 建稿必须带 slug：Halo 后台建稿、AI 日报发布都带，站点上 225 篇文章没有一篇是空的；
+            // 投稿这条路径此前是唯一不设 slug 的，也是唯一在线上被 Halo 以 HTTP 500 拒绝的建稿请求。
+            // Halo 服务端不会自己生成 slug，这里补上以对齐已知可用的发布路径。
+            .slug(buildArticleSlug(title))
             .markdown(content)
             .cover(trim(request.getCover()))
+            // 作者手选的分类/标签：只匹配已有（写错不会造出分类/标签），最多各 3 / 5 个
+            .categoryNames(normalizeRefNames(request.getCategories(), MAX_ARTICLE_CATEGORIES))
+            .tagNames(normalizeRefNames(request.getTags(), MAX_ARTICLE_TAGS))
             .owner(ctx.haloUserName())
             .build();
         var direct = MODE_DIRECT.equals(mode);
@@ -281,8 +310,487 @@ public class UserPublishServiceImpl implements UserPublishService {
             .build());
     }
 
-    // ==================== 发瞬间 ====================
+    /**
+     * 作者手选的分类/标签名归一化：去空白、去重、限量。
+     *
+     * <p>限量是服务端自己的一道闸——界面最多给到 3 个分类 / 5 个标签，
+     * 但接口是公开的，不能指望调用方守规矩；真正能不能落到站点上仍由
+     * 发布器按「只匹配已有」的规则决定。</p>
+     */
+    static List<String> normalizeRefNames(List<String> names, int limit) {
+        if (names == null || names.isEmpty()) {
+            return List.of();
+        }
+        var seen = new LinkedHashSet<String>();
+        for (var name : names) {
+            var trimmed = trim(name);
+            if (StringUtils.hasText(trimmed) && trimmed.length() <= 64) {
+                seen.add(trimmed);
+            }
+            if (seen.size() >= limit) {
+                break;
+            }
+        }
+        return List.copyOf(seen);
+    }
 
+    /**
+     * 生成投稿文章的 slug。
+     *
+     * <p>Halo 的建稿接口不带 slug 会被线上以 500 拒绝（后台 UI 建稿与 AI 日报都带 slug），
+     * 这里自己造一个：标题里的 ASCII 片段转连字符形式；中文标题取不到片段时退回
+     * {@code post-日期}。末尾统一加 5 位随机后缀，避免同名标题互相覆盖
+     * （slug 会进 {@code /archives/{slug}} 永久链接）。</p>
+     */
+    static String buildArticleSlug(String title) {
+        var ascii = (title == null ? "" : title)
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "-")
+            .replaceAll("(^-+)|(-+$)", "");
+        if (ascii.length() > 60) {
+            ascii = ascii.substring(0, 60).replaceAll("-+$", "");
+        }
+        if (!StringUtils.hasText(ascii)) {
+            var today = LocalDate.now();
+            ascii = String.format("post-%04d%02d%02d",
+                today.getYear(), today.getMonthValue(), today.getDayOfMonth());
+        }
+        return ascii + "-" + String.format("%05x",
+            ThreadLocalRandom.current().nextInt(0x100000));
+    }
+
+    // ==================== 我的投稿（列表 / 删除） ====================
+
+    @Override
+    public Mono<List<UserPublishArticleDTO>> listMyArticles(String openid) {
+        var id = normalizeOpenid(openid);
+        return requirePublisher(id).flatMap(this::fetchMyArticles);
+    }
+
+    /**
+     * 拉某个作者的文章列表。
+     *
+     * <p>「只看自己的」在<b>这里</b>按 {@code spec.owner} 过滤，不能指望 Halo 替我们筛：
+     * console 列表接口没有 owner 查询参数（PostQuery 里的 username 恒为 null，传了也被忽略），
+     * 实测传了就返回全站第一页——列表里混进别人的文章，删除的归属判断也会跟着失灵。</p>
+     */
+    private Mono<List<UserPublishArticleDTO>> fetchMyArticles(PublishContext ctx) {
+        return collectArticles(ctx.haloUserName(), 0, new ArrayList<>());
+    }
+
+    /**
+     * 逐页收集自己的文章。
+     *
+     * <p>归属过滤发生在本地（见 {@link #toArticleList}），所以不能只拉第一页——第一页可能
+     * 大半是别人的文章。按 {@value #MY_ARTICLES_PAGE_SIZE}/页 翻到没有下一页为止，
+     * 封顶 {@value #MY_ARTICLES_MAX_PAGES} 页，避免站点文章极多时一次拉太久。</p>
+     */
+    private Mono<List<UserPublishArticleDTO>> collectArticles(String ownerName, int page,
+                                                              List<UserPublishArticleDTO> collected) {
+        var path = CONSOLE_POSTS_API + "?page=" + page + "&size=" + MY_ARTICLES_PAGE_SIZE
+            + "&sort=metadata.creationTimestamp,desc";
+        return haloClient.get(path, HALO_CALL_TIMEOUT)
+            .onErrorMap(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 读取我的投稿失败：owner={} page={} {}",
+                    ownerName, page, ex.getMessage(), ex);
+                return describeWebClientError("读取我的投稿失败", ex);
+            })
+            .flatMap(node -> {
+                collected.addAll(toArticleList(node.path("items"), ownerName));
+                if (!node.path("hasNext").asBoolean(false)) {
+                    return Mono.just(List.copyOf(collected));
+                }
+                if (page + 1 >= MY_ARTICLES_MAX_PAGES) {
+                    log.warn("[UniHalo][UserPublish] 我的投稿超过 {} 页，先展示前 {} 篇",
+                        MY_ARTICLES_MAX_PAGES, collected.size());
+                    return Mono.just(List.copyOf(collected));
+                }
+                return collectArticles(ownerName, page + 1, collected);
+            });
+    }
+
+    private static List<UserPublishArticleDTO> toArticleList(JsonNode items, String ownerName) {
+        if (items == null || !items.isArray()) {
+            return List.of();
+        }
+        var list = new ArrayList<UserPublishArticleDTO>();
+        items.forEach(raw -> {
+            // console 列表返回的是 ListedPost：文章本体嵌在 post 字段里
+            // （平铺形态也认，Halo 各版本/其它接口口径不一致时不至于读成空标题）
+            var item = raw.path("post").isMissingNode() ? raw : raw.path("post");
+            var spec = item.path("spec");
+            // 回收站里的不再列出：删掉的立刻从列表消失，才符合用户预期
+            if (spec.path("deleted").asBoolean(false)) {
+                return;
+            }
+            // 只列自己的：站长/管理员绑定的 Halo 账号就是作者，全站文章因此都在这里
+            if (!ownerName.equals(trim(spec.path("owner").asText("")))) {
+                return;
+            }
+            var published = spec.path("publish").asBoolean(false);
+            // stats 与 post 在列表项里同级（ListedPost.stats）；文章本体被平铺时读不到，按 0 处理
+            var stats = raw.path("stats");
+            list.add(UserPublishArticleDTO.builder()
+                .name(item.path("metadata").path("name").asText(""))
+                .title(spec.path("title").asText(""))
+                .slug(spec.path("slug").asText(""))
+                .state(published ? "published" : "pending")
+                .stateText(published ? "已发布" : "待审 / 未发布")
+                .cover(spec.path("cover").asText(""))
+                .permalink(item.path("status").path("permalink").asText(""))
+                .publishTime(spec.path("publishTime").asText(""))
+                .createTime(item.path("metadata").path("creationTimestamp").asText(""))
+                .categories(textList(spec.path("categories")))
+                .tags(textList(spec.path("tags")))
+                .allowComment(spec.path("allowComment").asBoolean(true))
+                .hasPendingChanges(hasPendingChanges(spec))
+                .lastModifyTime(item.path("status").path("lastModifyTime").asText(""))
+                .visitCount(intField(stats, "visit"))
+                .upvoteCount(intField(stats, "upvote"))
+                .commentCount(intField(stats, "totalComment"))
+                .build());
+        });
+        return List.copyOf(list);
+    }
+
+    /**
+     * 已发布、但有尚未生效的修改。
+     *
+     * <p>判据是 head 快照与 release 快照不一致：Halo 前台只渲染 release 快照，
+     * 所以作者改完（没有直发权限时）站点上仍是旧内容——列表要如实显示，别让人以为
+     * 「保存成功」就等于「已经改了」。</p>
+     */
+    private static boolean hasPendingChanges(JsonNode spec) {
+        if (!spec.path("publish").asBoolean(false)) {
+            return false;
+        }
+        var head = trim(spec.path("headSnapshot").asText(""));
+        var release = trim(spec.path("releaseSnapshot").asText(""));
+        return StringUtils.hasText(head) && !head.equals(release);
+    }
+
+    private static int intField(JsonNode node, String field) {
+        var value = node == null ? null : node.path(field);
+        return value != null && value.isNumber() ? value.asInt() : 0;
+    }
+
+    private static List<String> textList(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        var values = new ArrayList<String>();
+        node.forEach((value) -> {
+            var text = trim(value.asText(""));
+            if (StringUtils.hasText(text)) {
+                values.add(text);
+            }
+        });
+        return List.copyOf(values);
+    }
+
+    @Override
+    public Mono<Void> deleteArticle(String openid, String postName) {
+        var id = normalizeOpenid(openid);
+        var name = trim(postName);
+        if (!StringUtils.hasText(name)) {
+            return Mono.error(new WxAuthException("缺少文章标识"));
+        }
+        return requirePublisher(id)
+            .flatMap(ctx -> resolveRoles(ctx.haloUserName())
+                .flatMap(roles -> resolvePrivileged(ctx, roles)
+                    .flatMap(privileged -> {
+                        if (privileged) {
+                            // 站长/管理员：可直接回收任意一篇（替作者清理也走这里）
+                            return recycleArticle(name);
+                        }
+                        // 普通用户：归属判定复用「按 owner 拉自己的列表」——
+                        // 自己的列表里没有这篇，就不是他的文章
+                        return fetchMyArticles(ctx).flatMap(items -> items.stream()
+                            .anyMatch(item -> name.equals(item.getName()))
+                            ? recycleArticle(name)
+                            : Mono.error(new WxAuthException("只能删除自己发布的文章")));
+                    })));
+    }
+
+    /** 回收文章（Halo 的 {@code /recycle}）：进回收站而不是物理删除，站长还能恢复 */
+    private Mono<Void> recycleArticle(String name) {
+        return haloClient.put(CONSOLE_POSTS_API + "/" + name + "/recycle", null, HALO_CALL_TIMEOUT)
+            .then()
+            .onErrorMap(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 回收文章失败：name={} {}", name, ex.getMessage(), ex);
+                return describeWebClientError("删除文章失败", ex);
+            });
+    }
+
+    // ==================== 我的投稿：编辑 / 发布 / 撤回 ====================
+
+    @Override
+    public Mono<UserPublishArticleDetailDTO> getArticle(String openid, String postName) {
+        var id = normalizeOpenid(openid);
+        var name = trim(postName);
+        if (!StringUtils.hasText(name)) {
+            return Mono.error(new WxAuthException("缺少文章标识"));
+        }
+        return requirePublisher(id)
+            .flatMap(ctx -> requireOwnedArticle(ctx, name)
+                .flatMap(node -> fetchHeadContent(name).map(raw -> toArticleDetail(node, raw))));
+    }
+
+    @Override
+    public Mono<UserPublishResultDTO> updateArticle(String openid, String postName,
+                                                    UserPublishArticleRequest request) {
+        var id = normalizeOpenid(openid);
+        var name = trim(postName);
+        if (!StringUtils.hasText(name)) {
+            return Mono.error(new WxAuthException("缺少文章标识"));
+        }
+        if (request == null) {
+            return Mono.error(new WxAuthException("请求体格式错误"));
+        }
+        var title = trim(request.getTitle());
+        var content = trim(request.getContent());
+        if (!StringUtils.hasText(title)) {
+            return Mono.error(new WxAuthException("标题不能为空"));
+        }
+        if (!StringUtils.hasText(content)) {
+            return Mono.error(new WxAuthException("正文不能为空"));
+        }
+        return loadConfig()
+            .flatMap(config -> {
+                // 刻意不检查总开关：开关管的是「能不能投新稿」，作者改自己已经投过的稿不该被连坐；
+                // 但字数上限仍按配置挡一道（配置没变，规则就不该变）
+                if (title.length() > config.maxArticleTitleLength()) {
+                    return Mono.error(new WxAuthException(
+                        "标题不能超过 " + config.maxArticleTitleLength() + " 个字"));
+                }
+                if (content.length() > config.maxArticleContentLength()) {
+                    return Mono.error(new WxAuthException(
+                        "正文不能超过 " + config.maxArticleContentLength() + " 个字"));
+                }
+                return requirePublisher(id)
+                    .flatMap(ctx -> requireOwnedArticle(ctx, name)
+                        .flatMap(node -> resolveModeFor(ctx, config)
+                            .flatMap(resolved -> {
+                                var spec = node.path("spec");
+                                var published = spec.path("publish").asBoolean(false);
+                                var privileged = resolved.privileged();
+                                // 只有直发权限的角色改完能立刻上线；待审投稿的修改只落到草稿，
+                                // 前台仍渲染旧的 release 快照，等站长发布时才生效
+                                var republish = published
+                                    && (privileged || MODE_DIRECT.equals(resolved.mode()));
+                                var dto = HaloPostPublishDTO.builder()
+                                    .title(title)
+                                    // slug 沿用原值：它是永久链接的一部分，改了会让已分享的链接 404
+                                    .slug(spec.path("slug").asText(""))
+                                    .markdown(content)
+                                    .cover(trim(request.getCover()))
+                                    .categoryNames(normalizeRefNames(request.getCategories(),
+                                        MAX_ARTICLE_CATEGORIES))
+                                    .tagNames(normalizeRefNames(request.getTags(), MAX_ARTICLE_TAGS))
+                                    // 作者不跟着改：站长代改别人的文章时，署名仍应是原作者
+                                    .owner(spec.path("owner").asText(ctx.haloUserName()))
+                                    .allowComment(request.getAllowComment() == null
+                                        ? spec.path("allowComment").asBoolean(true)
+                                        : request.getAllowComment())
+                                    .build();
+                                log.info("[UniHalo][UserPublish] 修改投稿：openid={} name={} owner={} "
+                                        + "已发布={} 保存后即发布={} 特权={} 标题=「{}」 正文 {} 字",
+                                    ctx.openid(), name, dto.getOwner(), published, republish,
+                                    privileged, title, content.length());
+                                return (privileged ? Mono.<Void>empty()
+                                        : verifyContent(config, id, title + "\n" + content))
+                                    .then(postPublisher.update(name, dto, republish,
+                                        PUBLISH_WAIT_SECONDS))
+                                    .map(result -> UserPublishResultDTO.builder()
+                                        .type("article")
+                                        .mode(resolved.mode())
+                                        .statusText(updateStatusText(result, published, republish))
+                                        .name(result.getPostName())
+                                        .permalink(absolutize(result.getPermalink()))
+                                        // 修改不再扣积分：投稿时那次已经扣过，改同一篇内容不该再收费
+                                        .pointsCost(0)
+                                        .balance(0)
+                                        .build());
+                            })));
+            });
+    }
+
+    /**
+     * 保存修改后的结果文案。
+     *
+     * <p>三种结局必须说清楚，否则用户会把「保存成功」直接读成「站点上已经改了」：
+     * 还没发布 → 等站长审核；已发布但需审核 → 站点仍是旧内容；有直发权限 → 已生效。</p>
+     */
+    private static String updateStatusText(HaloPostPublishResultDTO result, boolean published,
+                                           boolean republish) {
+        if (!published) {
+            return "修改已保存，文章仍在待审，站长通过后按最新内容发布";
+        }
+        if (!republish) {
+            return "修改已保存；文章已发布，需站长重新发布后才会生效";
+        }
+        return "PUBLISHED".equals(result.getState()) ? "修改已保存并已生效" : result.getMessage();
+    }
+
+    @Override
+    public Mono<UserPublishResultDTO> publishArticleNow(String openid, String postName) {
+        var id = normalizeOpenid(openid);
+        var name = trim(postName);
+        if (!StringUtils.hasText(name)) {
+            return Mono.error(new WxAuthException("缺少文章标识"));
+        }
+        return loadConfig()
+            .flatMap(config -> requirePublisher(id)
+                .flatMap(ctx -> requireOwnedArticle(ctx, name)
+                    .flatMap(node -> resolveModeFor(ctx, config)
+                        .flatMap(resolved -> {
+                            if (!resolved.privileged() && !MODE_DIRECT.equals(resolved.mode())) {
+                                // 待审投稿若能自行发布，审核就只是界面上的装饰
+                                return Mono.error(new WxAuthException(
+                                    "你的投稿需要站长审核后发布，暂不能自行发布"));
+                            }
+                            var spec = node.path("spec");
+                            var permalink = node.path("status").path("permalink").asText("");
+                            var published = spec.path("publish").asBoolean(false);
+                            if (published && !hasPendingChanges(spec)) {
+                                // 已经是发布状态且没有待生效的修改：当成功返回，别让用户以为是失败
+                                log.info("[UniHalo][UserPublish] 文章已是发布状态，跳过发布：name={}", name);
+                                return Mono.just(UserPublishResultDTO.builder()
+                                    .type("article")
+                                    .mode(MODE_DIRECT)
+                                    .statusText("文章当前已是发布状态")
+                                    .name(name)
+                                    .permalink(absolutize(permalink))
+                                    .pointsCost(0)
+                                    .balance(0)
+                                    .build());
+                            }
+                            log.info("[UniHalo][UserPublish] 发布投稿：openid={} name={} 已发布={} 特权={}",
+                                ctx.openid(), name, published, resolved.privileged());
+                            return postPublisher.republish(name, PUBLISH_WAIT_SECONDS)
+                                .map(result -> UserPublishResultDTO.builder()
+                                    .type("article")
+                                    .mode(MODE_DIRECT)
+                                    .statusText("PUBLISHED".equals(result.getState())
+                                        ? "已发布" : result.getMessage())
+                                    .name(name)
+                                    .permalink(absolutize(StringUtils.hasText(result.getPermalink())
+                                        ? result.getPermalink() : permalink))
+                                    .pointsCost(0)
+                                    .balance(0)
+                                    .build());
+                        }))));
+    }
+
+    @Override
+    public Mono<Void> unpublishArticle(String openid, String postName) {
+        var id = normalizeOpenid(openid);
+        var name = trim(postName);
+        if (!StringUtils.hasText(name)) {
+            return Mono.error(new WxAuthException("缺少文章标识"));
+        }
+        return loadConfig()
+            .flatMap(config -> requirePublisher(id)
+                .flatMap(ctx -> requireOwnedArticle(ctx, name)
+                    .flatMap(node -> resolveModeFor(ctx, config)
+                        .flatMap(resolved -> {
+                            if (!resolved.privileged() && !MODE_DIRECT.equals(resolved.mode())) {
+                                // 与发布同一道门槛：能推上线的人才能撤回来，否则撤回是一条死路
+                                return Mono.error(new WxAuthException(
+                                    "你的投稿由站长审核管理，暂不能自行撤回，请联系站长"));
+                            }
+                            if (!node.path("spec").path("publish").asBoolean(false)) {
+                                return Mono.error(new WxAuthException("文章当前不是发布状态，无需撤回"));
+                            }
+                            log.info("[UniHalo][UserPublish] 撤回发布：openid={} name={}",
+                                ctx.openid(), name);
+                            return postPublisher.unpublish(name)
+                                .onErrorMap(WebClientException.class, ex -> {
+                                    log.warn("[UniHalo][UserPublish] 撤回发布失败：name={} {}",
+                                        name, ex.getMessage(), ex);
+                                    return describeWebClientError("撤回发布失败", ex);
+                                });
+                        }))));
+    }
+
+    /**
+     * 读一篇文章并校验操作权：作者本人，或博主/管理员。
+     *
+     * <p>与删除同一口径（先读到再判归属），但读的是<b>单篇</b>而不是自己的列表——
+     * 编辑要拿整篇文章回传，列表里的 DTO 不够用；顺带也省掉了「翻 5 页才找到这篇」。</p>
+     */
+    private Mono<JsonNode> requireOwnedArticle(PublishContext ctx, String name) {
+        return fetchArticleNode(name).flatMap(node -> {
+            if (node.path("spec").path("deleted").asBoolean(false)) {
+                return Mono.error(new WxAuthException("文章已在回收站中，无法编辑"));
+            }
+            var owner = trim(node.path("spec").path("owner").asText(""));
+            if (owner.equals(ctx.haloUserName())) {
+                return Mono.just(node);
+            }
+            return resolveRoles(ctx.haloUserName())
+                .flatMap(roles -> resolvePrivileged(ctx, roles)
+                    .flatMap(privileged -> privileged
+                        ? Mono.just(node)
+                        : Mono.error(new WxAuthException("只能操作自己发布的文章"))));
+        });
+    }
+
+    /**
+     * 按 metadata.name 读一篇文章（含未发布草稿）。
+     *
+     * <p>走核心组的 {@code content.halo.run/posts/{name}}：公开读接口对未发布文章一律 404，
+     * 而作者最常编辑的恰恰是那些还没发布的投稿。</p>
+     */
+    private Mono<JsonNode> fetchArticleNode(String name) {
+        return haloClient.get(CORE_POSTS_API + "/" + name, HALO_CALL_TIMEOUT)
+            .filter(node -> name.equals(node.path("metadata").path("name").asText("")))
+            .switchIfEmpty(Mono.error(new WxAuthException("文章不存在或已被删除")))
+            .onErrorResume(WebClientResponseException.NotFound.class,
+                ex -> Mono.error(new WxAuthException("文章不存在或已被删除")))
+            .onErrorMap(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 读取文章失败：name={} {}", name, ex.getMessage(), ex);
+                return describeWebClientError("读取文章失败", ex);
+            });
+    }
+
+    /**
+     * 读正文原文（Markdown）用于编辑回填。
+     *
+     * <p>读不到就报错而不是回填空串：编辑保存是「整份替换」，正文读失败却继续下去，
+     * 等于让用户用一次保存把文章正文清空。</p>
+     */
+    private Mono<String> fetchHeadContent(String name) {
+        return haloClient.get(CONSOLE_POSTS_API + "/" + name + "/head-content", HALO_CALL_TIMEOUT)
+            .map(node -> node.path("raw").asText(""))
+            .onErrorMap(WebClientException.class, ex -> {
+                log.warn("[UniHalo][UserPublish] 读取正文失败：name={} {}", name, ex.getMessage(), ex);
+                return describeWebClientError("读取文章正文失败", ex);
+            });
+    }
+
+    private static UserPublishArticleDetailDTO toArticleDetail(JsonNode node, String raw) {
+        var spec = node.path("spec");
+        var published = spec.path("publish").asBoolean(false);
+        return UserPublishArticleDetailDTO.builder()
+            .name(node.path("metadata").path("name").asText(""))
+            .title(spec.path("title").asText(""))
+            .content(raw)
+            .slug(spec.path("slug").asText(""))
+            .cover(spec.path("cover").asText(""))
+            .categories(textList(spec.path("categories")))
+            .tags(textList(spec.path("tags")))
+            .allowComment(spec.path("allowComment").asBoolean(true))
+            .published(published)
+            .hasPendingChanges(hasPendingChanges(spec))
+            .stateText(published ? "已发布" : "待审 / 未发布")
+            .permalink(node.path("status").path("permalink").asText(""))
+            .publishTime(spec.path("publishTime").asText(""))
+            .createTime(node.path("metadata").path("creationTimestamp").asText(""))
+            .build();
+    }
+
+    // ==================== 发瞬间 ====================
     @Override
     public Mono<UserPublishResultDTO> publishMoment(String openid,
                                                     UserPublishMomentRequest request) {

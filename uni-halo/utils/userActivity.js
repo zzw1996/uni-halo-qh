@@ -16,8 +16,9 @@ export const USER_ACTIVITY_TYPES = {
 export const USER_ACTIVITY_TITLES = {
 	comment: '我的评论',
 	browse: '我的浏览',
-	upvote: '我的点赞',
-	vote: '我的投票'
+	upvote: '我的点赞'
+	// 不再给 vote 配标题：投票玩法已下线，页面标题落到「我的记录」兜底，
+	// 免得有人按 ?type=vote 打开时弹出一个「我的投票」的标题。
 };
 
 /**

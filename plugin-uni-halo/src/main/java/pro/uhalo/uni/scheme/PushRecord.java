@@ -25,8 +25,23 @@ public class PushRecord extends AbstractExtension {
 
     private String wxOpenid;
 
-    /** 消息类型：newPost / aiDigest（见 PushConfigHelper.KIND_*） */
-    private String kind;
+    /**
+     * 消息类型：newPost / aiDigest（见 PushConfigHelper.KIND_*）。
+     *
+     * <p><b>字段名不能叫 {@code kind}</b>：{@code AbstractExtension} 自带
+     * {@code getKind()/setKind()}，而 Halo 把扩展序列化成 {@code Unstructured} 时
+     * 读的就是实例的 {@code getKind()}（{@code groupVersionKind()} 同源）。
+     * 子类声明 {@code kind} 字段会让 Lombok 生成的访问器覆盖基类方法，
+     * 于是 Halo 拿消息类型（{@code newPost}）当扩展类型去查 scheme，
+     * 写入直接失败：{@code Scheme not found for uni.uhalo.pro/v1alpha1/newPost}。</p>
+     *
+     * <p>这个坑在本仓库里真实发生过——2026-10 加公众号功能时由 {@code MpIssue} 触发，
+     * 回头发现 {@code PushRecord} 一直在踩，只是它的写入错误被 {@code onErrorResume}
+     * 吞成了「推送记录已存在，跳过重复写入」的 info 日志，于是表现成
+     * 「推送记录表里什么都没有、幂等静默失效（同一件事可能被推两次）」。
+     * 护栏测试见 {@code HaloSchemeFieldGuardTest}。</p>
+     */
+    private String sourceKind;
 
     /** 业务键：文章名或日期，保证同一件事只推一次 */
     private String bizKey;

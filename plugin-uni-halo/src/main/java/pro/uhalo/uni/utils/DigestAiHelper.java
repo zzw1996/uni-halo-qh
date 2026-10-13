@@ -33,7 +33,46 @@ public final class DigestAiHelper {
     private DigestAiHelper() {
     }
 
+    /**
+     * 这次回复是否被输出长度上限截断（{@code finish_reason=length}）。
+     *
+     * <p>成稿要的是长 JSON，撞上 {@code max_tokens} 时正文会被砍在半截——表现就是
+     * 「模型只回了一半」（解析失败、只解析出前几篇、或字段缺一半）。拿到这个信号
+     * 就能在日志里写清原因，并让调用方拆小批次重试，而不是把它当成「模型不听话」。</p>
+     */
+    public static boolean isOutputTruncated(pro.uhalo.uni.dto.DigestAiReplyDTO reply) {
+        return reply != null && "length".equalsIgnoreCase(reply.finishReason());
+    }
+
     // ── 评分 ──
+
+    /**
+     * 公众号评分提示词：在原版基础上追加「备选方向」要求。
+     *
+     * <p><b>原版一个字都不改</b>（那份提示词是调过的，改了会影响日报成稿质量），
+     * 这里只在渲染结果上做两处追加：① 要求模型在「同时明显适合另一个方向」时给出
+     * {@code altCategory}（公众号的「方向保底」靠它补位，不额外花调用）；
+     * ② JSON 示例里的示例分类换成清单里的兜底项、并补上 altCategory 字段——
+     * 原示例固定用清单第一项，会把模型往第一个方向带。</p>
+     */
+    public static String buildScoringPromptForMp(List<DigestArticleDTO> batch, int startIndex,
+        DigestCategoryCatalog catalog) {
+        var base = buildScoringPrompt(batch, startIndex, catalog);
+        var sample = catalog.sampleKey();
+        var fallbackKey = StringUtils.hasText(catalog.fallbackKey())
+            ? catalog.fallbackKey() : sample;
+        return base
+            .replace("\"category\": \"" + sample + "\",",
+                "\"category\": \"" + fallbackKey + "\",\n         \"altCategory\": \"\",")
+            .replace("## 分类标签（必须从以下选一个）",
+                "## 分类标签（必须从以下选一个；与所有标签都不相关的选兜底那一项）")
+            .replace("并为每篇文章分配一个分类标签和提取 2-4 个关键词。",
+                "并为每篇文章分配一个分类标签和提取 2-4 个关键词。\n"
+                    + "\n## 备选方向（仅当确实合适时才给）\n"
+                    + "如果这篇文章同时明显适合另一个方向（必须来自下面同一份清单），"
+                    + "把那个方向的 key 填进 altCategory；不确定、只是沾点边、或找不到合适的，"
+                    + "就留空字符串——宁缺毋滥。");
+    }
 
     public static String buildScoringPrompt(List<DigestArticleDTO> batch, int startIndex) {
         return buildScoringPrompt(batch, startIndex, DigestCategoryCatalog.defaultCatalog());
@@ -231,9 +270,14 @@ public final class DigestAiHelper {
 
     /**
      * 解析 AI 返回的 JSON，模型偶尔会套一层 markdown 代码块或在前后加说明文字。
+     *
+     * <p>思考型模型经部分网关（vLLM、Ollama、一些中转站）会把思考过程以
+     * {@code <think>…</think>} 混进 content——先剥掉再解析，否则「找第一个 {」
+     * 很可能落进思考文字里。没有闭合标签（被截断）时剥不掉，交给后面的兜底。</p>
      */
     public static JsonNode parseJson(String text) {
         var jsonText = text == null ? "" : text.trim();
+        jsonText = jsonText.replaceAll("(?s)<think>.*?</think>", "").trim();
         if (jsonText.startsWith("```")) {
             jsonText = jsonText.replaceFirst("^```(?:json)?\\s*\\n?", "")
                 .replaceFirst("\\n?```\\s*$", "");

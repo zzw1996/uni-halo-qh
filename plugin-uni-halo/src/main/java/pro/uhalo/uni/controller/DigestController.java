@@ -29,6 +29,7 @@ import pro.uhalo.uni.services.DigestService;
 import pro.uhalo.uni.services.DigestTaxonomyService;
 import pro.uhalo.uni.services.PostTaxonomyService;
 import pro.uhalo.uni.services.impl.DigestAiModelService;
+import pro.uhalo.uni.utils.AiProviderPresets;
 import pro.uhalo.uni.utils.DigestCategoryCatalog;
 import pro.uhalo.uni.utils.DigestConfigHelper;
 import run.halo.app.plugin.ReactiveSettingFetcher;
@@ -37,6 +38,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -245,6 +247,24 @@ public class DigestController {
         return aiModelService.load()
             .flatMap(this::jsonOk)
             .onErrorResume(ex -> badRequest(ex.getMessage()));
+    }
+
+    /**
+     * 大模型供应商预设：控制台「大模型通道」面板的「供应商」快填下拉用。
+     *
+     * <p>纯静态数据（各家 OpenAI 兼容入口 + 常见模型名示例），不发任何请求。</p>
+     */
+    public Mono<ServerResponse> aiModelPresets(ServerRequest request) {
+        var presets = AiProviderPresets.ALL.stream().map(preset -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("key", preset.key());
+            row.put("label", preset.label());
+            row.put("apiBase", preset.apiBase());
+            row.put("models", preset.models());
+            row.put("note", preset.note());
+            return row;
+        }).toList();
+        return jsonOk(Map.of("presets", presets));
     }
 
     /** 保存清单：只改 aiProviders 一项，其余配置字段原样保留 */

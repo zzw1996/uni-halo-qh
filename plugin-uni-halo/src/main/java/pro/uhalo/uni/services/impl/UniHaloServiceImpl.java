@@ -98,6 +98,23 @@ public class UniHaloServiceImpl implements UniHaloService {
     private static final String REDIS_CONFIG_GROUP = "redisConfig";
 
     /**
+     * 微信公众号分组：整组不下发。
+     *
+     * <p>里面既有 AppSecret（能换公众号 access_token、等同于以公众号身份发任何请求），
+     * 也有生成/推送参数——小程序端一个字段都用不到，所以整组从下发内容里移除，
+     * 而不是只剥某一个字段（少一个字段就少一次泄漏机会）。</p>
+     */
+    private static final String MP_CONFIG_GROUP = "mpConfig";
+
+    /**
+     * 今日头条号分组：整组不下发。
+     *
+     * <p>这是控制台管理员页面的配置（写稿台），小程序端一个字段都用不到；
+     * 与 {@link #MP_CONFIG_GROUP} 同一口径——用不到就不下发，少一组就少一份噪音。</p>
+     */
+    private static final String TOUTIAO_CONFIG_GROUP = "toutiaoConfig";
+
+    /**
      * AI 日报分组里禁止下发的密钥字段。
      *
      * <p>{@code aiProviders} 是清单，逐条的 Key 在 {@link #stripAiDigestSecrets} 里单独剥掉；
@@ -112,6 +129,9 @@ public class UniHaloServiceImpl implements UniHaloService {
      * <p>微信官方的限制只针对原生 {@code tabBar.list}：2~5 项。这里是产品口径——
      * 下限 3（不至于空得不像底栏）、上限 5（与原生一致），改这里即可整体调整。</p>
      */
+    /** 上次下发的底栏项摘要：只在变化时打日志，避免每次匿名配置请求都刷屏 */
+    private static volatile String lastTabbarSummary = "";
+
     private static final int TABBAR_MIN_ITEMS = 3;
     private static final int TABBAR_MAX_ITEMS = 5;
 
@@ -188,6 +208,10 @@ public class UniHaloServiceImpl implements UniHaloService {
                 if (redisConfig != null) {
                     sanitized.put(REDIS_CONFIG_GROUP, stripRedisSecrets(redisConfig));
                 }
+                // 公众号整组移除：含 AppSecret 与服务端专用参数，小程序端完全不需要
+                sanitized.remove(MP_CONFIG_GROUP);
+                // 今日头条号整组移除：控制台管理员页面的配置，小程序端用不到
+                sanitized.remove(TOUTIAO_CONFIG_GROUP);
                 return sanitized;
             });
     }
@@ -217,6 +241,14 @@ public class UniHaloServiceImpl implements UniHaloService {
                 }
                 if (REDIS_CONFIG_GROUP.equals(groupName)) {
                     return stripRedisSecrets(config);
+                }
+                if (MP_CONFIG_GROUP.equals(groupName)) {
+                    // 单组查询同样匿名可访问：返回空对象而不是报错，
+                    // 免得小程序侧把「配置被剥离」误判成接口故障
+                    return OBJECT_MAPPER.createObjectNode();
+                }
+                if (TOUTIAO_CONFIG_GROUP.equals(groupName)) {
+                    return OBJECT_MAPPER.createObjectNode();
                 }
                 return config;
             });
@@ -424,6 +456,22 @@ public class UniHaloServiceImpl implements UniHaloService {
         }
         candidates.add(toTabbarCandidateNode(TABBAR_LOCKED_TAIL, true));
         result.set("candidates", candidates);
+
+        // 下发的项变了才打日志：站长排查「后台改了开关、小程序没变」时，
+        // 这条日志能立刻区分「服务端就没下发」与「客户端缓存没刷新」
+        var summary = "首页"
+            + TABBAR_OPTIONAL.stream()
+                .filter(picked::contains)
+                .map(preset -> " / " + preset.label())
+                .reduce("", String::concat)
+            + " / 我的（开关：" + TABBAR_OPTIONAL.stream()
+                .map(preset -> preset.label() + "="
+                    + result.path(preset.switchField()).asBoolean(preset.defaultOn()))
+                .reduce((a, b) -> a + " " + b).orElse("-") + "）";
+        if (!summary.equals(lastTabbarSummary)) {
+            lastTabbarSummary = summary;
+            log.info("[UniHalo][TabBar] 下发的底栏项：{}", summary);
+        }
         return result;
     }
 

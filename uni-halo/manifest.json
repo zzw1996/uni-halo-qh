@@ -2,8 +2,9 @@
     "name" : "宥枫璟",
     "appid" : "__UNI__EF67C46",
     "description" : "人生旅途中总会遇到美好枫璟",
-    "versionName" : "2.0.10",
-    "versionCode" : 210,
+    /* 小程序版本：从 4.0.2 起（上传时的 -v 就用它；versionCode 规则 = 主*100 + 次*10 + 修） */
+    "versionName" : "4.0.3",
+    "versionCode" : 403,
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {

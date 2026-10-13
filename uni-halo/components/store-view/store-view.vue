@@ -101,6 +101,7 @@
 
 <script>
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
+	import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
 
 	/** store-home 组件要求的基础库最低版本（官方文档：3.5.5 起支持） */
 	const SDK_MIN_VERSION = '3.5.5';

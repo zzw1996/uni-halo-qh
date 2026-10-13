@@ -54,22 +54,20 @@ public class AiContentService {
             Mono.zip(
                 entitlementService.getStatus(openid),
                 preferenceService.load(openid),
-                sourceOptions(configs.getT1()),
                 categoryOptions(),
                 // 积分余额：让前端在点击「兑换」时就能判断够不够（服务端仍会权威校验）
                 entitlementService.loadPointsBalance(openid).defaultIfEmpty(-1L))
             .map(tuple -> AiContentPreferenceViewDTO.builder()
                 .status(tuple.getT1())
                 .preference(tuple.getT2())
-                .sourceOptions(tuple.getT3())
-                .categoryOptions(tuple.getT4())
+                .categoryOptions(tuple.getT3())
                 .limits(limitsOf(configs.getT1()))
                 .presetTopics(AiContentConfigHelper.parseTopics(configs.getT1().getPresetTopics()))
                 .redeem(AiContentPreferenceViewDTO.Redeem.builder()
                     .pointsPrice(configs.getT1().getPointsPrice())
                     .pointsDays(configs.getT1().getPointsDays())
                     // -1 表示未登录/读不到：前端据此不显示余额、也不做本地判断
-                    .pointsBalance(balanceOf(tuple.getT5()))
+                    .pointsBalance(balanceOf(tuple.getT4()))
                     .build())
                 .push(AiContentPreferenceViewDTO.PushSettings.builder()
                     .hourOptions(PushConfigHelper.parsePushHours(
@@ -152,16 +150,6 @@ public class AiContentService {
             .toList());
     }
 
-    /** 来源候选：最近日报里实际出现过的来源（用户不会配到一个从来没有内容的来源） */
-    private Mono<List<DigestOptionItemDTO>> sourceOptions(
-        AiContentConfigDTO config) {
-        return digestPublicService.sourceOptions(config.getWindowDays())
-            .onErrorResume(ex -> {
-                log.warn("[UniHalo][AiContent] 读取来源候选失败，按空列表处理：{}", ex.getMessage());
-                return Mono.just(List.of());
-            });
-    }
-
     private Mono<DigestCategoryCatalog> settingsCatalog() {
         return settingFetcher.get(DigestConfigHelper.groupName())
             .map(DigestConfigHelper::parse)
@@ -187,11 +175,11 @@ public class AiContentService {
     private static AiContentPreferenceViewDTO.Limits limitsOf(AiContentConfigDTO config) {
         return AiContentPreferenceViewDTO.Limits.builder()
             .maxCategories(config.getMaxCategories())
-            .maxSources(config.getMaxSources())
             .maxKeywords(config.getMaxKeywords())
             .maxTopics(config.getMaxTopics())
             .maxItems(config.getMaxItems())
             .windowDays(config.getWindowDays())
+            .liveHours(config.getLiveHours())
             .aiIntroEnabled(config.isAiIntroEnabled())
             .build();
     }

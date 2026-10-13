@@ -56,7 +56,7 @@ import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vu
 import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 import ArticleCard from '@/components/article-card/article-card.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
-import { fetchCategorySubscription, subscribeCategory, subscriptionLimit } from '@/utils/categorySubscription.js';
+import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, quotaText } from '@/utils/categorySubscription.js';
 
 export default {
     mixins: [loadMoreMixin],
@@ -172,7 +172,7 @@ export default {
                 return '解锁额度或续费会员后可继续阅读本分类文章';
             }
             return this.calcShowSubscribeBtn
-                ? `订阅后可阅读全文，已订阅 ${(this.subState.subscribed || []).length}/${subscriptionLimit(this.subState.limits)} 个分类`
+                ? `订阅后可阅读全文，已订阅 ${(this.subState.subscribed || []).length}/${quotaText(this.subState.limits)} 个分类`
                 : '可用积分解锁额度，或开通会员订阅不限量';
         },
         subBarBtnText() {

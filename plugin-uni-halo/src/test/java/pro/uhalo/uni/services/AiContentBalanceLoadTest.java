@@ -34,6 +34,10 @@ import static org.mockito.Mockito.when;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AiContentBalanceLoadTest {
 
+    /** 生成记录：本组用例不关心计数，按空仓库 mock */
+    @org.mockito.Mock
+    private pro.uhalo.uni.services.impl.AiContentGenerationLogService logService;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Mock
@@ -50,8 +54,10 @@ class AiContentBalanceLoadTest {
     @BeforeEach
     void setUp() {
         service = new AiContentEntitlementService(pointsPersistence, settingFetcher,
-            membershipService, rateLimiter, privilegeStub());
+            membershipService, rateLimiter, privilegeStub(), logService);
         lenient().when(membershipService.loadMemberExpireAt(anyString())).thenReturn(Mono.empty());
+        // 生成次数：本组用例按「0 次剩余、今日 0 次」即可（额度分发另有用例）
+        lenient().when(logService.countToday(anyString())).thenReturn(Mono.just(0));
         // 限流器是 mock：默认返回 false 会让兑换在限流那一步就被拦下
         lenient().when(rateLimiter.tryAcquire(anyString(), org.mockito.ArgumentMatchers.anyInt(),
             org.mockito.ArgumentMatchers.any())).thenReturn(true);

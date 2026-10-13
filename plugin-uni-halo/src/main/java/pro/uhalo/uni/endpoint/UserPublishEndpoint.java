@@ -53,6 +53,45 @@ public class UserPublishEndpoint implements CustomEndpoint {
                     .operationId("SubmitUserPublishVote")
                     .description("Submit a vote through the server-side token.")
                     .tag(apiTag))
+            .GET(basePath + "/userPublish/articles", userPublishController::listMyArticles,
+                builder -> builder
+                    .operationId("ListUserPublishArticles")
+                    .description("List my own articles (published and pending drafts); "
+                        + "filtered by owner on the Halo side.")
+                    .tag(apiTag))
+            .DELETE(basePath + "/userPublish/article/{name}", userPublishController::deleteArticle,
+                builder -> builder
+                    .operationId("DeleteUserPublishArticle")
+                    .description("Recycle one of my own articles: owners can delete their own, "
+                        + "blogger/admin can delete any.")
+                    .tag(apiTag))
+            .GET(basePath + "/userPublish/article/{name}", userPublishController::getArticle,
+                builder -> builder
+                    .operationId("GetUserPublishArticle")
+                    .description("Get one of my own articles with the raw markdown content, "
+                        + "used to fill the edit form.")
+                    .tag(apiTag))
+            .PUT(basePath + "/userPublish/article/{name}", userPublishController::updateArticle,
+                builder -> builder
+                    .operationId("UpdateUserPublishArticle")
+                    .description("Save changes to one of my own articles (no points are charged). "
+                        + "Changes of a published article go live immediately only for direct "
+                        + "publish roles; pending ones wait for the blogger.")
+                    .tag(apiTag))
+            .PUT(basePath + "/userPublish/article/{name}/publish",
+                userPublishController::publishMyArticle,
+                builder -> builder
+                    .operationId("PublishUserPublishArticle")
+                    .description("Publish or re-publish one of my own articles (direct publish "
+                        + "roles only).")
+                    .tag(apiTag))
+            .PUT(basePath + "/userPublish/article/{name}/unpublish",
+                userPublishController::unpublishMyArticle,
+                builder -> builder
+                    .operationId("UnpublishUserPublishArticle")
+                    .description("Unpublish one of my own articles: it turns back into a draft and "
+                        + "disappears from the site.")
+                    .tag(apiTag))
             .DELETE(basePath + "/userPublish/moment/{name}", userPublishController::deleteMoment,
                 builder -> builder
                     .operationId("DeleteUserPublishMoment")

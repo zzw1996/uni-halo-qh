@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微信公众号 · 文章生成与推送</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6fa; color: #303133; padding: 20px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #909399; font-size: 13px; margin-bottom: 20px; line-height: 1.7; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.04); }
+  .card h2 { font-size: 15px; color: #3c4160; margin-bottom: 10px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input, button { font-size: 14px; border-radius: 8px; border: 1px solid #dcdfe6; padding: 8px 12px; outline: none; }
+  input:focus { border-color: #667eea; }
+  button { background: #667eea; color: #fff; border: none; cursor: pointer; }
+  button:hover { opacity: .9; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: #eef1fb; color: #4c5480; }
+  button.mini { padding: 4px 10px; font-size: 12.5px; border-radius: 6px; }
+  button.danger { background: #ffecec; color: #d94a4a; }
+  .token { width: 320px; }
+  .tip { font-size: 12px; color: #b0b5c0; margin-top: 6px; line-height: 1.7; }
+  .kv { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: #4c5480; }
+  .kv b { color: #303133; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat { border-radius: 10px; padding: 10px 12px; color: #fff; }
+  .stat .k { font-size: 12px; opacity: .9; }
+  .stat .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .s1 { background: linear-gradient(135deg,#5b6ee8,#7d57e0); }
+  .s2 { background: linear-gradient(135deg,#2bb673,#1e9e8e); }
+  .s3 { background: linear-gradient(135deg,#f2994a,#e8622c); }
+  .s4 { background: linear-gradient(135deg,#4aa5f0,#4f74dd); }
+  .s5 { background: linear-gradient(135deg,#9b51e0,#c04ad6); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #f0f1f5; vertical-align: top; }
+  th { color: #909399; font-weight: 600; white-space: nowrap; }
+  td { word-break: break-all; }
+  a { color: #667eea; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+  .ok { background: #e6f7e6; color: #3a9e3a; }
+  .bad { background: #ffecec; color: #d94a4a; }
+  .run { background: #fff3e0; color: #e8862b; }
+  .idle { background: #eef1fb; color: #6b7290; }
+  .empty { color: #b0b5c0; text-align: center; padding: 30px 0; }
+  .msg { margin-top: 10px; font-size: 13px; line-height: 1.7; }
+  .msg.bad { color: #d94a4a; }
+  .msg.ok { color: #3a9e3a; }
+  .pf-item { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; font-size: 13px; flex-wrap: wrap; }
+  .pf-flag { font-weight: 700; }
+  .pf-ok { color: #17a05e; }
+  .pf-bad { color: #d94a4a; }
+  .pf-name { color: #3c4160; font-weight: 600; min-width: 200px; }
+  .pf-msg { color: #7a8095; flex: 1; min-width: 240px; }
+  .pf-msg-bad { color: #d94a4a; }
+  .digest { color: #6b7290; font-size: 12.5px; margin-top: 4px; }
+  .warn { color: #e8862b; font-size: 12.5px; margin-top: 4px; }
+  .mini-err { color: #d94a4a; font-size: 12.5px; margin-top: 4px; line-height: 1.6; }
+  .preview { position: fixed; inset: 0; background: rgba(20,22,34,.55); display: flex; align-items: center; justify-content: center; z-index: 99; }
+  .preview .panel { background: #fff; border-radius: 14px; width: min(820px, 94vw); height: min(88vh, 900px); display: flex; flex-direction: column; overflow: hidden; }
+  .preview .head { padding: 14px 18px; border-bottom: 1px solid #f0f1f5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .preview .head .t { font-size: 14px; font-weight: 700; color: #3c4160; flex: 1; }
+  .preview iframe { flex: 1; border: none; width: 100%; background: #fff; }
+  .preview .foot { padding: 10px 18px; border-top: 1px solid #f0f1f5; font-size: 12px; color: #909399; line-height: 1.7; }
+  .mono { font-family: monospace; font-size: 11.5px; color: #aab0c0; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 8px; background: #eef1fb; color: #4054b2; font-size: 12px; font-weight: 600; }
+  .group-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 8px; font-size: 13px; color: #333a52; }
+  .group-head .mini { margin-left: auto; }
+  .push-box { margin-top: 12px; background: #f7f9ff; border: 1px solid #e8ecfa; border-radius: 10px; padding: 10px 12px; }
+  .warn-banner { background: #fff8e6; border: 1px solid #f5dfa8; color: #8a6100; padding: 10px 12px; border-radius: 10px; margin-top: 8px; font-size: 12.5px; line-height: 1.8; }
+  .push-head { font-size: 12.5px; color: #333a52; }
+  .push-bar { margin-top: 8px; height: 6px; border-radius: 999px; background: #e6eafb; overflow: hidden; }
+  .push-bar-inner { height: 100%; background: linear-gradient(90deg, #5b6ee8, #9a4ee0); transition: width .4s ease; }
+  .push-item { display: flex; align-items: baseline; gap: 8px; font-size: 12px; margin-top: 6px; flex-wrap: wrap; }
+  .push-log { margin: 0 0 10px; padding: 10px 14px; background: #0f172a; color: #cbd5e1; border-radius: 10px; font-size: 11.5px; line-height: 1.8; white-space: pre-wrap; }
+  .log-row td { background: #fbfcff; padding-top: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📮 微信公众号 · 文章生成与推送</h1>
+  <p class="sub">
+    按方向（默认 AI 发展 / AI 安全 / Vibe Coding）每天生成精选文章并推送到公众号。
+    <b>主路径</b>：把文章推成草稿（能用则用），或在这里「复制正文」直接粘进公众号编辑器发布——复制路径不调用微信接口，任何账号类型都可用。
+    Token 仅保存在本机浏览器。配置项在：插件设置 → 微信公众号。
+  </p>
+
+  <div class="card">
+    <div class="row">
+      <input class="token" id="token" type="password" placeholder="Personal Token（Halo 后台 → 个人资料 → 个人令牌）">
+      <button onclick="refreshAll()">🔄 刷新</button>
+      <button onclick="runGenerate()" id="btnGenerate">⚡ 立即生成（全部方向）</button>
+      <button class="ghost" onclick="runSelfCheck(false)" id="btnCheck">🩺 接入自检</button>
+      <button class="ghost" onclick="runSelfCheck(true)" id="btnDeepCheck">🔬 深度自检（建测试草稿并删除）</button>
+    </div>
+    <p class="tip">
+      生成约需 1-3 分钟（抓取 92 个源 + AI 评分 + 逐方向成稿），推送含图片上传与发布确认，触发后页面会自动刷新状态。
+      「深度自检」会真实创建一条测试草稿并立即删除，用来确认草稿箱接口对当前账号是否可用（个人订阅号能否用草稿箱，官方无明文保障）。
+    </p>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>① 接入状态</h2>
+    <div id="status"><div class="empty">请先输入 Personal Token 并点击「刷新」</div></div>
+  </div>
+
+  <div class="card" id="checkCard" style="display:none">
+    <h2>🩺 自检结果</h2>
+    <div id="check"></div>
+    <p class="tip">自检逐项真实调用微信接口。不通过的项按提示处理（多数是 IP 白名单或账号权限）。</p>
+  </div>
+
+  <div class="card">
+    <h2>② 公众号稿件</h2>
+    <div id="issues"><div class="empty">暂无稿件：点上方「立即生成」产出今天的第一批</div></div>
+    <p class="tip">
+      状态含义：<b>已生成</b>（待推送）→ <b>已进草稿箱</b> → 已发布 / 已群发；<b>空稿</b>表示该方向本期没有候选文章。
+      「复制正文」会先把正文图片换成微信图床地址（可用时），再复制富文本，直接粘进公众号编辑器即可；摘要在标题下方单独复制（公众号列表里显示的就是它）。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>③ 历史 AI 日报补推</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button class="ghost" onclick="loadBackfill()" id="btnBackfill">🔄 刷新历史期次</button>
+    </div>
+    <div id="backfill"><div class="empty">点「刷新历史期次」查看往期日报</div></div>
+    <p class="tip">
+      补推用的是那一期当时固化下来的内容（不重新抓取、不花 AI）：<b>整期合并</b>输出一篇图文，<b>逐篇</b>则每篇文章各成一稿。
+      生成后同样可以预览、复制或推送草稿箱。
+    </p>
+  </div>
+</div>
+
+<script>
+  var timer = null;
+  /** 手动收起「上次推送结果」（下一次推送开始时会自动重新出现） */
+  var pushBoxHidden = false;
+
+  function hidePushBox() {
+    pushBoxHidden = true;
+    loadStatus();
+  }
+
+  function token() { return document.getElementById('token').value.trim(); }
+  function saveToken() { try { localStorage.setItem('mpAdminToken', token()); } catch (e) {} }
+  function restoreToken() {
+    try {
+      var saved = localStorage.getItem('mpAdminToken');
+      if (saved) document.getElementById('token').value = saved;
+    } catch (e) {}
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function api(path) { return location.origin + '/apis/console.api.uni.uhalo.pro/v1alpha1' + path; }
+  function fmt(t) {
+    if (!t) return '-';
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return String(t);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function showMsg(text, ok) {
+    var el = document.getElementById('msg');
+    el.className = 'msg ' + (ok ? 'ok' : 'bad');
+    el.textContent = text || '';
+  }
+  function stateText(s) {
+    return ({
+      GENERATING: '生成中', GENERATED: '已生成', DRAFTED: '已进草稿箱', PUBLISHED: '已发布',
+      MASSED: '已群发', EMPTY: '空稿', FAILED: '失败'
+    })[s] || (s || '-');
+  }
+  function stateClass(s) {
+    return (s === 'PUBLISHED' || s === 'MASSED' || s === 'DRAFTED') ? 'ok'
+      : (s === 'FAILED' || s === 'EMPTY') ? 'bad'
+      : (s === 'GENERATING') ? 'run' : 'idle';
+  }
+
+  async function request(path, method, body) {
+    var t = token();
+    if (!t) throw new Error('请先输入 Personal Token');
+    var verb = method || 'GET';
+    var payload = (body !== undefined) ? JSON.stringify(body) : (verb === 'POST' ? '{}' : undefined);
+    var headers = { 'Authorization': 'Bearer ' + t };
+    if (payload !== undefined) headers['Content-Type'] = 'application/json';
+    var res = await fetch(api(path), { method: verb, cache: 'no-store', headers: headers, body: payload });
+    if (res.status === 401 || res.status === 403) throw new Error('鉴权失败：Token 无效或权限不足（需要超级管理员令牌）');
+    var text = await res.text();
+    var data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (e) {}
+    if (!res.ok) throw new Error(data.error || ('请求失败：HTTP ' + res.status + ' ' + text));
+    return data;
+  }
+
+  // ── 刷新 ──
+
+  async function refreshAll() {
+    saveToken();
+    await Promise.all([loadStatus(), loadIssues()]);
+  }
+
+  async function loadStatus() {
+    try {
+      var st = await request('/mp/status');
+      renderStatus(st);
+      scheduleRefresh(st.generating || st.pushing);
+    } catch (err) {
+      document.getElementById('status').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>';
+    }
+  }
+
+  function renderStatus(st) {
+    var directions = (st.directions || []).map(function (d) {
+      return (d.emoji || '') + ' ' + esc(d.label);
+    }).join('　');
+    var counts = st.counts || {};
+    var html = '';
+    html += '<div class="kv">' +
+      '<span>总开关：<b>' + (st.enabled ? '已开启' : '未开启') + '</b></span>' +
+      '<span>凭据：<b>' + (st.configured ? esc(st.appIdMasked || '已配置') : '未填写 AppID/AppSecret') + '</b></span>' +
+      '<span>作者：<b>' + esc(st.author || '-') + '</b></span>' +
+      '<span>推送落点：<b>' + esc(st.deliveryModeLabel || '-') + '</b></span>' +
+      '<span>阅读原文：<b>' + esc(st.contentSourceModeLabel || '-') + '</b></span>' +
+      '<span>文章粒度：<b>' + esc(st.contentGranularityLabel || '-') + '</b></span>' +
+      '<span>定时生成：<b>' + (st.scheduleEnabled
+        ? ('已开启（' + esc(st.scheduleTimes) + '，仅该时刻后 30 分钟内触发）')
+        : '已关闭（只点「立即生成」才生成）') + '</b></span>' +
+      '<span>下次生成：<b>' + (st.nextRunAt ? fmt(st.nextRunAt) : '-') + '</b></span>' +
+      '</div>';
+    html += '<div class="kv" style="margin-top:8px"><span>方向：<b>' + (directions || '-') + '</b></span></div>';
+    if (st.generating) {
+      html += '<div class="msg" style="color:#e8862b">⏳ 正在生成：' + esc(st.stage || '进行中…') + '（开始于 ' + fmt(st.generateStartedAt) + '）</div>';
+    }
+    if (st.generateError) {
+      html += '<div class="msg bad">上次生成失败：' + esc(st.generateError) + '</div>';
+    }
+    if (st.selfChecked && !st.pushAvailable) {
+      html += '<div class="warn-banner">⚠️ 最近一次自检结论：' + esc(st.selfCheckSummary || '')
+        + '<br>草稿箱这条路走不通时，用「📋 复制正文」+「⬇ 封面」手动发布即可（不依赖任何微信接口）。</div>';
+    }
+    var results = st.pushResults || [];
+    if (st.pushing) {
+      pushBoxHidden = false;
+    }
+    if (!pushBoxHidden && (st.pushing || results.length || st.pushError)) {
+      var pct = st.pushTotal ? Math.round((st.pushCurrent || 0) / st.pushTotal * 100) : 0;
+      html += '<div class="push-box">' +
+        '<div class="push-head">' + (st.pushing ? '⏳ 正在推送' : '上次推送结果') +
+        (st.pushTotal ? ('　' + (st.pushCurrent || 0) + '/' + st.pushTotal) : '') +
+        (st.pushing && st.pushStage ? ('　<span style="color:#5b6ee8">' + esc(st.pushStage) + '</span>') : '') +
+        (st.pushing ? '' : '　<button class="ghost mini" style="float:right" onclick="hidePushBox()">收起</button>') + '</div>' +
+        (st.pushing && st.pushTotal ? '<div class="push-bar"><div class="push-bar-inner" style="width:' + pct + '%"></div></div>' : '') +
+        (st.pushError ? '<div class="msg bad">推送失败：' + esc(st.pushError) + '</div>' : '');
+      results.forEach(function (item) {
+        html += '<div class="push-item"><span class="' + (item.ok ? 'pf-ok' : 'pf-bad') + '">' +
+          (item.ok ? '✔' : '✘') + '</span>' +
+          '<b>' + esc(item.title || item.name) + '</b>' +
+          '<span class="' + (item.ok ? 'pf-msg' : 'pf-msg-bad') + '">' + esc(item.message) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    var statDefs = [
+      ['s1', '稿件总数', counts.total || 0],
+      ['s2', '已生成待推送', counts.GENERATED || 0],
+      ['s4', '已进草稿箱', (counts.DRAFTED || 0) + (counts.PUBLISHED || 0) + (counts.MASSED || 0)],
+      ['s3', '空稿 / 失败', (counts.EMPTY || 0) + (counts.FAILED || 0)],
+      ['s5', '最近生成', st.lastGeneratedAt ? fmt(st.lastGeneratedAt) : '-']
+    ];
+    html += '<div class="stats">';
+    statDefs.forEach(function (d) {
+      html += '<div class="stat ' + d[0] + '"><div class="k">' + d[1] + '</div><div class="v">' + esc(d[2]) + '</div></div>';
+    });
+    html += '</div>';
+    document.getElementById('status').innerHTML = html;
+    var btn = document.getElementById('btnGenerate');
+    btn.disabled = !!st.generating;
+  }
+
+  function scheduleRefresh(active) {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (active) {
+      timer = setTimeout(function () { loadStatus(); loadIssues(); }, 4000);
+    }
+  }
+
+  // ── 生成 ──
+
+  async function runGenerate(direction) {
+    var btn = document.getElementById('btnGenerate');
+    var text = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '已触发，生成中…';
+    try {
+      var r = await request('/mp/issues/generate' + (direction ? ('?direction=' + encodeURIComponent(direction)) : ''), 'POST', direction ? { direction: direction } : {});
+      showMsg((r && r.message) || '已开始生成', true);
+      setTimeout(function () { loadStatus(); loadIssues(); }, 1500);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = text;
+    }
+  }
+
+  async function runSelfCheck(deep) {
+    var btn = document.getElementById(deep ? 'btnDeepCheck' : 'btnCheck');
+    btn.disabled = true;
+    try {
+      var data = await request('/mp/selfcheck' + (deep ? '?deep=true' : ''));
+      var items = (data && data.items) || [];
+      var failed = items.filter(function (i) { return !i.ok; }).length;
+      var html = '';
+      items.forEach(function (i) {
+        html += '<div class="pf-item">' +
+          '<span class="pf-flag ' + (i.ok ? 'pf-ok' : 'pf-bad') + '">' + (i.ok ? '✔' : '✘') + '</span>' +
+          '<span class="pf-name">' + esc(i.item) + '</span>' +
+          '<span class="pf-msg' + (i.ok ? '' : ' pf-msg-bad') + '">' + esc(i.message) + '</span>' +
+          '</div>';
+      });
+      document.getElementById('check').innerHTML = html || '<div class="empty">没有检查项</div>';
+      document.getElementById('checkCard').style.display = 'block';
+      showMsg(failed ? ('自检有 ' + failed + ' 项需要注意（见下方结果）') : '自检全部通过', !failed);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── 稿件列表 ──
+
+  async function loadIssues() {
+    try {
+      var issues = await request('/mp/issues?limit=30');
+      renderIssues(issues || []);
+    } catch (err) {
+      document.getElementById('issues').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>';
+    }
+  }
+
+  function renderIssues(issues) {
+    if (!issues.length) {
+      document.getElementById('issues').innerHTML = '<div class="empty">暂无稿件：点上方「立即生成」产出今天的第一批</div>';
+      return;
+    }
+    // 按日期分组：同一天 = 同一次生成的各方向，整组可一键推送（每方向一篇独立草稿）
+    var groups = [];
+    var index = {};
+    issues.forEach(function (it) {
+      var key = it.date || '-';
+      if (!index[key]) {
+        index[key] = { date: key, items: [] };
+        groups.push(index[key]);
+      }
+      index[key].items.push(it);
+    });
+    var html = '';
+    groups.forEach(function (group, gi) {
+      var pushable = group.items.filter(function (it) {
+        return !it.draftMediaId && it.state !== 'EMPTY';
+      }).length;
+      html += '<div class="group-head">' +
+        '<b>' + esc(group.date) + '</b>' +
+        '<span class="mono">' + group.items.length + ' 个方向 · 每方向一篇独立文章</span>' +
+        '<button class="mini" ' + (pushable ? '' : 'disabled') +
+        ' onclick="pushAllDay(\'' + esc(group.date) + '\',' + (pushable ? 'false' : 'true') + ')">📤 推送当天全部方向（各自独立草稿）</button>' +
+        '</div>';
+      html += '<div style="overflow-x:auto"><table><thead><tr>' +
+        '<th style="min-width:120px">方向</th><th>标题 / 配图</th><th>摘要</th><th>状态</th><th style="min-width:300px">操作</th>' +
+        '</tr></thead><tbody>';
+      group.items.forEach(function (it) {
+        var name = esc(it.name);
+        html += '<tr>';
+        html += '<td><span class="chip">' + esc(it.directionLabel || (it.sourceKind === 'BACKFILL' ? '历史补推' : '-')) + '</span>' +
+          '<div class="mono">' + esc(it.trigger === 'scheduled' ? '定时触发' : it.trigger === 'manual' ? '手动触发' : '') + '</div></td>';
+        html += '<td><b>' + esc(it.title || '(无标题)') + '</b>' +
+          (it.articleCount != null ? '<div class="mono">精选 ' + esc(it.articleCount) + ' 篇</div>' : '') +
+          (it.imageNote ? '<div class="warn">🖼 ' + esc(it.imageNote) + '</div>' : '') +
+          (it.contentNote ? '<div class="warn">⚠️ ' + esc(it.contentNote) + '</div>' : '') + '</td>';
+        html += '<td style="max-width:240px">' + esc((it.digest || '').slice(0, 56)) +
+          '<div class="mono">摘要 ' + (it.digestWords == null ? '-' : it.digestWords) + '/120 字</div></td>';
+        html += '<td><span class="tag ' + stateClass(it.state) + '">' + stateText(it.state) + '</span>' +
+          (it.articleUrl ? '<div><a href="' + esc(it.articleUrl) + '" target="_blank">公众号文章</a></div>' : '') +
+          (it.sitePostUrl ? '<div><a href="' + esc(it.sitePostUrl) + '" target="_blank">站点文章</a></div>' : '') +
+          (it.error ? '<div class="mini-err">' + esc(it.error) + '</div>' : '') + '</td>';
+        html += '<td>' +
+          '<button class="ghost mini" onclick="openPreview(\'' + name + '\')">👁 预览</button> ' +
+          '<button class="ghost mini" onclick="copyBody(\'' + name + '\')">📋 复制正文</button> ' +
+          '<button class="ghost mini" onclick="copyDigest(\'' + name + '\')">📋 摘要</button> ' +
+          '<button class="ghost mini" onclick="copyTitle(\'' + name + '\')">📋 标题</button> ' +
+          '<button class="mini" onclick="pushIssue(\'' + name + '\')">📤 推草稿箱</button> ' +
+          '<button class="ghost mini" onclick="pushIssue(\'' + name + '\', true)">↻ 重推</button> ' +
+          '<button class="ghost mini" onclick="toggleLog(\'' + name + '\')">📜 日志</button> ' +
+          '<button class="danger mini" onclick="removeIssue(\'' + name + '\')">删除</button>' +
+          '</td>';
+        html += '</tr>';
+        html += '<tr class="log-row" id="log-' + name + '" style="display:none">' +
+          '<td colspan="5"><pre class="push-log"></pre></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    document.getElementById('issues').innerHTML = html;
+  }
+
+  /** 展开/收起某篇的推送日志（按需拉详情） */
+  async function toggleLog(name) {
+    var row = document.getElementById('log-' + name);
+    if (!row) return;
+    if (row.style.display !== 'none') {
+      row.style.display = 'none';
+      return;
+    }
+    row.style.display = '';
+    try {
+      var d = await fetchDetail(name);
+      row.querySelector('pre').textContent = d.pushLog
+        || '（还没有推送记录：点「推草稿箱」后会逐步记下来）';
+    } catch (err) {
+      row.querySelector('pre').textContent = '日志加载失败：' + (err.message || err);
+    }
+  }
+
+  /** 推送某天的全部方向（每方向一篇独立草稿） */
+  async function pushAllDay(date, force) {
+    if (force) {
+      if (!confirm('这一天的稿件都推送过了：重新推送会在草稿箱新建若干份，继续？')) return;
+    } else if (!confirm('把 ' + date + ' 的各个方向分别推成独立草稿？')) {
+      return;
+    }
+    try {
+      var r = await request('/mp/issues/push-all?date=' + encodeURIComponent(date) + (force ? '&force=true' : ''), 'POST');
+      showMsg((r && r.message) || '已开始推送', true);
+      setTimeout(function () { loadStatus(); loadIssues(); }, 1500);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  async function pushIssue(name, force) {
+    if (force && !confirm('重新推送会在公众号草稿箱新建一份（旧草稿如果还在，需要你到后台自行删除）。继续？')) return;
+    try {
+      var r = await request('/mp/issues/' + encodeURIComponent(name) + '/push' + (force ? '?force=true' : ''), 'POST');
+      showMsg((r && r.message) || '已开始推送', true);
+      setTimeout(function () { loadStatus(); loadIssues(); }, 1500);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  async function removeIssue(name) {
+    if (!confirm('删除这条稿件记录？公众号那边的草稿/文章不受影响。')) return;
+    try {
+      await request('/mp/issues/' + encodeURIComponent(name), 'DELETE');
+      showMsg('已删除', true);
+      loadIssues();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  // ── 预览与复制 ──
+
+  var currentDetail = null;
+
+  async function fetchDetail(name) {
+    return await request('/mp/issues/' + encodeURIComponent(name));
+  }
+
+  async function openPreview(name) {
+    try {
+      var d = await fetchDetail(name);
+      currentDetail = d;
+      var s = d.summary || {};
+      var overlay = document.createElement('div');
+      overlay.className = 'preview';
+      overlay.id = 'previewOverlay';
+      overlay.innerHTML =
+        '<div class="panel">' +
+        '<div class="head"><span class="t">' + esc(s.title || '(无标题)') + '</span>' +
+        '<button class="mini" onclick="copyFromPreview()">📋 复制正文（富文本）</button>' +
+        '<button class="ghost mini" onclick="closePreview()">关闭</button></div>' +
+        '<iframe id="previewFrame"></iframe>' +
+        '<div class="foot">预览即公众号正文的渲染效果（图片仍是站点地址；点「复制正文」会自动换成微信图床地址）。' +
+        '摘要 ' + (s.digestWords == null ? '-' : s.digestWords) + '/120 字：' + esc(s.digest || '') + '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      var doc = document.getElementById('previewFrame').contentDocument;
+      doc.open();
+      doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<style>body{margin:0;padding:18px 16px;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fff;}' +
+        'p{margin:0 0 16px;} img{max-width:100%;} a{color:#576b95;}</style></head><body>' +
+        (d.wechatHtml || d.html || '<p>（没有正文）</p>') + '</body></html>');
+      doc.close();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  function closePreview() {
+    var el = document.getElementById('previewOverlay');
+    if (el) el.remove();
+  }
+
+  async function copyFromPreview() {
+    if (!currentDetail) return;
+    await copyRich(currentDetail.wechatHtml || currentDetail.html, currentDetail.markdown);
+  }
+
+  /** 复制正文：先调 prepare 把图片换成微信图床地址（可用时），再复制富文本 */
+  async function copyBody(name) {
+    try {
+      showMsg('正在准备正文（把图片换成微信图床地址，可用时）…', true);
+      var prepared = await request('/mp/issues/' + encodeURIComponent(name) + '/prepare?force=true', 'POST');
+      var info = prepared.summary || {};
+      var ok = await copyRich(prepared.wechatHtml, '');
+      loadIssues();
+      if (info.imageNote) showMsg('已复制正文；' + info.imageNote, ok);
+      else if (ok) showMsg('已复制正文（富文本）。到公众号编辑器里 Ctrl+V 粘贴即可；摘要请用「复制摘要」。', true);
+      else showMsg('复制失败：浏览器拒绝了剪贴板写入，请在预览窗里手动全选复制', false);
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  async function copyDigest(name) {
+    try {
+      var d = await fetchDetail(name);
+      var ok = await copyText((d.summary && d.summary.digest) || '');
+      showMsg(ok ? '已复制摘要（公众号列表里显示的那句话）' : '复制失败', ok);
+    } catch (err) { showMsg(err.message || String(err), false); }
+  }
+
+  async function copyTitle(name) {
+    try {
+      var d = await fetchDetail(name);
+      var ok = await copyText((d.summary && d.summary.title) || '');
+      showMsg(ok ? '已复制标题' : '复制失败', ok);
+    } catch (err) { showMsg(err.message || String(err), false); }
+  }
+
+  async function downloadCover(name) {
+    try {
+      var d = await fetchDetail(name);
+      var url = d.summary && d.summary.cover;
+      if (!url) { showMsg('这一期没有封面图', false); return; }
+      window.open(url, '_blank');
+      showMsg('封面已在新标签页打开：右键另存为即可（公众号编辑器里也可以直接上传它）', true);
+    } catch (err) { showMsg(err.message || String(err), false); }
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text || '');
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /** 复制富文本（text/html）：直接粘进公众号编辑器会保留排版 */
+  async function copyRich(html, plain) {
+    html = html || '';
+    plain = plain || html.replace(/<[^>]+>/g, '');
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        })]);
+        return true;
+      }
+    } catch (e) {}
+    try {
+      var div = document.createElement('div');
+      div.contentEditable = 'true';
+      div.innerHTML = html;
+      div.style.position = 'fixed';
+      div.style.left = '-9999px';
+      document.body.appendChild(div);
+      var range = document.createRange();
+      range.selectNodeContents(div);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      var ok = document.execCommand('copy');
+      sel.removeAllRanges();
+      document.body.removeChild(div);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ── 历史补推 ──
+
+  async function loadBackfill() {
+    try {
+      var data = await request('/mp/backfill?limit=20');
+      renderBackfill((data && data.reports) || []);
+    } catch (err) {
+      document.getElementById('backfill').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>';
+    }
+  }
+
+  function renderBackfill(reports) {
+    if (!reports.length) {
+      document.getElementById('backfill').innerHTML = '<div class="empty">没有找到日报记录</div>';
+      return;
+    }
+    var html = '<div style="overflow-x:auto"><table><thead><tr>' +
+      '<th>日期 / 时段</th><th>状态</th><th>站点文章</th><th>公众号稿</th><th style="min-width:220px">操作</th>' +
+      '</tr></thead><tbody>';
+    reports.forEach(function (r) {
+      var name = esc(r.name);
+      var mp = (r.mpIssues || []);
+      var mpHtml = mp.length
+        ? mp.map(function (i) {
+            return '<div><span class="tag ' + stateClass(i.state) + '">' + stateText(i.state) + '</span> ' +
+              '<a href="#" onclick="openPreview(\'' + esc(i.name) + '\');return false;">' + esc((i.title || '').slice(0, 24)) + '</a></div>';
+          }).join('')
+        : '<span class="mono">未生成</span>';
+      html += '<tr>' +
+        '<td>' + esc(r.date || '-') + '<div class="mono">' + esc(r.slot || '') + '</div></td>' +
+        '<td>' + esc(r.status || '-') + (r.articleCount != null ? '<div class="mono">' + esc(r.articleCount) + ' 篇</div>' : '') +
+        (r.error ? '<div class="mini-err">' + esc(r.error) + '</div>' : '') + '</td>' +
+        '<td>' + (r.postUrl ? '<a href="' + esc(r.postUrl) + '" target="_blank">打开</a>' : '<span class="mono">-</span>') + '</td>' +
+        '<td>' + mpHtml + '</td>' +
+        '<td>' +
+        '<button class="ghost mini" onclick="buildBackfill(\'' + name + '\',\'merged\')">整期生成一篇</button> ' +
+        '<button class="ghost mini" onclick="buildBackfill(\'' + name + '\',\'per-article\')">逐篇生成</button>' +
+        '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    document.getElementById('backfill').innerHTML = html;
+  }
+
+  async function buildBackfill(reportName, mode) {
+    try {
+      var r = await request('/mp/backfill', 'POST', { reportName: reportName, mode: mode });
+      showMsg((r && r.message) || '已生成公众号稿', true);
+      loadBackfill();
+      loadIssues();
+      loadStatus();
+    } catch (err) {
+      showMsg(err.message || String(err), false);
+    }
+  }
+
+  // ── 启动 ──
+
+  restoreToken();
+  document.getElementById('token').addEventListener('change', function () { saveToken(); });
+  if (token()) refreshAll();
+</script>
+</body>
+</html>

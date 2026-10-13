@@ -88,6 +88,8 @@ public class SubscriptionQuotaService {
                 .quotaPrice(state.config().getQuotaPrice())
                 .maxQuota(state.config().getMaxQuota())
                 .limit(state.limit())
+                // 哨兵值只作内部比较：给客户端的语义是「不限量」这个布尔
+                .unlimited(state.limit() >= UNLIMITED_QUOTA)
                 .memberActive(state.memberActive())
                 .memberExpireAt(state.memberExpireAt() == null
                     ? "" : TIME_FMT.format(state.memberExpireAt().atZone(ZONE)))

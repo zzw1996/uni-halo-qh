@@ -79,9 +79,11 @@ public class AiContentEndpoint implements CustomEndpoint {
             .GET(Constants.END_POINT_API_BASE_PATH + "/ai/content/feed", this::feed,
                 builder -> builder
                     .operationId("GetAiContentFeed")
-                    .description("Today's personal briefing. Generated on first read (one AI call "
-                        + "per active user per day, cached for the rest of the day; degrades to a "
-                        + "plain filtered list when AI is unavailable). Use ?date= for history.")
+                    .description("Today's personal briefing — read only, never generates. Returns "
+                        + "status NONE before the user triggers a generation, RUNNING with "
+                        + "stage/progress while the background job runs, READY with items when "
+                        + "done, FAILED with a reason otherwise (one AI call per active user per "
+                        + "day). Use ?date= for history.")
                     .tag(apiTag)
                     .parameter(parameterBuilder()
                         .name("date")
@@ -89,6 +91,14 @@ public class AiContentEndpoint implements CustomEndpoint {
                         .description("Briefing date (yyyy-MM-dd); empty means today")
                         .required(false)
                         .implementation(String.class)))
+            .POST(Constants.END_POINT_API_BASE_PATH + "/ai/content/generate", this::generate,
+                builder -> builder
+                    .operationId("GenerateAiContentNow")
+                    .description("Trigger today's briefing generation for this user. Returns "
+                        + "immediately with status RUNNING: the job keeps running server-side "
+                        + "even if the user leaves the page, and poll /ai/content/feed for "
+                        + "progress. Already generated today = returned as-is (no extra AI call).")
+                    .tag(apiTag))
             .GET(Constants.END_POINT_API_BASE_PATH + "/ai/content/issues", this::issues,
                 builder -> builder
                     .operationId("ListAiContentIssues")
@@ -186,6 +196,22 @@ public class AiContentEndpoint implements CustomEndpoint {
                 log.warn("[UniHalo][AiContent] 读取简报失败 openid={}：{}", mask(openid),
                     ex.toString());
                 return error(500, "简报加载失败，请稍后重试");
+            });
+    }
+
+    /** 触发今天的生成：立刻返回（RUNNING），生成在服务端后台跑完 */
+    private Mono<ServerResponse> generate(ServerRequest request) {
+        var openid = resolveOpenid(request);
+        if (!StringUtils.hasText(openid)) {
+            return error(400, "请先登录");
+        }
+        return feedService.startGeneration(openid)
+            .flatMap(this::jsonOk)
+            .onErrorResume(WxAuthException.class, ex -> error(400, ex.getReason()))
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 触发生成失败 openid={}：{}", mask(openid),
+                    ex.toString());
+                return error(500, "生成失败，请稍后重试");
             });
     }
 

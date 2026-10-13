@@ -43,6 +43,16 @@ public class DigestArticleDTO {
     /** ai-ml / security / engineering / tools / opinion / other */
     private String category;
 
+    /**
+     * 备选分类（仅公众号文章用）。
+     *
+     * <p>评分时让 AI 在「这篇文章同时明显适合另一个方向」时给出备选；
+     * 公众号的「方向保底」会用它补位——某方向当期素材不足时，
+     * 从备选命中它的文章里挑，避免空稿且不额外花 AI 调用。
+     * 站点日报不消费这个字段。</p>
+     */
+    private String altCategory;
+
     private List<String> keywords = new ArrayList<>();
 
     // ── 摘要阶段 ──

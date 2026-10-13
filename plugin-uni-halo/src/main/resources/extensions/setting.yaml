@@ -774,6 +774,18 @@ spec:
           value: 0
           min: 0
           help: 只影响按钮是否显示，不消耗积分。未达标时小程序会提示「还差 X 积分」。注意门槛与发布价是两个独立概念：门槛决定「能不能看见入口」，发布价决定「发一次扣多少」。
+        - $formkit: select
+          name: myArticlesEntry
+          label: 「我的」页投稿记录入口
+          value: eligible
+          options:
+            - value: always
+              label: 所有人都显示（含未登录用户）
+            - value: eligible
+              label: 仅显示给能投稿或投过稿的用户（推荐）
+            - value: hidden
+              label: 都不显示
+          help: 控制「我的 → 我的服务 → 我的投稿」这一项的显示范围。选「仅能投稿或投过稿」时，未登录用户、角色策略为「不允许」或积分未达门槛的访客都看不到它，避免把用不上的访客都引进管理页；已经投过稿的用户即使当前发不了也仍然可见，否则他们的文章无从编辑或撤回。该判定会一并参考上面的「开启用户投稿 / 显示发布入口 / 显示门槛」与角色策略（站长与管理员不受积分门槛约束），因此这几项关掉时这一项也会跟着隐藏。审核模式下这一项一律隐藏。它与「显示发布入口」的分工：后者管首页「写文章」按钮，这一项只管「我的」页的投稿记录入口。
         - $formkit: number
           name: articleCost
           label: 投稿文章消耗积分
@@ -912,10 +924,6 @@ spec:
               points: 1
               dailyMaxCount: 5
               dailyMaxPoints: 5
-            vote:
-              points: 5
-              dailyMaxCount: 2
-              dailyMaxPoints: 10
             signIn:
               points: 5
               consecutiveBonus:
@@ -991,28 +999,6 @@ spec:
                   min: 0
                   help: 推荐 5。
             - $formkit: group
-              name: vote
-              label: 参与投票
-              children:
-                - $formkit: number
-                  name: points
-                  label: 单次积分
-                  value: 5
-                  min: 0
-                  help: 推荐 5。投票是运营活动（不是每天都有），单价可以略高，但日封顶要卡死。
-                - $formkit: number
-                  name: dailyMaxCount
-                  label: 每日最多次数
-                  value: 2
-                  min: 0
-                  help: 推荐 2。
-                - $formkit: number
-                  name: dailyMaxPoints
-                  label: 每日积分上限
-                  value: 10
-                  min: 0
-                  help: 推荐 10（原来 100 分/天 = 占全部日产出的一半，等于把积分白送）。
-            - $formkit: group
               name: signIn
               label: 每日签到
               children:
@@ -1087,10 +1073,6 @@ spec:
               target: 3
               points: 5
               enabled: true
-            - type: vote
-              target: 1
-              points: 5
-              enabled: true
           help: 同一任务的进度按「当日该行为的积分记录条数」统计，每天每任务可领取一次奖励。注意：若某行为在积分规则中的单次积分为 0，该行为不产生记录，对应任务进度将统计不到。
           children:
             - $formkit: select
@@ -1106,8 +1088,6 @@ spec:
                   label: 发表评论
                 - value: upvote
                   label: 点赞
-                - value: vote
-                  label: 参与投票
               validation: required
             - $formkit: number
               name: target
@@ -1262,11 +1242,6 @@ spec:
               type: sign_in
               target: 30
               desc: 累计签到 30 天
-            - id: vote_50
-              name: 民意代表
-              type: vote
-              target: 50
-              desc: 累计参与 50 次投票
             - id: comment_50
               name: 妙语连珠
               type: comment
@@ -1302,8 +1277,6 @@ spec:
                   label: 累计浏览篇数
                 - value: sign_in
                   label: 累计签到天数
-                - value: vote
-                  label: 累计投票次数
                 - value: comment
                   label: 累计评论条数
                 - value: invite
@@ -1817,7 +1790,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "用户购买「<b>AI 定制内容</b>」（虚拟支付 → 权益道具，类型选 <code>ai_content</code>）后，可以在小程序里自行勾选<b>主题分类 / 来源站点 / 关键词</b>，服务端据此从<b>你已生成的 AI 日报内容</b>里筛出属于他的每日简报，并用一次 AI 调用写导语与推荐理由。<br /><b>与「分类订阅」的区别</b>：分类订阅是免费的，管的是首页与分类页按分类筛站点文章；本功能是付费的独立链路，产出的是「我的简报」这一份个人内容。<br /><b>成本边界</b>：每位有效用户<b>每天最多 1 次 AI 调用</b>（当天简报已生成即复用，反复打开不重复调用）；把下面「生成 AI 导语」关掉即退化为零 AI 成本的纯筛选。<br /><b>合规说明</b>：与会员卡一样是「单次购买 + 有效期」的道具，<b>不做自动续费订阅</b>；文案请避免使用「包月 / 订阅」字样。"
+          innerHTML: "用户购买「<b>AI 定制内容</b>」（虚拟支付 → 权益道具，类型选 <code>ai_content</code>）后，可以在小程序里自行填写<b>定制主题 / 关键词</b>并勾选<b>主题分类</b>；服务端据此<b>实时抓取各源（与 AI 日报同一批源）最近的内容</b>，用一次 AI 调用挑出属于他的几条并写成中文标题与摘要。<br /><b>与「分类订阅」的区别</b>：分类订阅是免费的，管的是首页与分类页按分类筛站点文章；本功能是付费的独立链路，产出的是「我的简报」这一份个人内容。<br /><b>成本边界</b>：每位有效用户<b>每天最多 1 次 AI 调用</b>（当天简报已生成即复用，反复打开不重复调用）；抓取结果全站共享缓存（30 分钟），不会因为用户多就多抓；把下面「生成 AI 导语」关掉即退化为零 AI 成本的字符串匹配（内容仍是实时抓的）。<br /><b>合规说明</b>：与会员卡一样是「单次购买 + 有效期」的道具，<b>不做自动续费订阅</b>；文案请避免使用「包月 / 订阅」字样。"
         - $formkit: switch
           name: enabled
           label: 开启 AI 定制内容
@@ -1827,23 +1800,17 @@ spec:
           help: 关闭时小程序不显示入口、接口一律拒绝、也不允许发货 ai_content 类型的商品。请先配好商品与 AI 通道再开启。
         - $formkit: switch
           name: aiIntroEnabled
-          label: 生成 AI 导语与推荐理由
+          label: 生成 AI 导语与推荐理由（并让 AI 挑内容）
           value: true
           onValue: true
           offValue: false
-          help: 开启时，用户打开简报会用一次 AI 调用写导语、微调排序并给每篇一句推荐理由。关闭后只做纯筛选（按主题/来源/关键词打分排序），零 AI 成本、打开即秒开——AI 额度紧张或用户量上来后可以先关掉它。
+          help: 开启时，用户打开简报会用一次 AI 调用完成「从实时素材里挑哪几条 + 写中文标题与摘要 + 导语 + 推荐理由」。关闭后只做字符串匹配（主题/关键词命中的最新几条），零 AI 成本、打开即秒开，代价是标题保持原样、没有导语与推荐理由——AI 额度紧张或用户量上来后可以先关掉它。
         - $formkit: number
           name: maxCategories
           label: 用户最多勾选几个主题分类
           value: 5
           min: 1
           help: 可选范围来自「AI 日报 → 分类清单」，用户只能在你配置的分类里选。填太大会让简报失去聚焦，建议 3-5。
-        - $formkit: number
-          name: maxSources
-          label: 用户最多勾选几个来源站点
-          value: 5
-          min: 1
-          help: 可选范围来自最近日报里<b>实际出现过</b>的来源，用户不会配到一个从来没有内容的来源。
         - $formkit: number
           name: maxKeywords
           label: 用户最多填几个关键词
@@ -1857,11 +1824,72 @@ spec:
           min: 1
           help: 简报是「今日份」的，条数太多就不再是精选。建议 5-10。
         - $formkit: number
+          name: creditsPerDay
+          label: 每个权益日赠送几次生成
+          value: 2
+          min: 1
+          help: 用户购买或积分兑换后，「有效天数 × 本值」就是他能生成的总次数（每次生成扣 1）。<b>填 2</b>：买 1 天可生成 2 次、买 30 天可生成 60 次。用户在有效期内<b>随时</b>可以按新方向重新生成（不再有「今天已生成过」的限制），但次数用完就得再买/再兑换。
+        - $formkit: number
+          name: maxCreditsPerGrant
+          label: 单次赠送的次数上限
+          value: 100
+          min: 1
+          help: 永久卡不能按「36500 天 × 每天次数」算，那等于无限；超过本值时按本值发放（默认 100）。
+        - $formkit: number
+          name: dailyGenerationLimit
+          label: 每天最多生成几次（0=不限）
+          value: 3
+          min: 0
+          help: 与总次数一起挡住「一直在输入、一直在调用 AI」：默认每天 3 次。填 0 表示只看总额度、不限制每天次数。
+        - $formkit: switch
+          name: keywordSearchEnabled
+          label: 按关键词联网检索（推荐开启）
+          value: true
+          onValue: true
+          offValue: false
+          help: 用户输入的关键词（如「邓紫棋」）在内置素材源里一条都命不中，AI 只能从无关素材里挑。开启后先拿关键词去检索<b>公开新闻</b>，检索结果作为素材第一顺位；关闭则只从内置源与站内日报里挑（适合关键词都很「技术」的站点）。
+        - $formkit: text
+          name: keywordSearchProviders
+          label: 检索源（可多选，逗号分隔）
+          value: "bing,google"
+          help: 可选 <code>bing</code> / <code>google</code> / <code>baidu</code>，留空按 bing,google。<b>国内服务器建议至少留 bing</b>（Google 新闻在部分网络下不可达，抓不到就自动跳过该源）。
+        - $formkit: number
+          name: keywordSearchHours
+          label: 检索只取最近多少小时的内容
+          value: 72
+          min: 1
+          help: 检索源返回的是「相关度 + 时间」的混合结果，这里按发布时间再过滤一遍：默认只看 72 小时内，保证是「最近的消息」。
+        - $formkit: number
+          name: keywordSearchMaxItems
+          label: 检索结果最多送几条给 AI
+          value: 40
+          min: 1
+          help: 检索命中可能上百条，全塞进提示词又慢又贵；40 条足够 AI 挑出 5-10 条。实时素材池会补足到同样条数。
+        - $formkit: switch
+          name: keywordSearchCoverEnabled
+          label: 给检索结果抓原文头图
+          value: true
+          onValue: true
+          offValue: false
+          help: 开启后会给前几条抓原文的 og:image 并<b>转存进 Halo 附件库</b>（小程序只能加载白名单域名的图片，直链新闻站的图在真机上显示不出来）。抓原文页会多花几秒，追求速度可以关掉。
+        - $formkit: number
+          name: outroWords
+          label: AI 结尾（小结）字数上限
+          value: 120
+          min: 0
+          help: 简报末尾那段「这几条连起来说明什么」的 AI 小结；它是这一份里唯一的原创观点段落。填 0 表示不写结尾。
+        - $formkit: number
+          name: liveHours
+          label: 实时素材时间窗（小时）
+          value: 48
+          min: 6
+          help: 简报的素材默认<b>实时抓取</b>（与 AI 日报同一批源），这里决定「有多新」：窗口内抓到的内容交给 AI 挑出属于这位用户的几条。<b>48 小时</b>能覆盖隔天再看也是最新的场景；调小（如 24）更强调时效，但源少的时候可能抓不到足够内容。
+        - $formkit: number
           name: windowDays
-          label: 从最近几天的日报里筛
+          label: 兜底：实时抓不到素材时回看几天日报
           value: 7
           min: 1
-          help: 只回看最近这些天已发布的日报内容。窗口太小（如 1 天）会让偏好较窄的用户经常看到空简报。
+          help: 只有在实时抓取一条都没拿到时（源全挂、网络受限）才会用到：退回站内已发布的日报内容，宁可内容旧一点也不给用户空简报。
         - $formkit: number
           name: introWords
           label: AI 导语字数上限
@@ -1962,7 +1990,7 @@ spec:
           value: true
           onValue: true
           offValue: false
-          help: 展示最近用户的评论、点赞、投票动态（仅昵称、头像与内容标题，内容均为站点上已公开的信息）。浏览量不上墙。
+          help: 展示最近用户的评论、点赞动态（仅昵称、头像与内容标题，内容均为站点上已公开的信息）。浏览量不上墙。
         - $formkit: number
           name: wallLimit
           label: 互动动态条数
@@ -1976,7 +2004,7 @@ spec:
           value: false
           onValue: true
           offValue: false
-          help: 默认不包含：点赞是轻量动作，默认把「谁赞了哪篇」公开给其他访问者对用户偏侵扰。开启后动态会更活跃。评论与投票本就是公开行为，始终展示。
+          help: 默认不包含：点赞是轻量动作，默认把「谁赞了哪篇」公开给其他访问者对用户偏侵扰。开启后动态会更活跃。评论本就是公开行为，始终展示。
         - $formkit: switch
           name: weeklyRewardEnabled
           label: 开启周榜奖励
@@ -2127,7 +2155,7 @@ spec:
         - $el: div
           attrs:
             class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
-          innerHTML: "当前插件版本：<b>1.0.170</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；大模型通道的开关、排序与连通性测试就在该页面的「大模型通道」面板里。若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
+          innerHTML: "当前插件版本：<b>1.0.219</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/ai-digest-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → AI 日报</b>（在「邀请好友」下面）；大模型通道的开关、排序与连通性测试就在该页面的「大模型通道」面板里。若看不到该菜单项，请先在插件列表里重载插件并强制刷新浏览器（Ctrl+Shift+R）。"
         - $formkit: switch
           name: enabled
           id: aiDigestEnabled
@@ -2179,7 +2207,7 @@ spec:
               name: apiBase
               label: API Base
               value: ""
-              help: 需兼容 OpenAI 的 chat/completions 协议，一般以 /v1 结尾。DeepSeek 填 https://api.deepseek.com/v1，通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1。
+              help: 需兼容 OpenAI 的 chat/completions 协议。常见家的填法：DeepSeek <code>https://api.deepseek.com/v1</code>、智谱 <code>https://open.bigmodel.cn/api/paas/v4</code>、通义千问 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code>、Kimi <code>https://api.moonshot.cn/v1</code>、火山方舟 <code>https://ark.cn-beijing.volces.com/api/v3</code>（模型名填接入点 ID）。更省事的做法：到控制台 <b>UniHalo → AI 日报 → 大模型通道</b>，每行上方有「供应商」下拉，选中即自动填 Base 与示例模型名。手填时末尾多带斜杠、或把完整接口地址（含 <code>/chat/completions</code>）粘进来都会被自动纠正。
             - $formkit: password
               name: apiKey
               label: API Key
@@ -2193,7 +2221,7 @@ spec:
               name: tasks
               label: 用途（逗号分隔，留空 = 全部用途）
               value: ""
-              help: "可填：<code>score</code> 评分（一轮几十次，适合便宜模型）、<code>write</code> 成稿（单次输出上千字，建议强模型）、<code>overview</code> 日报看点与背景、<code>classify</code> 旧文章归类、<code>content</code> 付费简报。例：<code>score,overview,classify,content</code>。写错或留空都不会出错——认不出来的标识会被忽略。<br>某条通道的用法被别的通道顶替时（例如只勾了「评分」的便宜通道被关掉），插件会<b>回退</b>到全部可用通道并在日志与后台面板里写明，不会让整轮日报失败。"
+              help: "可填：<code>score</code> 评分（一轮几十次，适合便宜模型）、<code>write</code> 成稿（单次输出上千字，建议强模型）、<code>overview</code> 日报看点与背景、<code>classify</code> 旧文章归类、<code>content</code> 付费简报、<code>mp</code> 公众号稿、<code>toutiao</code> 头条稿（管理页按关键词直接成稿，长输出建议强模型）。例：<code>score,overview,classify,content</code>。写错或留空都不会出错——认不出来的标识会被忽略。<br>某条通道的用法被别的通道顶替时（例如只勾了「评分」的便宜通道被关掉），插件会<b>回退</b>到全部可用通道并在日志与后台面板里写明，不会让整轮日报失败。"
             - $formkit: text
               name: key
               label: 通道标识（留空会自动生成，一般不用改）
@@ -2592,3 +2620,353 @@ spec:
           min: 60
           max: 3600
           help: 发布走异步接口后，插件会轮询确认服务端是否已生成发布快照。日报正文较长时给足等待时间，默认 600 秒；超过仍未确认会记录为待发布，可在后台点「重新发布」。
+
+    - group: mpConfig
+      label: 微信公众号
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "把 AI 日报风格的文章<b>按方向生成并推送到微信公众号</b>：定时（默认每天 08:00）按方向精选成文（默认 AI 发展 / AI 安全 / Vibe Coding，每方向各一篇），再推送进公众号草稿箱；也可以一键复制排版好的正文、摘要与封面，手动粘贴到公众号编辑器发布。生成与推送记录都在独立管理页里查看（不依赖控制台前端缓存）。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "<b>需要准备</b>：① 公众号后台 → 设置与开发 → 开发接口管理，取到 <b>AppID / AppSecret</b> 填到下面（注意：与微信小程序的 AppID 不是同一个）；② 在同一页把<b>服务器公网出口 IP 加进 IP 白名单</b>（漏了会报 40164，管理页的自检会直接把它显示出来，照着填即可）；③ 作者名（≤16 字）。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "<b>账号能力边界（重要）</b>：<code>freepublish</code>（发布）与 <code>mass/sendall</code>（群发）自 2025 年 7 月起<b>仅企业主体已认证账号可调用</b>；个人订阅号请使用默认的「只进草稿箱」或「一键复制正文」路径（复制不调用任何微信接口，任何账号都能用）。摘要（引言）官方上限 <b>120 字</b>、标题上限 32 字，插件会自动收敛，管理页会显示实时字数。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "当前插件版本：<b>1.0.219</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。独立管理页（不依赖控制台前端缓存，可直接打开操作）：<code>{site}/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/mp-admin</code>。控制台内页面位置：左侧菜单 <b>UniHalo → 公众号</b>。"
+        - $formkit: switch
+          name: enabled
+          id: mpEnabled
+          label: 开启微信公众号
+          value: false
+          onValue: true
+          offValue: false
+          help: 关闭后定时生成与所有推送动作都不执行（已生成的稿件与管理页仍可查看）。默认关闭：需先填好 AppID/AppSecret 并在管理页跑一次自检。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true"
+          name: appId
+          label: 公众号 AppID
+          value: ""
+          help: 公众号后台 → 设置与开发 → 开发接口管理 → 公众号开发信息。形如 wx 开头的 18 位字符串；填错会在自检的「获取 access_token」一步报错。
+        - $formkit: password
+          if: "$get(mpEnabled).value === true"
+          name: appSecret
+          label: 公众号 AppSecret
+          value: ""
+          help: 与 AppID 同一页获取，只能重置不能查看；仅保存在服务端、不会下发到小程序（本分组整体不对外下发）。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true"
+          name: author
+          label: 图文作者名
+          value: "小编"
+          help: 官方上限 16 字，超出会被自动截断。
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: needOpenComment
+          label: 打开留言
+          value: false
+          onValue: true
+          offValue: false
+          help: 需要公众号本身已开通留言功能；个人订阅号一般没有，强行打开会报 88000（插件会自动关掉重试一次并提示）。不确定就保持关闭。
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: onlyFansCanComment
+          label: 仅粉丝可评论
+          value: false
+          onValue: true
+          offValue: false
+          help: 仅在「打开留言」生效时有意义。
+        - $formkit: select
+          if: "$get(mpEnabled).value === true"
+          name: deliveryMode
+          label: 推送落点
+          value: "draft"
+          options:
+            - label: 只进草稿箱（推荐，个人订阅号可用）
+              value: "draft"
+            - label: 建草稿后自动发布（需企业主体已认证）
+              value: "publish"
+            - label: 建草稿后群发推送粉丝（需企业主体已认证，占群发次数）
+              value: "mass"
+          help: "「发布」（freepublish）文章在公众号可访问但不给粉丝推送通知、不占群发次数；「群发」会推送给粉丝，占用群发次数（订阅号每天 1 次、服务号每粉丝每月最多 4 条）。两种都需要企业主体已认证账号（2025 年 7 月起的官方限制），个人订阅号选它们会在推送时报权限错误。"
+        - $formkit: select
+          if: "$get(mpEnabled).value === true"
+          name: contentSourceMode
+          label: 「阅读原文」指向
+          value: "site"
+          options:
+            - label: 站点文章链接（推荐）
+              value: "site"
+            - label: 固定链接
+              value: "fixed"
+            - label: 不设置
+              value: "none"
+          help: 公众号正文里的普通超链接只能指向公众号文章（其它链接会变成纯文本），博客原文链接无法在正文里点开，所以用「阅读原文」兜底。「站点文章链接」需要该期也发布到站点（见下方「同时发布到站点」）才有值，没有时该项自动留空。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true && $get(contentSourceMode).value === 'fixed'"
+          name: contentSourceUrl
+          label: 固定的「阅读原文」链接
+          value: ""
+          help: 该期没有站点文章时使用，例如你的站点首页或某个栏目页。
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: uploadImages
+          label: 正文图片尝试换成微信图床地址
+          value: true
+          onValue: true
+          offValue: false
+          help: 公众号会过滤正文里的外链图片，换图床（uploadimg）后既可以直接推送草稿箱，复制粘贴到编辑器时图片也不依赖微信的转存。上传失败（格式不支持、超过 1MB 且压缩后仍超）时会保留原图地址并在管理页标注。个人订阅号若没有该接口权限，会自动跳过并保持原图。
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "<b>公众号专属文章的生成设置</b>：复用 AI 日报的抓取与评分链路（92 个技术博客 + 大模型通道），但只按下面的方向选材成文，与站点日报互不影响。"
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: scheduleEnabled
+          label: 定时生成
+          value: false
+          onValue: true
+          offValue: false
+          help: "默认关闭：只有点管理页的「立即生成」才会生成。<b>打开后也只在该时刻的后 30 分钟内触发</b>——错过窗口（例如插件当时没运行）不会补跑，失败的方向也不会自动重试，都要你手动点一次。"
+        - $formkit: text
+          if: "$get(mpEnabled).value === true"
+          name: scheduleTimes
+          label: 每天生成时刻
+          value: "08:00"
+          help: 24 小时制，格式 HH:mm；需要一天多次时用逗号分隔（例如 08:00,20:00）。同一天同一方向只生成一期。仅在「定时生成」打开时生效。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true"
+          name: timezone
+          label: 时区
+          value: "Asia/Shanghai"
+          help: 执行时刻按该时区计算，填错会退回 Asia/Shanghai。
+        - $formkit: repeater
+          if: "$get(mpEnabled).value === true"
+          name: directions
+          label: 发布方向清单（AI 只能从这里选材）
+          value:
+            - key: ai-dev
+              label: AI 发展
+              emoji: "🤖"
+              desc: 大模型新进展、AI 产品与行业动态、重要论文与能力突破
+            - key: security
+              label: AI 安全
+              emoji: "🔒"
+              desc: AI 安全与对齐、提示词注入、模型越狱、供应链与隐私风险、安全事件
+            - key: vibe-coding
+              label: Vibe Coding
+              emoji: "⚡"
+              desc: AI 辅助编程、Vibe Coding 实践、编码 Agent 与工具链、开发者工作流变化
+          help: "每个方向每天生成一篇公众号文章（方向内的精选聚合 + 导读 + 小编看法）。英文标识会写进 AI 提示词；中文显示名用作文章标题与档案归类；说明文字是给 AI 的判定依据，写得越具体分类越准。最多 6 个方向；整份清单留空 = 默认上面三项。与三个方向都不相关的内容会被归入内置的「其他」桶、不生成文章。"
+          children:
+            - $formkit: text
+              name: key
+              label: 英文标识（如 ai-dev；留空则忽略该行）
+              value: ""
+            - $formkit: text
+              name: label
+              label: 中文显示名
+              value: ""
+            - $formkit: text
+              name: emoji
+              label: 图标 emoji
+              value: ""
+            - $formkit: text
+              name: desc
+              label: 给 AI 的判定说明
+              value: ""
+            - $formkit: text
+              name: targetCategory
+              label: 映射到已有分类名（可选）
+              value: ""
+        - $formkit: number
+          if: "$get(mpEnabled).value === true"
+          name: perDirectionTopN
+          label: 每个方向精选几篇
+          value: 3
+          min: 1
+          max: 6
+          help: "一个方向每天从多少篇候选里选材：「每篇精选各一篇」时就是每天每个方向生成几篇独立文章（默认 3 篇）；「每个方向一篇」时是一篇文章里聚合几条精选。"
+        - $formkit: select
+          if: "$get(mpEnabled).value === true"
+          name: contentGranularity
+          label: 文章粒度
+          value: "article"
+          options:
+            - label: 每篇精选各一篇（推荐：推送时每篇都是独立草稿）
+              value: "article"
+            - label: 每个方向一篇（把该方向的精选聚合成一篇长文）
+              value: "direction"
+          help: "「每篇精选各一篇」：一条稿件 = 一篇文章，标题用该篇中文标题、摘要用该篇概述，推送/复制都是逐篇独立的（不再多花一次 AI 调用写方向级标题与导语）。「每个方向一篇」：把该方向当天精选聚合成一篇，开头带 AI 写的导语。两种粒度随时可切，切完重新生成即可。"        
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: directionFallbackEnabled
+          label: 方向保底（用备选方向补位）
+          value: true
+          onValue: true
+          offValue: false
+          help: "开启后评分时会让 AI 在必要时给一篇文章一个<b>备选方向</b>；某方向当期素材不足时，从备选命中它的文章里补位——不额外花 AI 调用。关闭则只有被明确判为该方向的文章才会入选（更容易出现空稿）。"
+        - $formkit: number
+          if: "$get(mpEnabled).value === true"
+          name: hours
+          label: 抓取时间范围（小时）
+          value: 48
+          min: 1
+          max: 720
+          help: 只保留该时间窗内发布的文章；与站点日报相互独立（各自记各自的去重，不会互相抢素材）。
+        - $formkit: number
+          if: "$get(mpEnabled).value === true"
+          name: words
+          label: 每篇点评目标字数
+          value: 500
+          min: 150
+          max: 1200
+          help: 每篇精选的「概述 + 核心信息 + 小编看法」合计目标字数，口径与 AI 日报的成稿一致。
+        - $formkit: number
+          if: "$get(mpEnabled).value === true"
+          name: digestWords
+          label: 摘要（引言）目标字数
+          value: 60
+          min: 40
+          max: 120
+          help: 官方上限 120 字；不填摘要时微信会抓正文前 54 个字当摘要（通常很难看），所以插件总是显式生成、按字数收敛。公众号后台编辑器按字符计数（约等于汉字的 2 倍），保守起见默认 60 字。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true"
+          name: titleTemplate
+          label: 标题模板（AI 生成标题失败时使用）
+          value: "{direction}日报 · {date}"
+          help: "{direction} 会替换为方向中文名，{date} 替换为日期。AI 正常生成标题时不用它；标题超过公众号 32 字上限会被自动截断。"
+        - $formkit: switch
+          if: "$get(mpEnabled).value === true"
+          name: postToSite
+          label: 同时发布到站点
+          value: false
+          onValue: true
+          offValue: false
+          help: 开启后每篇公众号文章也会作为站点文章发布（「阅读原文」随之指向它）。默认关闭：按「只给公众号生成」的口径，不打扰站点。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true && $get(postToSite).value === true"
+          name: postOwner
+          label: 站点文章作者（Halo 用户名）
+          value: "admin"
+          help: 填写的用户必须已存在，否则建稿失败。
+        - $formkit: text
+          if: "$get(mpEnabled).value === true && $get(postToSite).value === true"
+          name: postCategories
+          label: 站点附加分类（可选）
+          value: ""
+          help: 填 Halo 已有的分类名，多个用逗号分隔；匹配不到的会被忽略（手填项不自动创建）。
+
+    - group: toutiaoConfig
+      label: 今日头条号
+      formSchema:
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "「今日头条号」是<b>只给管理员用</b>的写稿台：输入一个关键词，插件用 AI 日报配置的大模型通道直接成稿，产出<b>多个标题候选 + 正文 + 标签 + 至少 3 张配图</b>，在页面上一键复制（标题、正文、配图、标签），粘进头条号后台即可发布。生成历史保存在站点里，可随时回看与再次复制；小程序端不提供这个入口。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "<b>用哪条模型通道</b>：与 AI 日报共用同一份「大模型通道」清单。到 <b>UniHalo → AI 日报 → 大模型通道</b>，在某条通道的「用途」里勾上 <code>toutiao</code>（头条稿）即可单独指定；<b>不勾也行</b>——没有任何通道勾选该用途时，插件会回退到全部可用通道（与日报的兜底规则一致）。写整篇稿是长输出任务，建议留给强模型。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "<b>配图（每篇至少 3 张）</b>：默认用<b>文案卡片</b>——插件在服务器上现画（标题 / 要点 / 关键词，配色跟写作风格走），零成本零配置，图片会转存进站点附件库。填了下面的<b>图片模型</b>就换成 <b>AI 生图</b>：按主题逐张写提示词（画面里不含文字、真人、品牌），某张失败时仍用文案卡片补齐，<b>张数不会少</b>。注意：能写文章的通道不一定能生图（DeepSeek 就没有图片接口），需要另外准备一条支持 <code>/images/generations</code> 的通道（通义万相、OpenAI、SiliconFlow 等）。"
+        - $el: div
+          attrs:
+            class: "formkit-help text-xs mt-2 text-gray-500 mb-2"
+          innerHTML: "当前插件版本：<b>1.0.219</b>（若这里显示的不是该版本，说明运行中的 jar 还没更新）。控制台内页面位置：左侧菜单 <b>UniHalo → 今日头条号</b>。"
+        - $formkit: switch
+          name: enabled
+          id: toutiaoEnabled
+          label: 开启今日头条号
+          value: true
+          onValue: true
+          offValue: false
+          help: 关闭后管理页的「开始生成」会直接报错（生成历史仍可查看与复制）。默认开启：这个页面只对管理员可见，不存在把入口暴露给小程序用户的风险。
+        - $formkit: number
+          if: "$get(toutiaoEnabled).value === true"
+          name: words
+          label: 默认正文目标字数
+          value: 1500
+          min: 300
+          max: 3000
+          help: 管理页上每篇都能临时调整，这里只是新打开页面时的默认值。头条号图文以 800~2000 字为宜；模型总是写不到标称字数，所以插件按目标的下限（85%）复查，写不到就自动补写一遍。
+        - $formkit: number
+          if: "$get(toutiaoEnabled).value === true"
+          name: titleCount
+          label: 默认标题候选个数
+          value: 3
+          min: 1
+          max: 5
+          help: 一次生成产出几个标题备选（从不同角度切入），默认 3 个；标题按头条号 30 字上限自动收敛。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true"
+          name: styles
+          label: 写作风格清单
+          value: "资讯综述,深度解读,干货教程,情感故事"
+          help: 管理页上风格下拉的选项，逗号或顿号分隔。留空 = 内置这四种。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true"
+          name: defaultStyle
+          label: 默认写作风格
+          value: "资讯综述"
+          help: 必须在上面的清单里；填了清单外的值，管理页会自动改用清单第一项。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true"
+          name: voice
+          label: 口吻 / 视角（去 AI 味的关键）
+          value: "一个在这个领域里摸爬滚打过的普通人，用第一人称「我」聊自己的观察、判断与一般经验，像跟朋友说话一样，不端着"
+          help: "给模型一个具体的人设与视角，它才不会写出「随着…的发展」那种没人味的综述腔——这是去掉「AI 味」最有效的一项。想换成自己账号的说法就改写它（例：一个跑了十年一线的产品经理，说话直接、爱举身边的例子）。留空 = 用内置的这句。"
+        - $formkit: textarea
+          if: "$get(toutiaoEnabled).value === true"
+          name: bannedPhrases
+          label: 额外禁用的词句（可选）
+          value: ""
+          help: "内置已经禁掉了「在当今…时代」「首先/其次/最后」「综上所述」「赋能」「抓手」这类套话与结构。这里填你自己号里不想看到的词（逗号或换行分隔），会追加到禁用清单后面。"
+        - $formkit: switch
+          if: "$get(toutiaoEnabled).value === true"
+          name: rewriteEnabled
+          label: 自动修复（字数不足补写 / 「AI 味」过重重写）
+          value: true
+          onValue: true
+          offValue: false
+          help: 生成后体检初稿：正文低于字数下限（目标字数 × 85%）就补写、套话命中 4 处以上就去 AI 味——两件事合并成一次调用，且只在修复版确实更好时才替换（先看字数达标，再看套话多少）。最坏情况就是多花一次写稿调用（两次的花费都记在那条记录里）。想省额度可以关掉，页面仍会提示体检结论。
+        - $formkit: number
+          if: "$get(toutiaoEnabled).value === true"
+          name: imageCount
+          label: 配图张数（每篇至少 3 张）
+          value: 3
+          min: 3
+          max: 6
+          help: 头条多图文章的推荐表现更好，所以下限就是 3 张、不允许更少。<b>图片的位置由写稿模型在正文里标注</b>（哪里讲完该配图就标哪里），插件按标注逐张生图并内嵌回正文；模型标注得少就按正文补齐到这个数，最多 6 张。图片全部转存进站点附件库。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true"
+          name: imageModel
+          label: 图片模型（留空 = 只用文案卡片）
+          value: ""
+          help: "填了就按主题 AI 生图，例如 <code>dall-e-3</code>、<code>wanx2.1-t2i-turbo</code>、<code>flux.1-schnell</code>（按你的图片通道支持的模型名填）。<b>留空是默认且完全可用的</b>：用服务端现画的文案卡片，零成本、不依赖任何出网能力。注意生图费用不计入页面上那份 token 花费估算。"
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true && $get(imageModel).value !== ''"
+          name: imageChannelKey
+          label: 图片通道标识（留空 = 第一条可用通道）
+          value: ""
+          help: 填「AI 日报 → 大模型通道」里那条通道的<b>通道标识</b>（一般不用改，留空就用清单里的第一条可用通道）。指定的标识不存在或那条通道没启用时，本次会退化成文案卡片并在页面上说明。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true && $get(imageModel).value !== ''"
+          name: imageSize
+          label: 出图尺寸
+          value: "1024x1024"
+          help: 按图片模型支持的档位填，例如 1024x1024 / 1280x720。填了模型不支持的尺寸会报错，那一张会用文案卡片补齐。
+        - $formkit: text
+          if: "$get(toutiaoEnabled).value === true && $get(imageModel).value !== ''"
+          name: imageStylePrompt
+          label: 画面风格
+          value: "写实摄影风格，光线自然，色彩干净，主体清晰"
+          help: 拼进每条生图提示词。提示词里已经固定要求「不出现文字、字母、水印、logo、可识别的真人、品牌与商标」，这里只管画面调性。

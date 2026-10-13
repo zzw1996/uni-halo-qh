@@ -208,12 +208,24 @@
                 />
               </td>
               <td>
+                <select
+                  class="model-input model-preset"
+                  :value="presetKeyOf(row.apiBase)"
+                  title="选一家供应商即自动填 API Base；没有你的供应商就保持「自定义」手填"
+                  @change="applyPreset(row, $event)"
+                >
+                  <option value="">自定义</option>
+                  <option v-for="preset in providerPresets" :key="preset.key" :value="preset.key">
+                    {{ preset.label }}
+                  </option>
+                </select>
                 <input
                   v-model="row.apiBase"
                   class="model-input model-input-wide"
                   placeholder="https://api.deepseek.com/v1"
                   @input="markModelDirty"
                 />
+                <span v-if="presetNoteOf(row.apiBase)" class="model-preset-note">{{ presetNoteOf(row.apiBase) }}</span>
               </td>
               <td>
                 <input
@@ -239,6 +251,7 @@
                     · {{ row.test.latencyMs }}ms
                     <template v-if="row.test.servedModel">· {{ row.test.servedModel }}</template>
                   </template>
+                  <span v-if="row.test.url" class="model-test-url">（实际请求：{{ row.test.url }}）</span>
                 </span>
               </td>
               <td class="ops">
@@ -732,6 +745,7 @@ interface ModelTestResult {
   key: string | null;
   label: string | null;
   apiBase: string | null;
+  url: string | null;
   model: string | null;
   status: number | null;
   latencyMs: number | null;
@@ -783,6 +797,8 @@ const taskOptions = [
   { key: "overview", label: "看点", hint: "日报开头的今日看点与背景铺垫" },
   { key: "classify", label: "归类", hint: "旧文章归类（人工点击触发）" },
   { key: "content", label: "简报", hint: "付费「AI 定制内容」的简报导语与推荐理由" },
+  { key: "mp", label: "公众号稿", hint: "公众号文章的标题 / 摘要 / 导语（单次产出三件套，建议绑强模型）" },
+  { key: "toutiao", label: "头条稿", hint: "今日头条号的标题候选与整篇正文：单次输出上千字，建议绑强模型" },
 ];
 
 const modelView = ref<ModelView | null>(null);
@@ -911,6 +927,63 @@ function applyModelView(view: ModelView) {
   modelDirty.value = false;
 }
 
+/** 内置供应商预设（后端 /digest/models/presets 下发）：选一家即自动填 API Base */
+interface ProviderPreset {
+  key: string;
+  label: string;
+  apiBase: string;
+  models: string;
+  note: string;
+}
+
+const providerPresets = ref<ProviderPreset[]>([]);
+
+function presetByApiBase(apiBase: string): ProviderPreset | null {
+  let normalized = (apiBase || "").trim().replace(/\/+$/, "").toLowerCase();
+  if (normalized.endsWith("/chat/completions")) {
+    normalized = normalized.slice(0, -"/chat/completions".length).replace(/\/+$/, "");
+  }
+  if (!normalized) return null;
+  return (
+    providerPresets.value.find((preset) => preset.apiBase.toLowerCase() === normalized) || null
+  );
+}
+
+function presetKeyOf(apiBase: string): string {
+  return presetByApiBase(apiBase)?.key || "";
+}
+
+function presetNoteOf(apiBase: string): string {
+  const preset = presetByApiBase(apiBase);
+  if (!preset) return "";
+  const firstModel = (preset.models || "").split(" / ")[0];
+  return `模型名如 ${firstModel}${preset.note ? "；" + preset.note : ""}`;
+}
+
+function applyPreset(row: EditableModelRow, event: Event) {
+  const key = (event.target as HTMLSelectElement).value;
+  const preset = providerPresets.value.find((item) => item.key === key);
+  if (!preset) return;
+  row.apiBase = preset.apiBase;
+  if (!row.model.trim()) {
+    row.model = (preset.models || "").split(" / ")[0] || "";
+  }
+  if (!row.label.trim()) {
+    row.label = preset.label;
+  }
+  markModelDirty();
+}
+
+async function loadPresets() {
+  try {
+    const data: any = await apiGet("/digest/models/presets");
+    providerPresets.value = data?.presets || [];
+  } catch (e: any) {
+    // 预设拉不到不影响配置（下拉为空 = 手填模式）
+    providerPresets.value = [];
+  }
+}
+
 function markModelDirty() {
   modelDirty.value = true;
 }
@@ -990,6 +1063,7 @@ function rowStateClass(row: EditableModelRow): string {
 }
 
 async function loadModels() {
+  loadPresets();
   try {
     applyModelView((await apiGet("/digest/models")) as ModelView);
   } catch (err: any) {
@@ -1759,6 +1833,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .model-input-wide { width: 210px; }
 .model-state { max-width: 260px; }
 .model-test-msg { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: #6b7290; word-break: break-word; }
+.model-preset { width: 100%; margin-bottom: 4px; padding: 4px 6px; border: 1px solid #e2e6f3; border-radius: 7px; font-size: 12px; color: #3c4160; background: #fbfcff; }
+.model-preset-note { display: block; margin-top: 3px; font-size: 11px; line-height: 1.5; color: #8a90a4; max-width: 260px; }
+.model-test-url { display: block; margin-top: 2px; color: #9aa1b5; font-family: monospace; font-size: 11px; }
 .model-foot { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
 .model-foot-tip { font-size: 12px; color: #9aa1b5; }
 .model-legacy { margin: 0; padding: 0 14px 14px; font-size: 12px; color: #8b90a0; line-height: 1.6; word-break: break-word; }

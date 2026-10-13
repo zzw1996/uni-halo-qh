@@ -30,6 +30,22 @@ public interface DigestAiClient {
     Mono<DigestAiReplyDTO> call(DigestConfigDTO config, String prompt, DigestAiTask task);
 
     /**
+     * 同 {@link #call(DigestConfigDTO, String, DigestAiTask)}，但可以指定采样温度。
+     *
+     * <p>存在的理由只有一个：<b>写稿类任务需要更高的温度</b>。日报/公众号的成稿沿用
+     * 0.3 的低温是为了稳定与可复现；而今日头条号是站长自己发布的原创内容，
+     * 低温恰恰是「AI 味」的来源之一——句子四平八稳、结构千篇一律。
+     * 需要「像人写的」的调用点（写稿与去 AI 味重写）用 0.8~0.9。</p>
+     *
+     * <p>默认实现忽略温度参数（向后兼容：第三方实现或测试替身不必跟着改），
+     * 由 {@code DigestAiClientImpl} 真正生效。</p>
+     */
+    default Mono<DigestAiReplyDTO> call(DigestConfigDTO config, String prompt, DigestAiTask task,
+        double temperature) {
+        return call(config, prompt, task);
+    }
+
+    /**
      * 查账户余额（DeepSeek 官方的 {@code GET /user/balance}，不消耗 token）。
      *
      * <p>用来给「这一轮花了多少」提供官方的旁证：运行前后各查一次，差值就是账号上

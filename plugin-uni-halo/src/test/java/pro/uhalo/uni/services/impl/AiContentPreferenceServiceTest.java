@@ -44,11 +44,12 @@ class AiContentPreferenceServiceTest {
         return new AiContentPreferenceService(client);
     }
 
-    private static AiContentConfigDTO config(int maxCategories, int maxSources, int maxKeywords) {
+    /** 来源维度已取消，第二个参数保留为「未使用的占位」以少改调用处 */
+    private static AiContentConfigDTO config(int maxCategories, int unusedSources,
+        int maxKeywords) {
         return AiContentConfigDTO.builder()
             .enabled(true)
             .maxCategories(maxCategories)
-            .maxSources(maxSources)
             .maxKeywords(maxKeywords)
             .build();
     }
@@ -102,7 +103,9 @@ class AiContentPreferenceServiceTest {
                 config(5, 5, 10), java.util.List.of()))
             .assertNext(dto -> {
                 assertThat(dto.getCategories()).containsExactly("ai-ml");
-                assertThat(dto.getSources()).containsExactly("blog.rust-lang.org");
+                assertThat(dto.getKeywords()).containsExactly("rust");
+                // 来源维度已取消：客户端即便还带着 sources，也不再落库（否则会继续参与筛选）
+                assertThat(dto.getSources()).isEmpty();
                 assertThat(dto.isConfigured()).isTrue();
             })
             .verifyComplete();
@@ -133,15 +136,16 @@ class AiContentPreferenceServiceTest {
         verify(client).update(any(AiContentPreference.class));
     }
 
+    /** 超上限时报错而不是截断：静默丢掉用户勾的东西比报错更让人困惑 */
     @Test
     void tooManyItemsShouldFailInsteadOfTruncating() {
         stubExisting();
 
         var request = new AiContentPreferenceRequest();
-        request.setSources(List.of("a", "b", "c"));
+        request.setKeywords(List.of("a", "b", "c"));
 
         StepVerifier.create(service().save("openid-1", request, catalog("ai-ml"),
-                config(5, 2, 10), java.util.List.of()))
+                config(5, 5, 2), java.util.List.of()))
             .expectErrorSatisfies(ex -> {
                 assertThat(ex).isInstanceOf(WxAuthException.class);
                 assertThat(((WxAuthException) ex).getReason()).contains("最多选 2 项", "当前 3 项");

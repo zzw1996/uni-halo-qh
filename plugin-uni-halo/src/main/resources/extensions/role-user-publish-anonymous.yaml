@@ -15,6 +15,12 @@ rules:
   #
   # 与 points 模板同一处理方式：resource 的推导粒度随 Halo 版本不同，
   # 把「去掉插件名」与「带插件名」两种形态、常见深度都列出来。
+  #
+  # 实际生效的那条是 `plugins/userPublish`：Halo 的 RequestInfoFactory 把
+  # /apis/{group}/{version}/plugins/{插件名}/userPublish/... 解析成
+  # resource=plugins、subresource=userPublish，再拼成 `plugins/userPublish`，
+  # 更深的路径段落只作 name/subName，不参与资源匹配——所以「article/{name}/publish」
+  # 这类接口不需要单独登记，但**动词必须逐条给全**（PUT 映射为 update，漏了就 403）。
   - apiGroups: [ "api.uni.uhalo.pro" ]
     resources:
       - "plugins/userPublish"
@@ -33,4 +39,6 @@ rules:
       - "plugins/plugin-uni-halo/userPublish/moments"
       - "plugins/plugin-uni-halo/userPublish/image"
       - "plugins/plugin-uni-halo/userPublish/vote"
-    verbs: [ "get", "list", "create", "delete" ]
+    # update：单篇投稿的保存修改 / 立即发布 / 撤回发布（都是 PUT）。
+    # patch 一并留着：Halo 对部分版本/中间层的 PUT 可能被当作 patch 处理
+    verbs: [ "get", "list", "create", "update", "patch", "delete" ]

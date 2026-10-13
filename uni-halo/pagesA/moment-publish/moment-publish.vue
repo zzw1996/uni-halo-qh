@@ -79,6 +79,7 @@
 	import { checkHasWxLogin, getWxLoginInfo } from '@/utils/auth.js';
 	import { generateUUID } from '@/utils/uuid.js';
 	import { emitPointsUpdated } from '@/utils/points.js';
+	import { setPendingTabbarMode } from '@/utils/tabbar.js';
 	import {
 		fetchUserPublishStatus,
 		submitUserMoment,

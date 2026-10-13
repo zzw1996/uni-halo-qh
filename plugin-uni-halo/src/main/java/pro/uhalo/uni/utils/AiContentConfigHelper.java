@@ -6,6 +6,7 @@ import pro.uhalo.uni.dto.AiContentConfigDTO;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
  * AI 定制内容配置解析（设置分组 {@code aiContentConfig}）。
@@ -38,6 +39,15 @@ public final class AiContentConfigHelper {
     private static final int MAX_PRICE = 100000;
     private static final int MAX_POINTS_DAYS = 3650;
     private static final int MAX_GENERATE_WORDS = 1500;
+    /** 实时素材时间窗的收敛区间：下限保证抓得到内容，上限保证还叫「最新」 */
+    private static final int MIN_LIVE_HOURS = 6;
+    private static final int MAX_LIVE_HOURS = 168;
+    /** 生成次数相关上限：它们同样是成本阀门，配错等于把 AI 额度敞开 */
+    private static final int MAX_SEARCH_HOURS = 720;
+    private static final int MAX_SEARCH_ITEMS = 120;
+    private static final int MAX_CREDITS_PER_DAY = 50;
+    private static final int MAX_CREDITS_PER_GRANT = 1000;
+    private static final int MAX_DAILY_GENERATIONS = 50;
 
     /** 首页运营位卡与手输主题的默认文案 */
     private static final String DEFAULT_HOME_CARD_TITLE = "AI 定制内容";
@@ -64,10 +74,19 @@ public final class AiContentConfigHelper {
             .enabled(false)
             .aiIntroEnabled(true)
             .maxCategories(5)
-            .maxSources(5)
             .maxKeywords(10)
             .maxItems(10)
             .windowDays(7)
+            .liveHours(48)
+            .creditsPerDay(2)
+            .maxCreditsPerGrant(100)
+            .dailyGenerationLimit(3)
+            .keywordSearchEnabled(true)
+            .keywordSearchProviders(List.of("bing", "google"))
+            .keywordSearchHours(72)
+            .keywordSearchMaxItems(40)
+            .keywordSearchCoverEnabled(true)
+            .outroWords(120)
             .introWords(200)
             .maxTopics(3)
             .pointsPrice(0)
@@ -92,14 +111,40 @@ public final class AiContentConfigHelper {
             .aiIntroEnabled(node.path("aiIntroEnabled").asBoolean(true))
             .maxCategories(clamp(node.path("maxCategories").asInt(fallback.getMaxCategories()),
                 1, MAX_DIMENSION))
-            .maxSources(clamp(node.path("maxSources").asInt(fallback.getMaxSources()),
-                1, MAX_DIMENSION))
             // 关键词允许配 0：站长可以把这一维度整个关掉（用户就看不到关键词输入框）
             .maxKeywords(clamp(node.path("maxKeywords").asInt(fallback.getMaxKeywords()),
                 0, MAX_KEYWORDS))
             .maxItems(clamp(node.path("maxItems").asInt(fallback.getMaxItems()), 1, MAX_ITEMS))
+            // 兜底窗口：只在实时抓取拿不到素材时才会用到
             .windowDays(clamp(node.path("windowDays").asInt(fallback.getWindowDays()),
                 1, MAX_WINDOW_DAYS))
+            // 实时素材时间窗：太小会经常抓不到内容，太大就不再是「最新」
+            .liveHours(clamp(node.path("liveHours").asInt(fallback.getLiveHours()),
+                MIN_LIVE_HOURS, MAX_LIVE_HOURS))
+            // 生成次数：每天至少 1 次（0 会让付费用户一次都用不了）
+            .creditsPerDay(clamp(node.path("creditsPerDay").asInt(fallback.getCreditsPerDay()),
+                1, MAX_CREDITS_PER_DAY))
+            .maxCreditsPerGrant(clamp(
+                node.path("maxCreditsPerGrant").asInt(fallback.getMaxCreditsPerGrant()),
+                1, MAX_CREDITS_PER_GRANT))
+            // 每日上限允许 0：站长可以只按总额度管，不限每天
+            .dailyGenerationLimit(clamp(
+                node.path("dailyGenerationLimit").asInt(fallback.getDailyGenerationLimit()),
+                0, MAX_DAILY_GENERATIONS))
+            // 关键词联网检索：默认开（不开的话「邓紫棋」这类词在科技源里必然命不中）
+            .keywordSearchEnabled(node.path("keywordSearchEnabled").asBoolean(true))
+            .keywordSearchProviders(
+                searchProviders(node.path("keywordSearchProviders").asText("")))
+            .keywordSearchHours(clamp(
+                node.path("keywordSearchHours").asInt(fallback.getKeywordSearchHours()),
+                1, MAX_SEARCH_HOURS))
+            .keywordSearchMaxItems(clamp(
+                node.path("keywordSearchMaxItems").asInt(fallback.getKeywordSearchMaxItems()),
+                1, MAX_SEARCH_ITEMS))
+            .keywordSearchCoverEnabled(node.path("keywordSearchCoverEnabled").asBoolean(true))
+            // 结尾允许 0：站长可以只要导语
+            .outroWords(clamp(node.path("outroWords").asInt(fallback.getOutroWords()),
+                0, MAX_INTRO_WORDS))
             .introWords(clamp(node.path("introWords").asInt(fallback.getIntroWords()),
                 50, MAX_INTRO_WORDS))
             // 手输主题允许配 0：关掉 = 用户只能用高级筛选，不能自由输入
@@ -117,6 +162,44 @@ public final class AiContentConfigHelper {
             .memberFree(node.path("memberFree").asBoolean(true))
             .benefitNote(text(node.path("benefitNote"), ""))
             .build();
+    }
+
+    /**
+     * 一次购买/兑换赠送的生成次数 = 天数 × 每天次数，上限 {@code maxCreditsPerGrant}。
+     *
+     * <p>永久买断（days ≤ 0）直接按上限给：按 36500 天算等于无限，与「成本阀门」的初衷相反。</p>
+     */
+    public static int creditsForDays(int days, AiContentConfigDTO config) {
+        if (config == null) {
+            return 0;
+        }
+        var perDay = config.getCreditsPerDay();
+        if (days <= 0) {
+            return config.getMaxCreditsPerGrant();
+        }
+        var wanted = (long) days * perDay;
+        return (int) Math.max(1, Math.min(config.getMaxCreditsPerGrant(), wanted));
+    }
+
+    /**
+     * 检索源解析：逗号/顿号/空格分隔，只认 bing / google / baidu。
+     *
+     * <p>不认识的名字直接丢掉（宁可少一个源，也别把配置错误变成抓取请求打到一个乱七八糟的地址上）。
+     * 留空 = 用默认的两个源。</p>
+     */
+    public static List<String> searchProviders(String raw) {
+        var defaults = List.of("bing", "google");
+        if (raw == null || raw.isBlank()) {
+            return defaults;
+        }
+        var providers = new java.util.LinkedHashSet<String>();
+        for (var piece : raw.split("[,，、\s]+")) {
+            var name = piece.trim().toLowerCase(java.util.Locale.ROOT);
+            if (name.equals("bing") || name.equals("google") || name.equals("baidu")) {
+                providers.add(name);
+            }
+        }
+        return providers.isEmpty() ? defaults : List.copyOf(providers);
     }
 
     /** 是否「永久」（远期时间） */

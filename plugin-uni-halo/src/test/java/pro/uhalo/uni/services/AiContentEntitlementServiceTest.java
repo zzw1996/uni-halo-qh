@@ -41,6 +41,10 @@ import static org.mockito.Mockito.when;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AiContentEntitlementServiceTest {
 
+    /** 生成记录：本组用例不关心计数（额度分发另有用例） */
+    @org.mockito.Mock
+    private pro.uhalo.uni.services.impl.AiContentGenerationLogService logService;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Mock
@@ -60,13 +64,15 @@ class AiContentEntitlementServiceTest {
     @BeforeEach
     void setUp() {
         service = new AiContentEntitlementService(pointsPersistence, settingFetcher,
-            membershipService, rateLimiter, privilegeStub());
+            membershipService, rateLimiter, privilegeStub(), logService);
         stubConfig("{\"enabled\":true}");
         // 会员判定默认「非会员」：会员豁免单独用例里再打开
         lenient().when(membershipService.loadMemberExpireAt(anyString()))
             .thenReturn(Mono.empty());
         lenient().when(rateLimiter.tryAcquire(anyString(), anyInt(), any(Duration.class)))
             .thenReturn(true);
+        // 生成记录：状态里要带「今日已生成几次」，默认 0 次
+        lenient().when(logService.countToday(anyString())).thenReturn(Mono.just(0));
     }
 
     private void stubConfig(String json) {

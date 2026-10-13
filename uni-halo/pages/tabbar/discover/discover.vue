@@ -45,7 +45,7 @@
 				<view class="sub-bar-actions">
 					<text v-if="calcPushEntryVisible" class="sub-bar-btn is-push"
 						@click="fnOnPushRemind">🔔 {{ pushLabel }}</text>
-					<text v-if="subCanUnlock" class="sub-bar-btn is-unlock"
+					<text v-if="subCanUnlock && !subUnlimited" class="sub-bar-btn is-unlock"
 						@click="fnOpenUnlockSheet">解锁更多</text>
 					<text v-if="subscribedCount > 0" class="sub-bar-btn is-danger"
 						@click="fnClearSubscribe">清空订阅</text>
@@ -231,6 +231,7 @@ import loadMoreMixin from '@/common/mixins/loadMore.js';
 import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
 import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
+import { isUnlimitedQuota } from '@/utils/categorySubscription.js';
 
 /** 一次拉全量分类：站点分类通常几十个，一屏搜完比翻页找更符合「发现」的用法 */
 const CATEGORY_PAGE_SIZE = 100;
@@ -397,6 +398,10 @@ export default {
 			return this.pausedCategories.length;
 		},
 		/** 还能不能解锁（开关开着且没买满） */
+		/** 是否不限量（站点所有者/管理员）：概览条与解锁弹窗的文案要分开说 */
+		subUnlimited() {
+			return isUnlimitedQuota(this.subLimits);
+		},
 		subCanUnlock() {
 			return this.subLimits?.purchaseEnabled === true && this.subLimits?.canPurchase === true;
 		},
@@ -411,6 +416,10 @@ export default {
 			}
 			if (this.subIsMember) {
 				return `已订阅 ${this.subscribedCount} 个分类 · 会员不限量`;
+			}
+			if (this.subUnlimited) {
+				// 站点所有者/管理员：不显示「N/2147483647」这种哨兵值
+				return `已订阅 ${this.subscribedCount} 个分类 · 不限量`;
 			}
 			const owned = Number(this.subLimits?.purchasedQuota) || 0;
 			return owned > 0
@@ -445,6 +454,9 @@ export default {
 		},
 		/** 弹窗顶部的一句话：被暂停 / 到上限 / 未到上限三种口径分开说（未到上限也能从「解锁更多」进来） */
 		unlockStatusText() {
+			if (this.subUnlimited) {
+				return `你的账号订阅不限量，想订哪个就订哪个`;
+			}
 			if (this.pausedCount > 0) {
 				return `已订阅 ${this.subscribedCount}/${this.subLimit} 个分类，${this.pausedCount} 个分类因额度不足被暂停`;
 			}

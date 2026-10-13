@@ -23,9 +23,6 @@ public class AiContentPreferenceViewDTO {
     /** 可选的主题分类（来自站长的「日报分类」清单） */
     private List<DigestCategoryDTO> categoryOptions;
 
-    /** 可选的来源站点（来自最近日报里实际出现过的来源，带篇数） */
-    private List<DigestOptionItemDTO> sourceOptions;
-
     /** 各维度上限与简报参数（前端据此做计数与提示） */
     private Limits limits;
 
@@ -45,10 +42,12 @@ public class AiContentPreferenceViewDTO {
     @Builder
     public static class Limits {
         private int maxCategories;
-        private int maxSources;
         private int maxKeywords;
         private int maxTopics;
         private int maxItems;
+        /** 实时素材时间窗（小时）：页面要说清「内容取自最近 N 小时」 */
+        private int liveHours;
+        /** 兜底窗口（实时抓不到素材时才用），仅用于说明文案 */
         private int windowDays;
         /** 是否开启 AI 导语（关闭时页面要说明「本次为纯筛选」） */
         private boolean aiIntroEnabled;

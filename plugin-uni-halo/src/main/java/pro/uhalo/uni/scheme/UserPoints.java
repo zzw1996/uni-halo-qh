@@ -82,4 +82,13 @@ public class UserPoints extends AbstractExtension {
      * 因此不需要额外的布尔字段，权益判定也能与会员共用同一套口径。</p>
      */
     private Instant aiContentExpireAt;
+
+    /**
+     * AI 定制内容还能生成几次简报（null 视为 0）。
+     *
+     * <p>购买 / 积分兑换时按「天数 × 每天次数」发放，每次生成扣 1 —— 这是付费功能的成本阀门：
+     * 用户随时可以按新方向重新生成，但不是无限次（否则一个 1 天的权益就能把 AI 额度刷爆）。
+     * 与到期时间放在同一条账户记录里：一个用户一条，读写都在一处。</p>
+     */
+    private Integer aiContentCredits;
 }

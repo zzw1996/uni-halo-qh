@@ -280,6 +280,37 @@ class DigestAiClientImplTest {
     // ── 连通性测试 ──
 
     @Test
+    void probeShouldPassThinkingModelsThatReturnNoVisibleContent() {
+        // 思考型模型（GLM-4.5+/o 系列等）在 8 token 的测试限额里可能只思考不输出：
+        // 返回是标准的 chat/completions 结构、content 为空——端点本身是好的，必须判连通
+        var client = new StubClient();
+        client.answer("https://a.example/v1", new DigestAiClientImpl.AiHttpAnswer(200,
+            "{\"model\":\"glm-5.3-flash\",\"usage\":{\"total_tokens\":8},"
+                + "\"choices\":[{\"finish_reason\":\"length\",\"index\":0,"
+                + "\"message\":{\"content\":\"\"}}]}"));
+
+        StepVerifier.create(client.probe(provider("a", "https://a.example/v1")))
+            .assertNext(result -> {
+                assertThat(result.isOk()).isTrue();
+                assertThat(result.getMessage()).contains("端点连通");
+                assertThat(result.getServedModel()).isEqualTo("glm-5.3-flash");
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void probeShouldStillRejectNonChatCompletionsBodies() {
+        // 中转站返回自己的 JSON（没有 choices）：不能因为是 200 就放行
+        var client = new StubClient();
+        client.answer("https://a.example/v1", new DigestAiClientImpl.AiHttpAnswer(200,
+            "{\"hello\":\"world\"}"));
+
+        StepVerifier.create(client.probe(provider("a", "https://a.example/v1")))
+            .assertNext(result -> assertThat(result.isOk()).isFalse())
+            .verifyComplete();
+    }
+
+    @Test
     void probeShouldReportSuccessWithLatencyAndServedModel() {
         var client = new StubClient();
         client.answer("https://a.example/v1", new DigestAiClientImpl.AiHttpAnswer(200,

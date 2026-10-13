@@ -68,8 +68,8 @@ class SettingYamlIntegrityTest {
             "pointsConfig", "dailyTaskConfig", "mallConfig", "levelConfig", "inviteConfig",
             "payConfig", "contentConfig", "ticketConfig", "subscriptionConfig",
             "subscriptionWallConfig", "memberConfig", "aiContentConfig",
-            // 榜单、推送、AI 日报
-            "rankConfig", "pushConfig", "aiDigestConfig");
+            // 榜单、推送、AI 日报、公众号、头条号
+            "rankConfig", "pushConfig", "aiDigestConfig", "mpConfig", "toutiaoConfig");
     }
 
     /** 每个分组都要能被后台渲染：group/label/formSchema 三者缺一不可 */

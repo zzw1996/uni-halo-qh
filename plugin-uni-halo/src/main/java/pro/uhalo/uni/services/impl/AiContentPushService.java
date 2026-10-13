@@ -55,33 +55,59 @@ public class AiContentPushService {
                             return Mono.error(new pro.uhalo.uni.exception.WxAuthException(
                                 "站长还没有配好推送模板，暂时推不了"));
                         }
-                        return feedService.ensureToday(normalized)
+                        // 用 push 触发：配额不足时把原因回给用户（定时线则安静跳过）
+                        return feedService.ensureToday(normalized, "push")
                             .switchIfEmpty(Mono.error(new pro.uhalo.uni.exception.WxAuthException(
                                 "今天的简报还没生成好，请稍后再试")))
                             .flatMap(issue -> preferenceService.load(normalized)
                                 .flatMap(preference -> push(normalized, pushConfig, issue,
-                                    preference)));
+                                    preference, true)));
                     });
                 });
             });
     }
 
-    /** 生成结果 → 推送；把「有没有发出去」如实回给前端（定时线也复用它） */
+    /**
+     * 生成结果 → 推送；把「有没有发出去、为什么没发出去」如实回给前端（定时线也复用它）。
+     *
+     * @param manual true = 用户在页面里点的「立即推送」。手动推送只看额度：
+     *               没打开「每天定时推送」的用户照样能推（早前会被误报成「额度不足」）
+     */
+    public Mono<AiContentPushResultDTO> push(String openid, PushConfigDTO pushConfig,
+        AiContentIssue issue, AiContentPreferenceDTO preference, boolean manual) {
+        return pushDispatchService.pushAiContentReady(openid, pushConfig, issue, preference,
+                manual)
+            .map(attempt -> AiContentPushResultDTO.builder()
+                .pushed(attempt.sent())
+                .date(issue.getDate())
+                .needQuota(attempt.outcome() == PushDispatchService.PushOutcome.NO_QUOTA)
+                .message(messageOf(attempt))
+                .build());
+    }
+
+    /** 定时生成线：不是用户当场点的，因此尊重用户总开关 */
     public Mono<AiContentPushResultDTO> push(String openid, PushConfigDTO pushConfig,
         AiContentIssue issue, AiContentPreferenceDTO preference) {
-        return pushDispatchService.pushAiContentReady(openid, pushConfig, issue, preference)
-            .map(sent -> sent > 0
-                ? AiContentPushResultDTO.builder()
-                    .pushed(true)
-                    .date(issue.getDate())
-                    .message("已推送到你的微信，去微信里看看")
-                    .build()
-                : AiContentPushResultDTO.builder()
-                    .pushed(false)
-                    .date(issue.getDate())
-                    .needQuota(true)
-                    .message("推送额度不足：请点「开启推送」授权后再试")
-                    .build());
+        return push(openid, pushConfig, issue, preference, false);
+    }
+
+    /**
+     * 失败原因分别给话。
+     *
+     * <p>早前无论哪种情况都说「推送额度不足」，于是「下面明明写着还有 3 条额度」的用户
+     * 会以为功能坏了——每种结局都要能对上一个可操作的动作。</p>
+     */
+    private static String messageOf(PushDispatchService.PushAttempt attempt) {
+        return switch (attempt.outcome()) {
+            case SENT -> "已推送到你的微信，去微信里看看";
+            case NO_QUOTA -> "没有可用的推送额度：点「立即推送」时微信会弹一次授权，"
+                + "同意后即可收到（一次授权对应一条）";
+            case ALREADY_PUSHED -> "今天这份简报已经推送过了，明天到点会自动再推";
+            case DAILY_LIMIT -> "站点今天的推送量已达上限，请明天再试";
+            case DISABLED -> "你已关闭推送开关，重新打开后即可接收";
+            case SEND_FAILED -> "微信没有接受这条消息"
+                + (attempt.detail().isEmpty() ? "，请稍后重试" : "：" + attempt.detail());
+        };
     }
 
     private Mono<PushConfigDTO> loadPushConfig() {

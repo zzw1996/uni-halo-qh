@@ -16,14 +16,23 @@ package pro.uhalo.uni.dto;
  * @param channelLabel 通道显示名（报告与日志里给人看）
  * @param apiBase      通道端点（余额查询要用它推根地址）
  * @param model        本次实际发出的模型名
+ * @param finishReason 模型自己的结束原因：{@code stop} = 自然结束，{@code length} = 撞到输出
+ *                     长度上限被截断（长 JSON 被砍半的典型原因）。中转站不回时为空串。
  */
 public record DigestAiReplyDTO(String text, DigestAiUsageDTO usage, String channelKey,
-                              String channelLabel, String apiBase, String model) {
+                              String channelLabel, String apiBase, String model,
+                              String finishReason) {
 
     public static DigestAiReplyDTO of(String text, DigestAiProviderDTO channel, String model,
         DigestAiUsageDTO usage) {
+        return of(text, channel, model, usage, "");
+    }
+
+    public static DigestAiReplyDTO of(String text, DigestAiProviderDTO channel, String model,
+        DigestAiUsageDTO usage, String finishReason) {
         return new DigestAiReplyDTO(text, usage == null ? DigestAiUsageDTO.unreported() : usage,
             channel.key(), channel.label(), channel.apiBase(),
-            model == null || model.isBlank() ? channel.model() : model);
+            model == null || model.isBlank() ? channel.model() : model,
+            finishReason == null ? "" : finishReason.trim());
     }
 }

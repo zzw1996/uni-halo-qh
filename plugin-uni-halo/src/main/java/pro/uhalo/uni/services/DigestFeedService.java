@@ -17,6 +17,17 @@ public interface DigestFeedService {
     Mono<DigestFeedResultDTO> fetchRecent(int hours);
 
     /**
+     * 抓取<b>任意</b> RSS/Atom 地址（内置源之外的那些）。
+     *
+     * <p>给「AI 定制内容」的关键词检索用：把 Bing / Google 新闻的检索 RSS 当作源来抓，
+     * 解析、按时间窗过滤、去重的口径与内置源完全一致——同一套零件，少一条会走偏的岔路。</p>
+     *
+     * @param feedUrls 完整地址（已带查询串）
+     * @param hours    只看最近多少小时内的条目
+     */
+    Mono<DigestFeedResultDTO> fetchUrls(List<String> feedUrls, int hours);
+
+    /**
      * 为首图为空的文章补一张头图：抓文章页取 og:image / twitter:image。
      */
     Mono<List<DigestArticleDTO>> resolveLeadImages(List<DigestArticleDTO> articles);

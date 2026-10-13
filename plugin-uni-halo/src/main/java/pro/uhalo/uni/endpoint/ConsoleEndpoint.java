@@ -41,6 +41,7 @@ public class ConsoleEndpoint implements CustomEndpoint {
     private final PushStatsService pushStatsService;
     private final PushDiagnoseService pushDiagnoseService;
     private final CommercialConfigService commercialConfigService;
+    private final pro.uhalo.uni.services.impl.AiContentUsageService aiContentUsageService;
 
     public ConsoleEndpoint(WxUserService wxUserService,
                            UserActivityService userActivityService,
@@ -50,7 +51,8 @@ public class ConsoleEndpoint implements CustomEndpoint {
                            PayStatsService payStatsService,
                            PushStatsService pushStatsService,
                            PushDiagnoseService pushDiagnoseService,
-                           CommercialConfigService commercialConfigService) {
+                           CommercialConfigService commercialConfigService,
+                           pro.uhalo.uni.services.impl.AiContentUsageService aiContentUsageService) {
         this.wxUserService = wxUserService;
         this.userActivityService = userActivityService;
         this.pointsService = pointsService;
@@ -60,6 +62,7 @@ public class ConsoleEndpoint implements CustomEndpoint {
         this.pushStatsService = pushStatsService;
         this.pushDiagnoseService = pushDiagnoseService;
         this.commercialConfigService = commercialConfigService;
+        this.aiContentUsageService = aiContentUsageService;
     }
 
     @Override
@@ -205,6 +208,55 @@ public class ConsoleEndpoint implements CustomEndpoint {
                         + "each), and today's records.")
                     .tag(apiTag);
             })
+            .GET("/aiContentUsage", this::aiContentUsage, builder -> {
+                builder.operationId("ConsoleGetAiContentUsage")
+                    .description("AI content (paid) usage: per-user remaining generations, "
+                        + "expiry, today's and total generations, plus the generation log "
+                        + "(what was generated, which trigger, how many credits were used, "
+                        + "and the failure reason when it failed).")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("keyword")
+                        .in(ParameterIn.QUERY)
+                        .description("Filter users by nickname or openid")
+                        .required(false)
+                        .implementation(String.class))
+                    .parameter(parameterBuilder()
+                        .name("page")
+                        .in(ParameterIn.QUERY)
+                        .description("Page index, zero-based")
+                        .required(false)
+                        .implementation(Integer.class))
+                    .parameter(parameterBuilder()
+                        .name("size")
+                        .in(ParameterIn.QUERY)
+                        .description("Page size, default 20")
+                        .required(false)
+                        .implementation(Integer.class));
+            })
+            .GET("/aiContentLogs", this::aiContentLogs, builder -> {
+                builder.operationId("ConsoleListAiContentLogs")
+                    .description("AI content generation log, newest first (filter by openid).")
+                    .tag(apiTag)
+                    .parameter(parameterBuilder()
+                        .name("openid")
+                        .in(ParameterIn.QUERY)
+                        .description("Only this user's records")
+                        .required(false)
+                        .implementation(String.class))
+                    .parameter(parameterBuilder()
+                        .name("page")
+                        .in(ParameterIn.QUERY)
+                        .description("Page index, zero-based")
+                        .required(false)
+                        .implementation(Integer.class))
+                    .parameter(parameterBuilder()
+                        .name("size")
+                        .in(ParameterIn.QUERY)
+                        .description("Page size, default 20")
+                        .required(false)
+                        .implementation(Integer.class));
+            })
             .GET("/payStats", this::payStats, builder -> {
                 builder.operationId("ConsoleGetPayStats")
                     .description("Payment dashboard: order counts by status, GMV of delivered "
@@ -273,7 +325,7 @@ public class ConsoleEndpoint implements CustomEndpoint {
                 payload.put("failed", items.stream().filter(item -> !item.isOk()).count());
                 payload.put("recentFailures", failures.stream().map(record -> {
                     var map = new java.util.LinkedHashMap<String, Object>();
-                    map.put("kind", record.getKind());
+                    map.put("kind", record.getSourceKind());
                     map.put("status", record.getStatus());
                     map.put("errorCode", record.getErrorCode());
                     map.put("message", record.getMessage());
@@ -298,6 +350,44 @@ public class ConsoleEndpoint implements CustomEndpoint {
                 return ServerResponse.status(500)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(java.util.Map.of("error", "推送统计查询失败"));
+            });
+    }
+
+    /** AI 定制内容用量：用户额度 + 生成明细（两块一起给，页面一次就能画出来） */
+    Mono<ServerResponse> aiContentUsage(ServerRequest request) {
+        var page = Math.max(0, parseIntParam(request, "page", 0));
+        var size = Math.min(100, Math.max(1, parseIntParam(request, "size", 20)));
+        var keyword = request.queryParam("keyword").orElse(null);
+        return Mono.zip(
+                aiContentUsageService.usage(page, size, keyword),
+                aiContentUsageService.logs(0, 20, null))
+            .map(tuple -> {
+                var payload = new java.util.LinkedHashMap<String, Object>();
+                payload.put("users", tuple.getT1());
+                payload.put("logs", tuple.getT2());
+                return (Object) payload;
+            })
+            .flatMap(payload -> jsonOk(payload))
+            .onErrorResume(e -> {
+                log.warn("Console aiContentUsage failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "AI 定制内容用量查询失败"));
+            });
+    }
+
+    /** 生成明细（可按 openid 筛） */
+    Mono<ServerResponse> aiContentLogs(ServerRequest request) {
+        var page = Math.max(0, parseIntParam(request, "page", 0));
+        var size = Math.min(100, Math.max(1, parseIntParam(request, "size", 20)));
+        var openid = request.queryParam("openid").orElse(null);
+        return aiContentUsageService.logs(page, size, openid)
+            .flatMap(payload -> jsonOk(payload))
+            .onErrorResume(e -> {
+                log.warn("Console aiContentLogs failed: {}", e.getMessage(), e);
+                return ServerResponse.status(500)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("error", "AI 生成明细查询失败"));
             });
     }
 

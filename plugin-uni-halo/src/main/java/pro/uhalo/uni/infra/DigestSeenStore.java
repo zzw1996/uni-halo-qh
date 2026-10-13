@@ -50,9 +50,23 @@ public class DigestSeenStore {
 
     /** 最近 N 天已发布文章的去重键集合；读取失败按空集合处理（本轮退化为单轮去重，不阻断生成） */
     public Mono<Set<String>> recentKeys() {
+        return recentKeysFor("");
+    }
+
+    /**
+     * 只取「来源名字以某前缀开头」的已发记录（独立命名空间）。
+     *
+     * <p>公众号文章与站点日报各有各的取舍：公众号用的是 {@code mp-} 前缀，
+     * 与日报互不干扰——否则日报（通常先跑）会把当天的好文章全「吃掉」，
+     * 公众号只剩边角料。</p>
+     */
+    public Mono<Set<String>> recentKeysFor(String digestNamePrefix) {
         var listOptions = new ListOptions();
         listOptions.setFieldSelector(FieldSelector.of(in("seenDate", lastDays(REMEMBER_DAYS))));
+        var prefix = digestNamePrefix == null ? "" : digestNamePrefix;
         return client.listAll(DigestSeenArticle.class, listOptions, null)
+            .filter(record -> !StringUtils.hasText(prefix)
+                || (record.getDigestName() != null && record.getDigestName().startsWith(prefix)))
             .map(DigestSeenArticle::getDedupKey)
             .filter(StringUtils::hasText)
             .collect(Collectors.toSet())

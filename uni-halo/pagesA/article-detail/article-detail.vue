@@ -283,37 +283,6 @@
 					<view v-show="!uniHaloPluginAvailable && !doubanIsOpen" class="vote-tip" @click="doubanIsOpen = !doubanIsOpen">提示区域已收起，点击显示</view>
 				</view>
 
-				<!-- 投票 -->
-				<view v-if="!calcAuditModeEnabled && result._voteIds.length !== 0" class="vote-wrap copyright-wrap bg-white mt-24 pa-24 round-4">
-					<view class="copyright-title text-weight-b flex items-center justify-between">
-						<text>相关投票</text>
-						<text class="vote-opra" @click="voteIsOpen = !voteIsOpen">
-							{{ voteIsOpen ? '收起' : '展开' }}
-						</text>
-					</view>
-					<template v-if="reloadVote">
-						<view v-show="voteIsOpen" class="flex flex-col uh-gap-8 uh-mt-8">
-							<PluginUnavailable
-								v-if="!uniHaloPluginAvailable"
-								:pluginId="uniHaloPluginId"
-								:error-text="uniHaloPluginAvailableError"
-								:useDecoration="false"
-								:customStyle="{
-									width: '100%',
-									borderRadius: '16rpx'
-								}"
-							/>
-							<template v-else>
-								<ArticleVote v-for="(voteId, voteIdIndex) in result._voteIds" :key="voteId" :voteId="voteId" :article="result" :index="voteIdIndex"></ArticleVote>
-							</template>
-						</view>
-						<view v-show="uniHaloPluginAvailable && !voteIsOpen" class="vote-tip" @click="voteIsOpen = !voteIsOpen">
-							投票已收起，点击展开 {{ result._voteIds.length }} 个投票项
-						</view>
-						<view v-show="!uniHaloPluginAvailable && !voteIsOpen" class="vote-tip" @click="voteIsOpen = !voteIsOpen">提示区域已收起，点击显示</view>
-					</template>
-				</view>
-
 				<!-- 版权声明 -->
 				<view v-if="postDetailConfig && postDetailConfig.copyrightEnabled" class="copyright-wrap bg-white mt-24 pa-24 round-4">
 					<view class="copyright-title text-weight-b">版权声明</view>
@@ -509,15 +478,14 @@ import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 import tmActionSheet from '@/tm-vuetify/components/tm-actionSheet/tm-actionSheet.vue';
 import PointsToast from '@/components/points-toast/points-toast.vue';
-import ArticleVote from '@/components/article-vote/article-vote.vue';
 import ArticleDouban from '@/components/article-douban/article-douban.vue';
 import contentReactionBar from '@/components/content-reaction-bar/content-reaction-bar.vue';
  
 import barrage from '@/components/barrage/barrage.vue';
 import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
-import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, isQuotaFull } from '@/utils/categorySubscription.js';
+import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, isQuotaFull, quotaText } from '@/utils/categorySubscription.js';
 import { getCommentAuthorInfo } from '@/utils/comment.js';
-import { isWxLoginRequired } from '@/utils/wxLogin.js';
+import { isWxLoginRequired, tryAutoWxLogin } from '@/utils/wxLogin.js';
 import { upvote } from '@/utils/upvote.js';
 import { recordUserActivity, removeUserActivity, syncArticleUpvoteStatus, USER_ACTIVITY_TYPES } from '@/utils/userActivity.js';
 import { getPointsConfig, isPointsEnabled, tryEarnPointsByAction, checkPointsEarnStatus, POINTS_ACTIONS, fetchExchangeBalance, exchangePointsItem, normalizePointsApiError } from '@/utils/points.js';
@@ -526,7 +494,6 @@ import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName } from 
 import HaloTokenConfig from '@/config/uhalo.config';
 import RestrictReadSkeleton from '@/components/restrict-read-skeleton/restrict-read-skeleton.vue';
 import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
-import PluginUnavailable from '@/components/plugin-unavailable/plugin-unavailable.vue';
 
 export default {
 	mixins: [pluginAvailableMixin],
@@ -547,9 +514,7 @@ export default {
 		wxLoginDialog,
 		tmActionSheet,
 		PointsToast,
-		ArticleVote,
 		contentReactionBar,
-		PluginUnavailable,
 		ArticleDouban
 	},
 	data() {
@@ -621,8 +586,6 @@ export default {
 
 			commentListScrollTop: 0,
 
-			voteIsOpen: true,
-			reloadVote: false,
 			doubanIsOpen: true,
 
 			appAuthorize: {
@@ -773,7 +736,7 @@ export default {
 			if (!state || !state.loggedIn) {
 				return '';
 			}
-			return `已订阅 ${(state.subscribed || []).length}/${subscriptionLimit(state.limits)} 个分类`;
+			return `已订阅 ${(state.subscribed || []).length}/${quotaText(state.limits)} 个分类`;
 		},
 		/** 解锁面板选项（与发现页同一组：积分解锁 / 开通会员） */
 		lockUnlockActions() {
@@ -820,19 +783,9 @@ export default {
 		this.queryParams.name = decodeURIComponent(name);
 		this.fnPrefetchInviteCode();
 		this.fnSetPageTitle('文章加载中...');
-		// 文章加载优先，投票插件检查不阻塞
-		this.setPluginId(this.NeedPluginIds.PluginVote);
-		this.setPluginError('阿偶，检测到当前插件没有安装或者启用，无法使用投票功能，请联系管理员');
-		this.checkPluginAvailable();
 		this.fnGetData();
 	},
 	onShow() {
-		if (this.reloadVote) {
-			this.reloadVote = false;
-			setTimeout(() => {
-				this.reloadVote = true;
-			}, 100);
-		}
 		// 从积分充值页获取阅读券后返回：重新拉取锁定态，
 		// 否则卡片仍显示旧的「0 张」，用户以为没到账。只复查一次。
 		if (this._needRecheckLock && this.loading === 'locked') {
@@ -1017,7 +970,6 @@ export default {
 				.then((res) => {
 					console.log('详情', res);
 					const tempResult = res;
-					tempResult._voteIds = this.extractVoteBlockIds(res.content?.raw || res.content?.content || '');
 					tempResult._doubanUrls = this.extractDoubanBlockUrls(res.content?.raw || res.content?.content || '');
 
 					const openid = uni.getStorageSync('openid');
@@ -1028,7 +980,6 @@ export default {
 					this.result = tempResult;
 					this.fnSetPageTitle('文章详情');
 					this.loading = 'success';
-					this.reloadVote = true;
 					this.fnSyncUpvoteStatus();
 					this.fnHandleSetFlotButtonItems(this.haloConfigs);
 					this.handleQueryCommentListScrollTop();
@@ -2024,26 +1975,6 @@ export default {
 			});
 		},
 
-		/**
-		 * 从HTML字符串中提取所有vote-block的id
-		 * @param {string} html - 包含vote-block的HTML字符串
-		 * @returns {string[]} 提取到的id数组
-		 */
-		extractVoteBlockIds(html) {
-			// 正则表达式匹配<vote-block id="xxx">格式
-			// 捕获组提取id值
-			const regex = /<vote-block\s+id="(vote-\w+)"\s*\/?>/g;
-			const ids = [];
-			let match;
-
-			// 循环匹配所有符合条件的id
-			while ((match = regex.exec(html)) !== null) {
-				// 第一个捕获组是id值
-				ids.push(match[1]);
-			}
-
-			return ids;
-		},
 		extractDoubanBlockUrls(html) {
 			// 匹配<douban src="xxx">格式，仅关注标签和src属性，不限制域名
 			const regex = /<douban\s+src="([^"]+)"\s*\/?>/g;

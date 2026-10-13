@@ -396,3 +396,34 @@
 2. 父传子的信号不能用 `uni.$emit`（陈旧监听器，第十六轮）；
 3. 钩子改名后必须挪进 `methods`，否则不是实例方法（本轮）；
 4. 补 `props/watch` 时要先检查同名块，否则后写的覆盖先写的（第十六轮）。
+
+## 附：后台改了配置但小程序没变（2026-10-08 实测排查）
+
+两个原因叠在一起，各自独立：
+
+**① 客户端只在冷启动拉配置**：`App.vue onLaunch` 调一次 `config/fetchConfigs`，之后不再拉
+（下拉首页、切前后台都不会）。所以站长在后台改完开关，小程序端要**杀掉进程重进**才生效——
+看起来就像「配置没保存」。
+
+现在的行为：`utils/configRefresh.js` 的 `refreshAppConfigs()` 接在
+**回到前台（3 分钟节流）** 与 **首页下拉刷新** 上，改完切回来/下拉即可对齐，不用重启。
+冷启动仍走 `force: true` 强制拉一次。
+
+**② 开关可能没保存**：`发现/瞬间/榜单/图库` 是四个独立开关，只有**点过保存**的那次才落库。
+自查服务端实际下发的是什么（匿名可读，直接 curl 即可）：
+
+```bash
+curl -s "https://<站点域名>/apis/api.uni.uhalo.pro/v1alpha1/plugins/plugin-uni-halo/getConfigs/tabbarConfig"   | python3 -c "import sys,json;d=json.load(sys.stdin);print('开关', {k:d[k] for k in ['showCategory','showMoments','showRank','showGallery','showStore']});print('下发项', [i['key'] for i in d['items']])"
+```
+
+服务端也会在**下发项发生变化**时打一条日志（只在变化时打，不刷屏）：
+
+```
+[UniHalo][TabBar] 下发的底栏项：首页 / 发现 / 榜单 / 图库 / 我的（开关：发现=true 瞬间=false 榜单=true 图库=true 小店=false）
+```
+
+有这条日志就能立刻分清是「服务端没下发」还是「客户端缓存没刷新」。
+
+**③ 3~5 项的口径别忘了**：可选项不足时服务端会按「发现 → 瞬间 → 榜单 → 图库 → 小店」**补齐**
+（只影响下发结果，不改站长保存的开关），超过 5 项按相反顺序裁掉；首页与「我的」是固定项。
+所以想只留 1 项可选（例如只开图库）是做不到的——会被补上「发现」。

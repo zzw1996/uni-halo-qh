@@ -132,14 +132,32 @@ public class PushSubscriptionService {
             mask(openid), kind));
     }
 
-    /** 额度是否可用（总开关打开 + 该模板额度 > 0） */
+    /**
+     * 额度是否可用（用户总开关打开 + 该模板额度 > 0）。
+     *
+     * <p>用于<b>自动推送</b>（定时简报、新文章提醒）：用户关掉了推送就不要再自动打扰他。</p>
+     */
     public static boolean hasQuota(PushSubscription subscription, String kind) {
         if (subscription == null || Boolean.FALSE.equals(subscription.getEnabled())) {
             return false;
         }
+        return quotaOf(subscription, kind) > 0;
+    }
+
+    /**
+     * 该模板剩余额度（不看用户总开关）。
+     *
+     * <p>为什么要分开：总开关管的是<b>自动推送</b>，而用户在页面里点「立即推送」是一次明确的手动
+     * 请求——只看有没有额度。早前手动推送也走 {@link #hasQuota}，于是没打开「每天定时推送」的用户
+     * 会看到「下面明明写着还有 3 条额度，点推送却说额度不足」这种自相矛盾的提示。</p>
+     */
+    public static int quotaOf(PushSubscription subscription, String kind) {
+        if (subscription == null) {
+            return 0;
+        }
         var quota = PushConfigHelper.KIND_AI_DIGEST.equals(kind)
             ? subscription.getAiDigestQuota() : subscription.getNewPostQuota();
-        return orZero(quota) > 0;
+        return orZero(quota);
     }
 
     private Mono<PushSubscription> mutate(String openid,

@@ -31,7 +31,11 @@ public enum DigestAiTask {
     /** 旧文章归类：把插件发布且没有分类的文章补上主题（人工点击触发） */
     CLASSIFY("classify", "旧文归类"),
     /** 付费「AI 定制内容」的每日简报导语与推荐理由 */
-    CONTENT("content", "付费简报");
+    CONTENT("content", "付费简报"),
+    /** 公众号文章的标题 / 摘要（引言）/ 导语（单次调用产出三件套，可单独绑一条强通道） */
+    MP("mp", "公众号稿"),
+    /** 今日头条号稿件的标题候选 / 正文 / 标签（管理页按关键词直接成稿） */
+    TOUTIAO("toutiao", "头条稿");
 
     private final String key;
     private final String label;

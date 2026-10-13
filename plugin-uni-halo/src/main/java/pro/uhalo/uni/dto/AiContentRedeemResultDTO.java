@@ -26,6 +26,12 @@ public class AiContentRedeemResultDTO {
 
     private boolean permanent;
 
+    /** 本次兑换获得的生成次数 */
+    private int creditsAdded;
+
+    /** 兑换后剩余的生成次数 */
+    private int remainingGenerations;
+
     /** 给前端 toast 的提示语 */
     private String message;
 }

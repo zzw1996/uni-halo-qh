@@ -236,6 +236,14 @@ public class ConfigEndpoint implements CustomEndpoint {
                             + "Served by the backend so it works even when the console bundle is cached.")
                         .tag(ApiTag);
                 })
+            .GET(Constants.END_POINT_API_BASE_PATH + "/mp-admin", this::getMpAdmin,
+                builder -> {
+                    builder.operationId("MpAdminPage")
+                        .description("WeChat Official Account publishing page (HTML shell, needs "
+                            + "personal token). Served by the backend so it works even when the "
+                            + "console bundle is cached.")
+                        .tag(ApiTag);
+                })
             .build();
     }
 
@@ -320,6 +328,22 @@ public class ConfigEndpoint implements CustomEndpoint {
             .onErrorResume(ex -> {
                 log.warn("refund-admin page failed: {}", ex.getMessage());
                 return badRequest("退款清单页加载失败");
+            });
+    }
+
+    Mono<ServerResponse> getMpAdmin(ServerRequest request) {
+        return Mono.fromCallable(() -> {
+                var resource = new org.springframework.core.io.ClassPathResource("static/mp-admin.html");
+                try (var in = resource.getInputStream()) {
+                    return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            })
+            .flatMap(html -> ServerResponse.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .bodyValue(html))
+            .onErrorResume(ex -> {
+                log.warn("mp-admin page failed: {}", ex.getMessage());
+                return badRequest("公众号管理页加载失败");
             });
     }
 

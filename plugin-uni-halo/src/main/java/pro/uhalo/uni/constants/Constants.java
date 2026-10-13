@@ -76,6 +76,17 @@ public class Constants {
     public static final String HALO_CONSOLE_POST_API_PREFIX =
         "/apis/api.console.halo.run/v1alpha1/posts";
 
+    /**
+     * Halo <b>核心组</b>的文章接口前缀（按 metadata.name 读写单篇文章，含草稿）。
+     *
+     * <p>三个前缀各司其职，别混用：{@link #HALO_POST_API_PREFIX} 是前台公开读接口
+     * （未发布文章一律 404）；{@link #HALO_CONSOLE_POST_API_PREFIX} 是后台写接口
+     * （建稿/发布/回收/写正文）；这里是后台读接口——{@code content.halo.run/posts} 的
+     * get 权限（role-template-view-posts）能看到自己的草稿，投稿编辑正是靠它把整篇文章读回来。</p>
+     */
+    public static final String HALO_CORE_POST_API_PREFIX =
+        "/apis/content.halo.run/v1alpha1/posts";
+
     // 附件上传不再走 HTTP：改用 Halo 暴露给插件的 AttachmentService bean
     // （见 DigestAssetUploaderImpl）。自建 HTTP 请求需要个人令牌、受中间层插件影响，
     // 而且拿不到 ExternalLinkProcessor，会把相对 permalink 当成「没有封面」。

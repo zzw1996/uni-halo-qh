@@ -235,7 +235,11 @@
 			},
 			normalizeLevel(res) {
 				const data = res?.data || res || {};
-				const titles = (Array.isArray(data.unlockedTitles) ? data.unlockedTitles : []).map(t => {
+				// 投票玩法已整体下线：后台配置里若还留着投票类称号（如「民意代表」），
+				// 称号墙不能再把它挂出来——否则等于在小程序里宣称提供投票服务。
+				const titles = (Array.isArray(data.unlockedTitles) ? data.unlockedTitles : [])
+					.filter(t => t?.type !== 'vote')
+					.map(t => {
 					const target = Math.max(1, Number(t.target || 1));
 					const progress = Math.min(target, Number(t.progress || 0));
 					return {

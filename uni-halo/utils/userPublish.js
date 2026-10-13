@@ -49,6 +49,26 @@ export async function submitUserArticle(httpApi, payload) {
 	return submit(() => httpApi.publishUserArticle(payload), '投稿失败，请稍后重试');
 }
 
+/** 读一篇投稿的详情（编辑回填）：data.content 是 Markdown 原文；返回 { ok, data?, reason? } */
+export async function fetchUserArticleDetail(httpApi, name) {
+	return submit(() => httpApi.getUserArticleDetail(name), '读取文章失败，请稍后重试');
+}
+
+/** 保存修改；返回 { ok, data?, reason? }（服务端不再扣积分） */
+export async function saveUserArticle(httpApi, name, payload) {
+	return submit(() => httpApi.updateUserArticle(name, payload), '保存失败，请稍后重试');
+}
+
+/** 立即发布 / 重新发布；返回 { ok, data?, reason? } */
+export async function publishUserArticleNow(httpApi, name) {
+	return submit(() => httpApi.publishUserArticleNow(name), '发布失败，请稍后重试');
+}
+
+/** 撤回发布（文章回到草稿态）；返回 { ok, data?, reason? } */
+export async function withdrawUserArticle(httpApi, name) {
+	return submit(() => httpApi.withdrawUserArticle(name), '撤回失败，请稍后重试');
+}
+
 /** 提交瞬间；返回 { ok, data?, reason? } */
 export async function submitUserMoment(httpApi, payload) {
 	return submit(() => httpApi.publishUserMoment(payload), '发布失败，请稍后重试');
@@ -90,6 +110,10 @@ export default {
 	buildThresholdHint,
 	fetchUserPublishStatus,
 	submitUserArticle,
+	fetchUserArticleDetail,
+	saveUserArticle,
+	publishUserArticleNow,
+	withdrawUserArticle,
 	submitUserMoment,
 	uploadUserPublishImage
 };

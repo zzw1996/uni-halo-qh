@@ -112,10 +112,56 @@ class AiContentPromptHelperTest {
 
     @Test
     void describeShouldJoinConfiguredDimensions() {
-        assertThat(AiContentPromptHelper.describe(List.of("engineering"), List.of("rust-lang.org"),
-                List.of("rust")))
-            .isEqualTo("关注主题：engineering；关注来源：rust-lang.org；关注关键词：rust");
-        assertThat(AiContentPromptHelper.describe(List.of(), List.of(), List.of())).isEmpty();
+        // 来源维度已取消：简报从实时抓取的源里挑内容，用户不再指定来源
+        assertThat(AiContentPromptHelper.describe(List.of("engineering"), List.of("rust")))
+            .isEqualTo("关注主题分类：engineering；关注关键词：rust");
+        assertThat(AiContentPromptHelper.describe(List.of("engineering"), List.of("rust"),
+                List.of("大模型落地")))
+            .contains("用户定制主题").contains("大模型落地");
+        assertThat(AiContentPromptHelper.describe(List.of(), List.of())).isEmpty();
         assertThat(AiContentPromptHelper.describe(null, null, null)).isEmpty();
+    }
+
+    /** 实时素材的挑选提示词：编号 + 分类清单 + 中文改写要求，缺一项 AI 就会跑偏 */
+    @Test
+    void pickPromptShouldCarryIndexesAndCategoryKeys() {
+        var candidates = List.of(
+            AiContentItemDTO.builder().title("Gemini 4 ships").sourceName("TechCrunch")
+                .publishedAt("10-08 09:30").summary("Google 发布 Gemini 4").build(),
+            AiContentItemDTO.builder().title("Rust 1.95").sourceName("Rust Blog")
+                .publishedAt("10-08 08:00").summary("新版本发布").build());
+
+        var prompt = AiContentPromptHelper.buildPickPrompt(candidates, "关注关键词：rust", 5, 200,
+            DigestCategoryCatalog.defaultCatalog());
+
+        assertThat(prompt).contains("#0").contains("#1");
+        assertThat(prompt).contains("中文标题").contains("category");
+        // 分类清单来自站长的日报分类：AI 只能从里面挑，不能自己造
+        assertThat(prompt).contains(DigestCategoryCatalog.defaultCatalog().keys().get(0));
+        assertThat(prompt).contains("关注关键词：rust");
+    }
+
+    /** 挑选结果解析：越界的 index 必须被丢掉（否则会把不存在的素材塞进简报） */
+    @Test
+    void parsePickedShouldDropOutOfRangeIndexes() {
+        var picked = AiContentPromptHelper.parsePicked("""
+            {"intro":"今天这几条","picks":[
+              {"index":1,"title":"中文标题","summary":"摘要","reason":"值得看","category":"ai-ml"},
+              {"index":9,"title":"越界","summary":"","reason":"","category":""}]}
+            """, 2);
+
+        assertThat(picked.intro()).isEqualTo("今天这几条");
+        assertThat(picked.selections()).hasSize(1);
+        assertThat(picked.selections().get(0).index()).isEqualTo(1);
+        assertThat(picked.selections().get(0).titleOrEmpty()).isEqualTo("中文标题");
+        assertThat(picked.selections().get(0).categoryOrEmpty()).isEqualTo("ai-ml");
+    }
+
+    @Test
+    void parsePickedShouldFailSoftOnGarbage() {
+        var picked = AiContentPromptHelper.parsePicked("抱歉，我无法完成", 3);
+
+        assertThat(picked.selections()).isEmpty();
+        assertThat(picked.hasIntro()).isFalse();
     }
 }

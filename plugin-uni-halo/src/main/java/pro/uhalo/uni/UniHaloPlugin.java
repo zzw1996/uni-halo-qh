@@ -7,13 +7,16 @@ import pro.uhalo.uni.scheme.AiContentPreference;
 import pro.uhalo.uni.scheme.ContentUnlock;
 import pro.uhalo.uni.scheme.DigestReport;
 import pro.uhalo.uni.scheme.DigestSeenArticle;
+import pro.uhalo.uni.scheme.AiContentGenerationLog;
 import pro.uhalo.uni.scheme.DigestSubscription;
+import pro.uhalo.uni.scheme.MpIssue;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.PushRecord;
 import pro.uhalo.uni.scheme.PushState;
 import pro.uhalo.uni.scheme.PushSubscription;
 import pro.uhalo.uni.scheme.PayOrder;
 import pro.uhalo.uni.scheme.QRCodeInfo;
+import pro.uhalo.uni.scheme.ToutiaoArticle;
 import pro.uhalo.uni.scheme.UserActivity;
 import pro.uhalo.uni.scheme.UserAppSettings;
 import pro.uhalo.uni.scheme.UserPoints;
@@ -51,7 +54,8 @@ public class UniHaloPlugin extends BasePlugin {
             AiContentPreference.class, AiContentIssue.class,
             UserAppSettings.class,
             PushSubscription.class, PushRecord.class, PushState.class,
-            DigestSeenArticle.class);
+            DigestSeenArticle.class, AiContentGenerationLog.class, MpIssue.class,
+            ToutiaoArticle.class);
 
     private final SchemeManager schemeManager;
 
@@ -232,19 +236,47 @@ public class UniHaloPlugin extends BasePlugin {
         });
 
         schemeManager.register(PushRecord.class, indexSpecs -> {
-            // 推送记录：按用户 + 类型查询（后台看失败原因），幂等靠资源名
+            // 推送记录：按用户 + 类型查询（后台看失败原因），幂等靠资源名。
+            // 索引名不叫 kind：那是 Halo 自己的扩展类型字段（见 PushRecord/MpIssue 里的说明）
             indexSpecs.add(new IndexSpec()
                 .setName("wxOpenid")
                 .setIndexFunc(simpleAttribute(PushRecord.class, PushRecord::getWxOpenid)));
             indexSpecs.add(new IndexSpec()
-                .setName("kind")
-                .setIndexFunc(simpleAttribute(PushRecord.class, PushRecord::getKind)));
+                .setName("sourceKind")
+                .setIndexFunc(simpleAttribute(PushRecord.class, PushRecord::getSourceKind)));
             log.info("【UniHalo】PushRecord scheme 注册成功");
+        });
+
+        schemeManager.register(AiContentGenerationLog.class, indexSpecs -> {
+            // 计数键 openid:yyyy-MM-dd：每日上限判定与后台筛选都走它
+            indexSpecs.add(new IndexSpec()
+                .setName("dayKey")
+                .setIndexFunc(simpleAttribute(AiContentGenerationLog.class,
+                    AiContentGenerationLog::getDayKey)));
+            log.info("【UniHalo】AiContentGenerationLog scheme 注册成功");
         });
 
         schemeManager.register(PushState.class, indexSpecs -> {
             // 单例状态（水位 + 当日计数）：按固定资源名读取，不需要索引
             log.info("【UniHalo】PushState scheme 注册成功");
+        });
+
+        schemeManager.register(MpIssue.class, indexSpecs -> {
+            // date 是「一天一方向一条」的幂等键；sourceKind 用于列表页区分生成稿与历史补推稿。
+            // 索引名刻意不叫 kind：那个名字留给 Halo 自己的扩展类型（见 MpIssue 里的说明）
+            indexSpecs.add(new IndexSpec()
+                .setName("date")
+                .setIndexFunc(simpleAttribute(MpIssue.class, MpIssue::getDate)));
+            indexSpecs.add(new IndexSpec()
+                .setName("sourceKind")
+                .setIndexFunc(simpleAttribute(MpIssue.class, MpIssue::getSourceKind)));
+            log.info("【UniHalo】MpIssue scheme 注册成功");
+        });
+
+        schemeManager.register(ToutiaoArticle.class, indexSpecs -> {
+            // 今日头条号记录：每次生成一条、按创建时间倒序读取（内存排序），
+            // 没有按字段查询的场景，因此不需要索引
+            log.info("【UniHalo】ToutiaoArticle scheme 注册成功");
         });
 
         log.info("【UniHalo】插件启动成功！");

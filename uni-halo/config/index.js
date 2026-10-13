@@ -13,12 +13,10 @@ export const DefaultAppConfigs = {
 	appConfig: {},
 	/**
 	 * 第三方 Halo 插件页面的开关（纯前端，后台已无对应配置组）。
-	 * vote   = 投票中心入口
 	 * links  = 友情链接入口
 	 * douban = 文章内豆瓣卡片位置
 	 */
 	pluginIntegrations: {
-		vote: false,
 		links: false,
 		douban: {
 			position: 'bottom'

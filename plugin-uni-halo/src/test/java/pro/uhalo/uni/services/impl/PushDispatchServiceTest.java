@@ -396,8 +396,10 @@ class PushDispatchServiceTest {
             any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any()))
             .thenReturn(Mono.just(WxSubscribeMessageService.SendResult.success()));
 
-        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue, preference("大模型落地")))
-            .expectNext(1)
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue,
+                preference("大模型落地"), false))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.SENT))
             .verifyComplete();
 
         var captor = org.mockito.ArgumentCaptor.forClass(WxSubscribeMessageService.Message.class);
@@ -414,15 +416,57 @@ class PushDispatchServiceTest {
         stubSubscriptionLoad(quota(OPENID, 1, 0));
 
         StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
-                preference("主题")))
-            .expectNext(0)
+                preference("主题"), false))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.NO_QUOTA))
             .verifyComplete();
 
         verify(messageService, never()).send(anyString(), anyString(),
             any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any());
     }
 
-    /** 今天已经推过 → 不重复推（每人每天一条） */
+    /**
+     * 手动推送只看额度：用户没打开「每天定时推送」（订阅总开关关着）也照样能推。
+     *
+     * <p>这是线上真实踩到的坑：页面下方明明写着「剩余 3 条」，点「立即推送」却提示
+     * 「额度不足」——因为手动推送错误地复用了自动推送的判定（额度 + 用户总开关）。</p>
+     */
+    @Test
+    void manualPushShouldIgnoreUserSwitch() {
+        var switchedOff = quota(OPENID, 0, 3);
+        switchedOff.setEnabled(false);
+        stubSubscriptionLoad(switchedOff);
+        stubState(state());
+        stubNoRecord();
+
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
+                preference("主题"), true))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.SENT))
+            .verifyComplete();
+
+        verify(messageService).send(anyString(), anyString(),
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any());
+    }
+
+    /** 自动推送（定时线）仍然尊重用户总开关：关掉了就不打扰 */
+    @Test
+    void scheduledPushShouldRespectUserSwitch() {
+        var switchedOff = quota(OPENID, 0, 3);
+        switchedOff.setEnabled(false);
+        stubSubscriptionLoad(switchedOff);
+
+        StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
+                preference("主题"), false))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.DISABLED))
+            .verifyComplete();
+
+        verify(messageService, never()).send(anyString(), anyString(),
+            any(WxSubscribeMessageService.Message.class), anyString(), anyString(), any());
+    }
+
+    /** 今天已经推过 → 不重复推（每人每天一条），并且要如实说明是「已推过」而不是「没额度」 */
     @Test
     void shouldSkipWhenAlreadyPushedToday() {
         stubSubscriptionLoad(quota(OPENID, 0, 2));
@@ -432,8 +476,9 @@ class PushDispatchServiceTest {
         when(client.fetch(eq(PushRecord.class), anyString())).thenReturn(Mono.just(record));
 
         StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 3),
-                preference("主题")))
-            .expectNext(0)
+                preference("主题"), false))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.ALREADY_PUSHED))
             .verifyComplete();
 
         verify(messageService, never()).send(anyString(), anyString(),
@@ -451,8 +496,9 @@ class PushDispatchServiceTest {
             .thenReturn(Mono.just(WxSubscribeMessageService.SendResult.success()));
 
         StepVerifier.create(service.pushAiContentReady(OPENID, config(), issue(TODAY, 2),
-                preference(null)))
-            .expectNext(1)
+                preference(null), false))
+            .assertNext(attempt -> assertThat(attempt.outcome())
+                .isEqualTo(PushDispatchService.PushOutcome.SENT))
             .verifyComplete();
 
         var captor = org.mockito.ArgumentCaptor.forClass(WxSubscribeMessageService.Message.class);

@@ -38,11 +38,19 @@ public class AiContentItemDTO {
 
     private String summary;
 
-    /** 要跳转的文章（Halo metadata.name）；早期数据可能为空，那时只展示摘要 */
+    /** 要跳转的文章（Halo metadata.name）；实时素材与早期数据为空，那时只展示摘要 */
     private String postName;
 
     /** 原文外链 */
     private String link;
+
+    /**
+     * 原文发布时间（{@code MM-dd HH:mm}，东八区）。
+     *
+     * <p>实时素材池的条目标注「这条有多新」——简报的卖点就是最新，
+     * 不标时间用户没法判断它是不是刚从源里抓到的。</p>
+     */
+    private String publishedAt;
 
     /** 命中用户偏好的原因（「分类匹配 · AI / ML · 关键词 · llm」） */
     private String matchedReason;

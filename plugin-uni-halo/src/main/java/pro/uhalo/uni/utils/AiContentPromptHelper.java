@@ -3,7 +3,6 @@ package pro.uhalo.uni.utils;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.util.StringUtils;
 import pro.uhalo.uni.dto.AiContentItemDTO;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,6 +24,9 @@ public final class AiContentPromptHelper {
 
     /** 导语字数下限（避免模型只回一句「今天有几篇好文」） */
     private static final int MIN_INTRO_WORDS = 30;
+
+    /** 结尾字数下限（太短的「综上所述」不如不写） */
+    private static final int MIN_OUTRO_WORDS = 40;
 
     private AiContentPromptHelper() {
     }
@@ -124,20 +126,20 @@ public final class AiContentPromptHelper {
     }
 
     /** 把候选列表压成提示词里的「关注方向」描述（不暴露用户原始输入之外的信息） */
-    public static String describe(List<String> categories, List<String> sources,
-        List<String> keywords) {
-        return describe(categories, sources, keywords, List.of());
+    public static String describe(List<String> categories, List<String> keywords) {
+        return describe(categories, keywords, List.of());
     }
 
-    /** 同上，带用户手工输入的定制主题（主题检索命中时，AI 要围绕它组织导语与理由） */
-    public static String describe(List<String> categories, List<String> sources,
-        List<String> keywords, List<String> customTopics) {
+    /**
+     * 同上，带用户手工输入的定制主题（主题检索命中时，AI 要围绕它组织导语与理由）。
+     *
+     * <p>「关注来源」这个维度已取消：内容改成从实时抓取的源里挑，来源不再由用户指定。</p>
+     */
+    public static String describe(List<String> categories, List<String> keywords,
+        List<String> customTopics) {
         var parts = new ArrayList<String>();
         if (categories != null && !categories.isEmpty()) {
-            parts.add("关注主题：" + String.join("、", categories));
-        }
-        if (sources != null && !sources.isEmpty()) {
-            parts.add("关注来源：" + String.join("、", sources));
+            parts.add("关注主题分类：" + String.join("、", categories));
         }
         if (keywords != null && !keywords.isEmpty()) {
             parts.add("关注关键词：" + String.join("、", keywords));
@@ -146,6 +148,177 @@ public final class AiContentPromptHelper {
             parts.add("用户定制主题（本次简报要优先围绕它组织）：" + String.join("、", customTopics));
         }
         return String.join("；", parts);
+    }
+
+    // ── 实时素材的挑选（简报的主路径） ──
+
+    /** 送进提示词的素材条数上限之外的兜底：标题也截一下，避免个别长标题把提示词撑大 */
+    private static final int TITLE_LIMIT = 120;
+
+    /**
+     * 组装「从实时素材里挑今天这份」的提示词。
+     *
+     * <p>与 {@link #buildIntroPrompt} 的本质区别：那边的候选已经筛好，AI 只负责组织语言；
+     * 这里把「挑哪些」也交给 AI——素材是从源里现抓的（可能上百条），纯字符串匹配挑不出
+     * 「同一件事的多条报道哪条最值得看」，而这正是付费简报的价值。</p>
+     *
+     * <p>仍然只调用一次 AI：挑选、中文标题、摘要、推荐理由、导语都由这一次返回，
+     * 因此每位用户每天的成本与旧实现完全一致。</p>
+     */
+    public static String buildPickPrompt(List<AiContentItemDTO> candidates, String preferences,
+        int maxItems, int introWords, DigestCategoryCatalog catalog) {
+        return buildPickPrompt(candidates, preferences, maxItems, introWords, catalog, 0, false);
+    }
+
+    /**
+     * 同上，带「AI 结尾」字数与「素材来自关键词检索」标记。
+     *
+     * <p>{@code outroWords > 0} 时要求模型再写一段结尾（小结/看法）：它是这一份里唯一
+     * 「由 AI 自己说」的内容，按防侵权口径必须是原创观点，不能复述摘要。</p>
+     *
+     * <p>{@code searched} 为真时说明素材是围绕读者输入的关键词联网检索来的，并明确
+     * 「只挑与关键词直接相关的，明显无关的不要，一条都不相关就返回空」——
+     * 否则模型会在检索噪声里凑数，用户就会看到「跟你输入的关键词没关系」的内容。</p>
+     */
+    public static String buildPickPrompt(List<AiContentItemDTO> candidates, String preferences,
+        int maxItems, int introWords, DigestCategoryCatalog catalog, int outroWords,
+        boolean searched) {
+        var builder = new StringBuilder();
+        for (var i = 0; i < candidates.size(); i++) {
+            var item = candidates.get(i);
+            builder.append('#').append(i).append(' ')
+                .append(DigestAiHelper.truncateForPrompt(item.getTitle(), TITLE_LIMIT));
+            if (StringUtils.hasText(item.getPublishedAt())) {
+                builder.append(" 〔").append(item.getPublishedAt()).append('〕');
+            }
+            if (StringUtils.hasText(item.getSourceName())) {
+                builder.append("（").append(item.getSourceName()).append('）');
+            }
+            var summary = DigestAiHelper.truncateForPrompt(item.getSummary(), DESCRIPTION_LIMIT);
+            if (StringUtils.hasText(summary)) {
+                builder.append('\n').append(summary);
+            }
+            builder.append('\n');
+        }
+        var limit = Math.max(1, maxItems);
+        var words = Math.max(MIN_INTRO_WORDS, introWords);
+        var categoryKeys = catalog == null ? List.<String>of() : catalog.keys();
+
+        return """
+            你是一位替固定读者挑内容的技术编辑。下面是刚刚从各个源抓到的技术资讯（按时间倒序），
+            每条带编号、标题、发布时间与摘要。请挑出最值得这位读者看的至多 \
+            """ + limit + """
+            条，并给出中文标题、摘要与推荐理由。
+
+            ## 这位读者关注的方向
+            """ + (StringUtils.hasText(preferences) ? preferences : "（没有具体方向，替他挑今天最重要的几条）") + """
+
+            ## 挑选与写作要求
+            - 优先「新」与「重要」：同一个事件的重复报道只保留最值得看的一条，不要凑数，
+              实在没有值得看的可以少给（宁少勿多）
+            - title：中文标题，简短准确（原标题是外语时翻译成中文，不要保留原文）
+            - summary：一句中文摘要（不超过 60 字），只依据上面给的摘要与标题，不要编造事实
+            - reason：一句推荐理由（不超过 40 字），说清他为什么值得看，不要复述标题
+            - index 必须是上面出现过的编号，不要新增、不要杜撰条目
+            - 导语不超过 \
+            """ + words + """
+            字，直接讲「今天这几条在讲什么、彼此有什么关系」，不要写「以下是为你精选」这类套话，
+            不要用 Markdown 标题或列表
+
+            ## 素材说明
+            """ + (searched
+                ? "这批素材是围绕读者自己输入的关键词联网检索到的公开报道：只挑与关键词直接相关的，"
+                    + "明显无关（同名的其他人、其他事）一律不要；一条都不相关就返回空列表。"
+                : "这批素材是站点近期抓取的技术资讯，按与读者关注方向的相关性挑选。") + """
+
+            ## 候选（共 """ + candidates.size() + """
+             条）
+            """ + builder + """
+            ## 主题分类
+            给每条挑一个最贴近的分类 key，只能从下面这些里选（都不贴近就留空字符串）：
+            """ + (categoryKeys.isEmpty() ? "（无可用分类，category 一律留空）"
+            : String.join("、", categoryKeys)) + """
+
+            请严格按 JSON 格式返回，不要包含 markdown 代码块或其他文字：
+            {
+              "intro": "一段导语",
+              "outro": "一段结尾（小结/看法）",
+              "picks": [
+                {"index": 0, "title": "中文标题", "summary": "一句中文摘要",
+                 "reason": "一句推荐理由", "category": "分类 key 或空字符串"}
+              ]
+            }
+            """ + outroInstruction(outroWords);
+    }
+
+    /** 结尾那段要求（站长把 outroWords 配成 0 时返回空串：这一份不要结尾） */
+    private static String outroInstruction(int outroWords) {
+        if (outroWords <= 0) {
+            return "";
+        }
+        return "## 结尾（outro）\n"
+            + "再写一段不超过 " + Math.max(MIN_OUTRO_WORDS, outroWords) + " 字的结尾："
+            + "它不是复述上面的条目，而是你作为编辑的判断——这几条连起来说明了什么、"
+            + "读者可以从中记住什么（或接下来值得观察什么）。"
+            + "不要出现「AI」「模型」「生成」这类字样，不要用 Markdown 标题或列表。";
+    }
+
+    /**
+     * 解析挑选结果；全容错——解析不出来就是「没挑到」，调用方退化为字符串匹配。
+     */
+    public static Picked parsePicked(String aiText, int candidateSize) {
+        try {
+            var json = DigestAiHelper.parseJson(aiText);
+            var intro = json.path("intro").asText("");
+            var outro = json.path("outro").asText("");
+            var selections = new ArrayList<Selection>();
+            for (var node : picksOf(json)) {
+                var index = node.path("index").asInt(-1);
+                if (index < 0 || index >= candidateSize) {
+                    // 越界直接忽略：宁可少一条，也不能把不存在的素材塞进简报
+                    continue;
+                }
+                selections.add(new Selection(index, node.path("title").asText(""),
+                    node.path("summary").asText(""), node.path("reason").asText(""),
+                    node.path("category").asText("")));
+            }
+            return new Picked(intro.trim(), outro.trim(), List.copyOf(selections));
+        } catch (Exception ex) {
+            return new Picked("", "", List.of());
+        }
+    }
+
+    /** 挑选结果：导语 + 结尾 + 选中的素材（下标与 AI 改写后的文案） */
+    public record Picked(String intro, String outro, List<Selection> selections) {
+
+        public boolean hasIntro() {
+            return StringUtils.hasText(intro);
+        }
+
+        public String outroOrEmpty() {
+            return outro == null ? "" : outro.trim();
+        }
+    }
+
+    /** 一条被选中的素材：下标 + AI 写的中文标题/摘要/理由/分类 */
+    public record Selection(int index, String title, String summary, String reason,
+                            String category) {
+
+        public String titleOrEmpty() {
+            return title == null ? "" : title.trim();
+        }
+
+        public String summaryOrEmpty() {
+            return summary == null ? "" : summary.trim();
+        }
+
+        public String reasonOrEmpty() {
+            return reason == null ? "" : reason.trim();
+        }
+
+        public String categoryOrEmpty() {
+            return category == null ? "" : category.trim();
+        }
     }
 
     // ── 素材不足时的直接生成 ──

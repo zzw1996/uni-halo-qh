@@ -248,8 +248,8 @@
 		clearWxLoginInfo,
 	} from '@/utils/auth.js';
 	import { getProfileModifyState, performSaveWxProfile } from '@/utils/wxLogin.js';
-	import { shouldPromptHaloBind, shouldShowHaloBindBoundInfo, isHaloBindFeatureEnabled, performUnbindHaloAccount } from '@/utils/haloUser.js';
 	import { fetchUserPublishStatus } from '@/utils/userPublish.js';
+	import { shouldPromptHaloBind, shouldShowHaloBindBoundInfo, isHaloBindFeatureEnabled, performUnbindHaloAccount } from '@/utils/haloUser.js';
 	import { resolvePointsEnabled, performPointsSignIn, fetchPointsOverview, syncPointsAfterLogin, isPointsApiReady, getPointsApiMode, buildWeekSignDisplay, emitPointsUpdated } from '@/utils/points.js';
 	import { applyThemeSkin, clearThemeSkin } from '@/utils/themeSkin.js';
 import { avatarFrameClass } from '@/utils/outfitSkin.js';
@@ -305,6 +305,15 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					navList: [],
 					levelStatus: null,
 					outfitStatus: null,
+					/**
+					 * 「我的投稿」入口是否可见（仅后台选「仅能投稿或投过稿」时需要判定）。
+					 *
+					 * <p>必须声明在 data 里：未声明的实例属性没有响应性，serviceList 会把
+					 * 首次算出的值永久缓存住（首页「写文章」踩过同一个坑）。</p>
+					 */
+					myArticlesEntryVisible: false,
+					/** 是否已经查过一次「我有没有投过稿」，避免每次切回本页都多打一次列表接口 */
+					myArticlesProbed: false,
 				};
 		},
 		computed: {
@@ -320,8 +329,28 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			calcAuditModeEnabled() {
 				return !!this.haloConfigs?.auditConfig?.auditModeEnabled
 			},
-			calcVotePluginEnabled() {
-				return !!this.haloConfigs?.pluginIntegrations?.vote;
+			/**
+			 * 「我的投稿」入口的显示范围，后台「用户投稿 → 「我的」页投稿记录入口」下发：
+			 * always 所有人 / eligible 仅能投稿或投过稿的人 / hidden 都不显示。
+			 * 键可能还没被站长保存过（插件未升级到带该配置项的版本），此时按 eligible 兜底——
+			 * 入口不该因为一个缺失的配置项就暴露给所有访客。
+			 */
+			calcMyArticlesEntryMode() {
+				const mode = this.haloConfigs?.userPublishConfig?.myArticlesEntry;
+				return (mode === 'always' || mode === 'hidden') ? mode : 'eligible';
+			},
+			/**
+			 * 「我的投稿」这一项是否展示。
+			 * eligible 的判定放在服务端（能不能发由总开关/积分门槛/角色策略共同决定），
+			 * 前端只用结论 myArticlesEntryVisible + 「已投过稿」的补判，不另拼一套条件。
+			 * 审核模式一律隐藏：它是给审核员看的门面，不该出现投稿管理入口。
+			 */
+			calcShowMyArticlesEntry() {
+				if (this.calcAuditModeEnabled) return false;
+				const mode = this.calcMyArticlesEntryMode;
+				if (mode === 'hidden') return false;
+				if (mode === 'always') return true;
+				return this.myArticlesEntryVisible;
 			},
 			calcLinksPluginEnabled() {
 				return !!this.haloConfigs?.pluginIntegrations?.links;
@@ -432,11 +461,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					|| this.signInLoading
 					|| this.pointsApiReady !== true;
 			},
-			/** 「投稿文章」入口是否显示：站长开启 + 达标（未达标时不显示，避免点了才被拦） */
-			calcCanPublishArticle() {
-				const status = this.publishStatus;
-				return !!(status && status.enabled && status.visible && status.canPublishArticle);
-			},
 			calcSignInButtonTheme() {
 				if (this.calcSignedToday || this.pointsApiReady !== true) return 'grey';
 				return 'bg-gradient-indigo-accent';
@@ -501,6 +525,19 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					path: '/pagesA/user-activities/user-activities?type=upvote',
 						requireLogin: true
 					});
+			// 投稿记录：发布入口在首页「写文章」，这里放「我投过哪些 / 在哪篇删」
+			// 图标用 icon-file 而不是 icon-edit：后者被 mp-html 的图标字体占了同名类
+			// （\e7a0 被 \eb03 覆盖），渲染出来是空白
+			// 显隐由后台「用户投稿 → 「我的」页投稿记录入口」控制，默认只给能投稿或投过稿的人看
+			if (this.calcShowMyArticlesEntry) {
+				list.push({
+					text: '我的投稿',
+					icon: 'icon-file',
+					color: 'cyan',
+					path: '/pagesA/my-articles/my-articles',
+					requireLogin: true
+				});
+			}
 				// 订单与已解锁文章只在付费内容/权益直购任一开启时才有意义，
 				// 全关的站点不展示这两个入口，避免用户点进去看到空页面
 				if (this.calcShowPayRelated) {
@@ -545,7 +582,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnCheckLoginStatus();
 			this.fnRefreshPointsData();
 			uni.$on('wx_login_status_changed', this.fnOnLoginStatusChanged);
-			uni.$on('points_updated', this.fnOnPointsUpdatedAndPublish);
+			uni.$on('points_updated', this.fnOnPointsUpdated);
 			uni.$on('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onShow() {
@@ -553,16 +590,14 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			this.fnCheckLoginStatus();
 			this.fnProbePayEnabled();
 			this.fnRefreshIdentity();
-			// 投稿入口的显示条件（开关/门槛/角色）都在服务端，进页面取一次最新结论；
-			// 积分变动后也要重取，否则「刚赚够积分但仍看不到入口」
-			this.fnRefreshPublishStatus();
+			this.fnRefreshMyArticlesEntry();
 			if (this.calcPointsEnabled && this.isLoggedIn) {
 				this.fnRefreshPointsOverview({ silent: true });
 			}
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnLoginStatusChanged);
-			uni.$off('points_updated', this.fnOnPointsUpdatedAndPublish);
+			uni.$off('points_updated', this.fnOnPointsUpdated);
 			uni.$off('points_config_ready', this.fnOnPointsConfigReady);
 		},
 		onPullDownRefresh() {
@@ -575,34 +610,9 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				uni.navigateTo({ url: '/pagesA/setting/setting' });
 			},
 
-			/** 积分变动后除了刷新余额，也要重判投稿入口（门槛是按余额算的） */
-			fnOnPointsUpdatedAndPublish(payload) {
-				this.fnOnPointsUpdated(payload);
-				this.fnRefreshPublishStatus();
-			},
-
-			/** 登录态变化：重新判定投稿入口（退出登录后入口应消失） */
+			/** 登录态变化：刷新登录信息与积分状态 */
 			fnOnLoginStatusChanged(info) {
 				this.fnCheckLoginStatus(info);
-				this.fnRefreshPublishStatus();
-			},
-
-			/** 拉取投稿状态；未登录或接口不可用时置空（入口不显示，不打扰用户） */
-			async fnRefreshPublishStatus() {
-				if (!this.isLoggedIn) {
-					const wasNull = this.publishStatus == null;
-					this.publishStatus = null;
-					// 退出登录后入口要消失（navList 不会因 publishStatus 变化自动重建）
-					if (!wasNull) {
-						this.fnGetNavList();
-					}
-					return;
-				}
-				this.publishStatus = await fetchUserPublishStatus(this.$httpApi.v2);
-				// 「投稿文章」入口的显隐挂在 publishStatus 上，而 navList 只在 haloConfigs
-				// 变化时重建（immediate watcher 在页面创建时先跑一遍，那时状态还没回来，
-				// 入口会按「不显示」定格）。状态到达后必须重建一次，否则普通用户永远看不到入口。
-				this.fnGetNavList();
 			},
 
 			fnEnsureLogin() {
@@ -766,6 +776,40 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			},
 
 			/**
+			 * 「我的投稿」入口的显隐判定（只有后台选「仅能投稿或投过稿」时才需要）。
+			 *
+			 * <p>能不能发一律以服务端结论为准（总开关、积分门槛、角色策略都在服务端算），
+			 * 与首页「写文章」同口径；这里再补一次「我有没有投过稿」——积分门槛是波动的
+			 * （发一篇扣 50 分、门槛 600 分），发过稿的人可能今天不达标了，但已投的文章
+			 * 还得能编辑、能撤回，不能因为一次门槛波动就把入口收走。</p>
+			 */
+			async fnRefreshMyArticlesEntry() {
+				if (this.calcMyArticlesEntryMode !== 'eligible' || this.calcAuditModeEnabled) {
+					return;
+				}
+				if (!this.isLoggedIn) {
+					this.myArticlesEntryVisible = false;
+					this.myArticlesProbed = false;
+					return;
+				}
+				const status = await fetchUserPublishStatus(this.$httpApi.v2);
+				if (status && status.canPublishArticle && status.visible) {
+					this.myArticlesEntryVisible = true;
+					return;
+				}
+				// 查过一次就不重复查：本页是 tabBar 页会常驻，每次 onShow 都打列表接口不划算
+				if (this.myArticlesProbed) return;
+				this.myArticlesProbed = true;
+				try {
+					const res = await this.$httpApi.v2.getMyArticles();
+					const items = (res?.data || res || {}).items;
+					this.myArticlesEntryVisible = Array.isArray(items) && items.length > 0;
+				} catch (err) {
+					this.myArticlesEntryVisible = false;
+				}
+			},
+
+			/**
 			 * 实时探测后端虚拟支付开关（/pay/config），绕过 getConfigs 缓存/未保存问题。
 			 * 后端开关未开启或插件为旧版时静默保持隐藏。
 			 */
@@ -835,6 +879,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 				this.isLoggedIn = true;
 				this.profileDialogShow = false;
 				this.fnRefreshPointsData();
+				this.fnRefreshMyArticlesEntry();
 			},
 
 			fnOpenHaloBindDialog() {
@@ -948,6 +993,9 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					clearOwnOutfit();
 					this.levelStatus = null;
 					this.outfitStatus = null;
+					// 「我的投稿」入口的判定结果同样属于上一个账号，登出后一并清掉
+					this.myArticlesEntryVisible = false;
+					this.myArticlesProbed = false;
 					uni.showToast({ title: '已退出', icon: 'success' });
 				}).catch(() => {});
 			},
@@ -969,17 +1017,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					// 数据看板始终显示（页面内部有插件未安装提示）
 					show: true
 				}, {
-					key: 'article-publish',
-					title: '投稿文章',
-					icon: 'icon-edit',
-					iconColor: 'green',
-					path: '/pagesA/article-publish/article-publish',
-					isAdmin: false,
-					type: 'page',
-					requireLogin: true,
-					// 站长未开投稿 / 积分未达门槛时不显示入口（判定在服务端）
-					show: this.calcCanPublishArticle
-				}, {
 					key: 'archives',
 					title: this.calcAuditModeEnabled ? '内容归档' : '文章归档',
 					icon: 'halocoloricon-classify',
@@ -988,16 +1025,6 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 					isAdmin: false,
 					type: 'page',
 					show: true
-				}, {
-					key: 'vote',
-					title: '投票中心',
-					icon: 'halocoloricon-edit',
-					iconColor: 'orange',
-					path: '/pagesA/votes/votes',
-					isAdmin: false,
-					type: 'page',
-					requireLogin: true,
-					show: !this.calcAuditModeEnabled && !!this.calcVotePluginEnabled,
 				}, {
 					key: 'friend-links',
 					title: '友情链接',
@@ -1437,6 +1464,13 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		&.service-icon--green {
 			background: #e5f7ec;
 			color: #35a35f;
+		}
+
+		/* 「我的投稿」用的青色调（原来这一项写的是 cyan，但这里没有对应样式，
+		   图标会是裸字形、没有底色——补上） */
+		&.service-icon--cyan {
+			background: #e2f4f7;
+			color: #1a93a8;
 		}
 
 		&.service-icon--orange {

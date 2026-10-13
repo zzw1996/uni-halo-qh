@@ -16,11 +16,13 @@ import pro.uhalo.uni.dto.DigestAiProviderDTO;
 import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.enums.DigestAiTask;
 import pro.uhalo.uni.services.DigestAiClient;
+import pro.uhalo.uni.utils.AiProviderPresets;
 import pro.uhalo.uni.utils.DigestAiChannelResolver;
 import pro.uhalo.uni.utils.DigestAiErrorExplainer;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +90,12 @@ public class DigestAiClientImpl implements DigestAiClient {
 
     @Override
     public Mono<DigestAiReplyDTO> call(DigestConfigDTO config, String prompt, DigestAiTask task) {
+        return call(config, prompt, task, NORMAL_TEMPERATURE);
+    }
+
+    @Override
+    public Mono<DigestAiReplyDTO> call(DigestConfigDTO config, String prompt, DigestAiTask task,
+        double temperature) {
         var plan = DigestAiChannelResolver.plan(config, task);
         if (!plan.usable()) {
             return Mono.error(new IllegalStateException(plan.note()));
@@ -100,7 +108,7 @@ public class DigestAiClientImpl implements DigestAiClient {
         var cursor = activeIndex.computeIfAbsent(task, key -> new AtomicInteger(0));
         // 从「本任务本轮已经在用的那条」开始：前面几条已经证明是坏的，不再重试
         var start = Math.min(Math.max(cursor.get(), 0), channels.size() - 1);
-        return completeFrom(channels, start, prompt, task, null);
+        return completeFrom(channels, start, prompt, task, temperature, null);
     }
 
     @Override
@@ -123,13 +131,13 @@ public class DigestAiClientImpl implements DigestAiClient {
      * 否则站长看到的会是「第一条 Key 无效」，而真正该修的是最后那条。</p>
      */
     private Mono<DigestAiReplyDTO> completeFrom(List<DigestAiProviderDTO> channels, int index,
-        String prompt, DigestAiTask task, Throwable lastError) {
+        String prompt, DigestAiTask task, double temperature, Throwable lastError) {
         if (index >= channels.size()) {
             return Mono.error(lastError == null
                 ? new IllegalStateException("AI 通道调用失败：没有可用通道") : lastError);
         }
         var channel = channels.get(index);
-        return complete(channel, prompt, MAX_OUTPUT_TOKENS)
+        return complete(channel, prompt, MAX_OUTPUT_TOKENS, temperature)
             .onErrorResume(ex -> {
                 if (index + 1 < channels.size()) {
                     var cursor = activeIndex.computeIfAbsent(task, key -> new AtomicInteger(0));
@@ -139,7 +147,7 @@ public class DigestAiClientImpl implements DigestAiClient {
                             ex.getMessage());
                     }
                 }
-                return completeFrom(channels, index + 1, prompt, task, ex);
+                return completeFrom(channels, index + 1, prompt, task, temperature, ex);
             });
     }
 
@@ -151,8 +159,8 @@ public class DigestAiClientImpl implements DigestAiClient {
      * 不必真的起一个 HTTP 服务。</p>
      */
     protected Mono<DigestAiReplyDTO> complete(DigestAiProviderDTO channel, String prompt,
-        int maxTokens) {
-        return post(channel, prompt, maxTokens, NORMAL_TEMPERATURE)
+        int maxTokens, double temperature) {
+        return post(channel, prompt, maxTokens, temperature)
             .timeout(AI_TIMEOUT)
             .map(answer -> {
                 if (answer.status() < 200 || answer.status() >= 300) {
@@ -160,8 +168,16 @@ public class DigestAiClientImpl implements DigestAiClient {
                         answer.status(), answer.body(), channel.apiBase(), channel.model()));
                 }
                 // 用量必须在这里就取出来：正文解析完就只剩文字了，费用再也算不出来
+                var finishReason = parseFinishReason(answer.body());
+                if (isTruncated(finishReason)) {
+                    // 「撞到长度上限」是长 JSON 被砍半的第一嫌疑：日志里必须留下这一条，
+                    // 否则下游只看到「JSON 解析失败」，无从判断是模型还是通道的问题
+                    log.warn("[UniHalo][Digest] 通道「{}」的输出达到长度上限被截断"
+                        + "（finish_reason=length，max_tokens={}）：下游会拆小批次重试",
+                        channel.label(), maxTokens);
+                }
                 return DigestAiReplyDTO.of(extractContent(answer.body()), channel, channel.model(),
-                    parseUsage(answer.body()));
+                    parseUsage(answer.body()), finishReason);
             })
             // 连接失败 / 超时这类「没有拿到响应」的错误也翻译成人话：
             // 运行报告里的失败原因与「测试连通性」给的结论必须是同一套说法，
@@ -172,6 +188,30 @@ public class DigestAiClientImpl implements DigestAiClient {
                     DigestAiErrorExplainer.explainThrowable(ex, channel.apiBase()), ex)))
             .doOnError(ex -> log.warn("[UniHalo][Digest] 通道「{}」调用失败（base={} model={}）：{}",
                 channel.label(), channel.apiBase(), channel.model(), ex.getMessage()));
+    }
+
+    /**
+     * 从响应体里取 {@code choices[0].finish_reason}。
+     *
+     * <p>取值只有诊断意义：{@code length} 说明模型是被输出上限砍断的（长 JSON 成稿最常见的
+     * 「只回了一半」原因），日志里能直接看到，不必再从「JSON 解析失败」反推。
+     * 有些中转站不回这个字段，取不到就返回空串。</p>
+     */
+    static String parseFinishReason(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "";
+        }
+        try {
+            return OBJECT_MAPPER.readTree(raw).path("choices").path(0)
+                .path("finish_reason").asText("");
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    /** 是否因长度上限被截断（{@code finish_reason=length}） */
+    static boolean isTruncated(String finishReason) {
+        return finishReason != null && "length".equalsIgnoreCase(finishReason.trim());
     }
 
     /**
@@ -307,7 +347,7 @@ public class DigestAiClientImpl implements DigestAiClient {
         body.put("stream", false);
 
         return clientFor(channel.apiBase()).post()
-            .uri("/chat/completions")
+            .uri(AiProviderPresets.chatCompletionsUrl(channel.apiBase()))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.apiKey())
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(body)
@@ -340,11 +380,18 @@ public class DigestAiClientImpl implements DigestAiClient {
             if (usage.isNumber()) {
                 builder.totalTokens(usage.asInt());
             }
+            // 是否是 chat/completions 结构：连通性的判定标准是「像不像这个协议」，
+            // 不是「模型有没有挤出正文」——思考型模型（GLM-4.5+/o 系列等）在 8 token 的
+            // 测试限额里可能把额度全花在推理上，正文是空的，但端点本身完全可用
+            var chatLike = root.path("choices").isArray() && !root.path("choices").isEmpty();
             String reply;
             try {
                 reply = extractContent(answer.body());
             } catch (IllegalStateException ex) {
-                // 200 但没有 choices/message/content：按「不是兼容端点」解释，
+                if (chatLike) {
+                    return builder.ok(true).message(noContentButConnected()).build();
+                }
+                // 200 且连 choices 都没有：按「不是兼容端点」解释，
                 // 这条最常见（中转站回自己的 JSON 结构），比丢一句解析失败有用得多
                 return builder.ok(false)
                     .message(DigestAiErrorExplainer.explain(200, answer.body(), channel.apiBase(),
@@ -352,6 +399,9 @@ public class DigestAiClientImpl implements DigestAiClient {
                     .build();
             }
             if (!StringUtils.hasText(reply)) {
+                if (chatLike) {
+                    return builder.ok(true).message(noContentButConnected()).build();
+                }
                 return builder.ok(false)
                     .message(DigestAiErrorExplainer.explain(200, answer.body(), channel.apiBase(),
                         channel.model()))
@@ -368,12 +418,20 @@ public class DigestAiClientImpl implements DigestAiClient {
         }
     }
 
+    /** 测试专用提示：结构是 chat/completions 但 8 token 里没产出正文（思考型模型的典型表现） */
+    private static String noContentButConnected() {
+        return "端点连通（返回是 chat/completions 结构）。模型在测试的极小 token 限额内"
+            + "没产出可见正文——思考/推理型模型（GLM-4.5+、o 系列等）会先消耗 token 思考，"
+            + "这是正常现象，正式调用不受影响";
+    }
+
     private static DigestAiProbeResultDTO.DigestAiProbeResultDTOBuilder baseResult(
         DigestAiProviderDTO channel, long latencyMs) {
         return DigestAiProbeResultDTO.builder()
             .key(channel.key())
             .label(channel.label())
             .apiBase(channel.apiBase())
+            .url(AiProviderPresets.chatCompletionsUrl(channel.apiBase()))
             .model(channel.model())
             .latencyMs(latencyMs);
     }

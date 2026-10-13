@@ -9,6 +9,8 @@ import pro.uhalo.uni.dto.AiContentRedeemResultDTO;
 import pro.uhalo.uni.dto.AiContentStatusDTO;
 import pro.uhalo.uni.exception.WxAuthException;
 import pro.uhalo.uni.infra.PointsPersistence;
+import pro.uhalo.uni.scheme.UserPoints;
+import pro.uhalo.uni.services.impl.AiContentGenerationLogService;
 import pro.uhalo.uni.utils.AiContentConfigHelper;
 import pro.uhalo.uni.utils.MemberConfigHelper;
 import pro.uhalo.uni.services.PrivilegeService;
@@ -56,6 +58,8 @@ public class AiContentEntitlementService {
     private final RateLimiter rateLimiter;
     /** 特权判定：站点所有者/管理员豁免付费门槛（便于上架前自测，见 PrivilegeService） */
     private final PrivilegeService privilegeService;
+    /** 生成记录：既做审计，也是「今天已生成几次」的计数依据 */
+    private final AiContentGenerationLogService logService;
 
     /** 读取配置；读取失败按关闭处理（宁可少给权益，不可误拦用户） */
     public Mono<AiContentConfigDTO> loadConfig() {
@@ -87,7 +91,8 @@ public class AiContentEntitlementService {
             return privilegeService.isPrivileged(normalized)
                 .flatMap(privileged -> privileged
                     ? Mono.just(privilegedStatus())
-                    : loadStatusOf(normalized, config));
+                    : loadStatusOf(normalized, config)
+                        .flatMap(status -> withGenerationQuota(status, normalized, config)));
         });
     }
 
@@ -114,13 +119,96 @@ public class AiContentEntitlementService {
             });
     }
 
-    /** 特权用户的状态：已开通、无到期时间（前端据此显示「已开通」，不需要再算剩余天数） */
+    /** 特权用户的状态：已开通、无到期时间、生成次数不限 */
     private AiContentStatusDTO privilegedStatus() {
         var status = statusOf(null);
         status.setActive(true);
         status.setViaPrivilege(true);
+        status.setRemainingGenerations(-1);
         return status;
     }
+
+    /**
+     * 给权益带上「还能生成几次」与「今天已生成几次」。
+     *
+     * <p>用户端据此显示剩余次数与「今日还可生成 N 次」，并在用完时给出「再买/再兑换」的引导；
+     * 后台用量页也读同一份口径。</p>
+     */
+    private Mono<AiContentStatusDTO> withGenerationQuota(AiContentStatusDTO status, String openid,
+        AiContentConfigDTO config) {
+        if (!status.isActive() || status.isViaPrivilege()) {
+            return Mono.just(status);
+        }
+        return Mono.zip(loadCredits(openid), logService.countToday(openid))
+            .map(tuple -> {
+                status.setRemainingGenerations(tuple.getT1());
+                status.setTodayGenerations(tuple.getT2());
+                status.setDailyGenerationLimit(config.getDailyGenerationLimit());
+                status.setCreditsPerDay(config.getCreditsPerDay());
+                return status;
+            })
+            .onErrorResume(ex -> {
+                log.warn("[UniHalo][AiContent] 读取生成额度失败（按不限次展示）：{}", ex.getMessage());
+                return Mono.just(status);
+            });
+    }
+    /** 剩余生成次数（null/无记录视为 0） */
+    public Mono<Integer> loadCredits(String openid) {
+        if (!StringUtils.hasText(openid)) {
+            return Mono.just(0);
+        }
+        return pointsPersistence.getOrCreateAccount(openid.trim())
+            .map(account -> creditsOf(account))
+            .defaultIfEmpty(0)
+            .onErrorResume(ex -> Mono.just(0));
+    }
+
+    /**
+     * 扣一次生成额度（先读后写，同一用户不会并发点两次——前端有 generating 闸门，
+     * 服务端还有每日上限兜底）。返回扣减后的剩余次数。
+     */
+    public Mono<Integer> consumeCredit(String openid) {
+        var normalized = StringUtils.hasText(openid) ? openid.trim() : "";
+        if (normalized.isEmpty()) {
+            return Mono.just(0);
+        }
+        return pointsPersistence.getOrCreateAccount(normalized).flatMap(account -> {
+            var left = Math.max(0, creditsOf(account) - 1);
+            account.setAiContentCredits(left);
+            return pointsPersistence.saveAccount(account).map(saved -> left);
+        });
+    }
+
+    /**
+     * 发放生成次数（购买 / 积分兑换时调用）：在现有次数上累加，不覆盖。
+     *
+     * <p>不覆盖是关键——用户续费、兑换、再购买会多次进来，覆盖等于把之前没用的次数吞掉。</p>
+     */
+    public Mono<Integer> grantCredits(String openid, int days, AiContentConfigDTO config) {
+        var add = AiContentConfigHelper.creditsForDays(days, config);
+        if (!StringUtils.hasText(openid) || add <= 0) {
+            return Mono.just(0);
+        }
+        var normalized = openid.trim();
+        return pointsPersistence.getOrCreateAccount(normalized).flatMap(account -> {
+            var total = creditsOf(account) + add;
+            account.setAiContentCredits(total);
+            return pointsPersistence.saveAccount(account)
+                .doOnNext(saved -> log.info("[UniHalo][AiContent] 生成次数已发放：openid={} "
+                        + "天数={} 本次 +{}，累计剩余 {}",
+                    maskOpenid(normalized), days > 0 ? days : "永久", add, total))
+                .map(saved -> total);
+        });
+    }
+
+    /** 账户上的剩余次数（null 视为 0） */
+    public static int creditsOf(UserPoints account) {
+        if (account == null || account.getAiContentCredits() == null) {
+            return 0;
+        }
+        return Math.max(0, account.getAiContentCredits());
+    }
+
     /**
      * 读取到期时间；未登录或读不到返回空。
      *
@@ -253,16 +341,23 @@ public class AiContentEntitlementService {
                             latest.setBalance(newBalance);
                             latest.setAiContentExpireAt(
                                 AiContentConfigHelper.extend(latest.getAiContentExpireAt(), days));
+                            // 兑换同时发放生成次数：与现金道具同一条口径（天数 × 每天次数）
+                            latest.setAiContentCredits(creditsOf(latest)
+                                + AiContentConfigHelper.creditsForDays(days, config));
                             return pointsPersistence.saveAccount(latest)
                                 .map(saved -> AiContentRedeemResultDTO.builder()
                                     .balance(newBalance)
                                     .days(days)
+                                    .creditsAdded(AiContentConfigHelper.creditsForDays(days, config))
+                                    .remainingGenerations(creditsOf(saved))
                                     .expireAt(formatExpireAt(saved.getAiContentExpireAt()))
                                     .daysRemaining(
                                         AiContentConfigHelper.daysRemaining(saved.getAiContentExpireAt()))
                                     .permanent(AiContentConfigHelper.isPermanent(
                                         saved.getAiContentExpireAt()))
-                                    .message("已用 " + price + " 积分兑换 " + days + " 天")
+                                    .message("已用 " + price + " 积分兑换 " + days + " 天，"
+                                        + "获得 " + AiContentConfigHelper.creditsForDays(days, config)
+                                        + " 次生成机会")
                                     .build());
                         });
                 });

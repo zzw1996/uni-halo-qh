@@ -30,8 +30,17 @@ public class SubscriptionLimitsDTO {
     /** 最多还能买几份 */
     private int maxQuota;
 
-    /** 当前生效的订阅上限（会员期内是会员上限） */
+    /**
+     * 当前生效的订阅上限（会员期内是会员上限）。
+     *
+     * <p><b>不限量时这里是 {@link Integer#MAX_VALUE} 哨兵值，不是给人看的数字</b>——
+     * 客户端显示要用 {@link #unlimited}（或把它格式化成「不限」），
+     * 早前直接把 limit 拼进文案，界面上出现过「已订阅 6/2147483647 个分类」。</p>
+     */
     private int limit;
+
+    /** 是否不限量（站点所有者/管理员）：为 true 时 limit 无展示意义，前端应显示「不限」 */
+    private boolean unlimited;
 
     /** 会员是否有效 */
     private boolean memberActive;

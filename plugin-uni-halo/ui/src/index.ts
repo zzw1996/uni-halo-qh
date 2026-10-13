@@ -6,6 +6,9 @@ import InviteFriends from "./views/InviteFriends.vue";
 import AiDigest from "./views/AiDigest.vue";
 import PayStats from "./views/PayStats.vue";
 import CommercialConfig from "./views/CommercialConfig.vue";
+import AiContentUsage from "./views/AiContentUsage.vue";
+import MpPush from "./views/MpPush.vue";
+import Toutiao from "./views/Toutiao.vue";
 
 export default definePlugin({
   components: {},
@@ -101,6 +104,21 @@ export default definePlugin({
     {
       parentName: "Root",
       route: {
+        path: "/uni-halo/ai-content",
+        name: "UniHaloAiContentUsage",
+        component: AiContentUsage,
+        meta: {
+          title: "AI 定制内容",
+          searchable: true,
+          // 与其它页面共用同一个 UI 权限：新增权限串需要重新登录才会聚合到当前用户
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "AI 定制内容", group: "UniHalo", priority: 8 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
         path: "/uni-halo/ai-digest",
         name: "UniHaloAiDigest",
         component: AiDigest,
@@ -111,6 +129,36 @@ export default definePlugin({
           // 复用已有的权限可以保证菜单立刻可见
           permissions: ["plugin:plugin-uni-halo:users:view"],
           menu: { name: "AI 日报", group: "UniHalo", priority: 5 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
+        path: "/uni-halo/mp-push",
+        name: "UniHaloMpPush",
+        component: MpPush,
+        meta: {
+          title: "公众号",
+          searchable: true,
+          // 与其它页面共用同一个 UI 权限：新增权限串需要重新登录才会聚合到当前用户
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "公众号", group: "UniHalo", priority: 9 },
+        },
+      },
+    },
+    {
+      parentName: "Root",
+      route: {
+        path: "/uni-halo/toutiao",
+        name: "UniHaloToutiao",
+        component: Toutiao,
+        meta: {
+          title: "今日头条号",
+          searchable: true,
+          // 与其它页面共用同一个 UI 权限：新增权限串需要重新登录才会聚合到当前用户
+          permissions: ["plugin:plugin-uni-halo:users:view"],
+          menu: { name: "今日头条号", group: "UniHalo", priority: 10 },
         },
       },
     },

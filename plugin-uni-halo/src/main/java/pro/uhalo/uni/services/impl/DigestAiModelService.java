@@ -16,6 +16,7 @@ import pro.uhalo.uni.dto.DigestAiProviderDTO;
 import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.enums.DigestAiTask;
 import pro.uhalo.uni.services.DigestAiClient;
+import pro.uhalo.uni.utils.AiProviderPresets;
 import pro.uhalo.uni.utils.DigestAiChannelResolver;
 import pro.uhalo.uni.utils.DigestAiPricing;
 import pro.uhalo.uni.utils.DigestAiUsageLog;
@@ -258,7 +259,7 @@ public class DigestAiModelService {
             if (row == null) {
                 continue;
             }
-            var apiBase = DigestAiChannelResolver.normalizeBase(row.apiBase());
+            var apiBase = AiProviderPresets.normalizeApiBase(row.apiBase());
             var label = trim(row.label());
             var apiKey = trim(row.apiKey());
             // 整行空白的（页面上点了「添加通道」没填）不落库，免得留下占位行

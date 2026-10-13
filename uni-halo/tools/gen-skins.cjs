@@ -208,7 +208,7 @@ const hexOf = (token) => PALETTE[token];
 /** 收集编译产物里所有 wxss 文件的顶层规则 */
 function collectRules() {
 	const rules = [];
-	const skipped = { atRule: 0, host: 0, page: 0 };
+	const skipped = { atRule: 0, host: 0, page: 0, deadGradient: 0 };
 
 	function walk(dir) {
 		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -239,6 +239,9 @@ function collectRules() {
 				if (selector.startsWith('@')) { skipped.atRule++; continue; }
 				if (selector.includes(':host')) { skipped.host++; continue; }
 				if (/^page\b/.test(selector)) { skipped.page++; continue; }
+				// 渐变描边类全仓零引用（已从调色板里删掉，见 tools/strip-unused-gradient-css.py）。
+				// 用旧产物重新生成时这批死规则会再被抄进皮肤包，这里挡掉。
+				if (selector.includes('border-bg-gradient')) { skipped.deadGradient++; continue; }
 				rules.push({ selector, body, from: path.relative(ROOT, full) });
 			}
 		}
@@ -374,7 +377,7 @@ function build() {
 			if (Object.values(PALETTE).some((h) => value.includes(h))) { paletteDecls++; break; }
 		}
 	}
-	console.log(`扫描到规则 ${rules.length} 条（跳过 @规则 ${skipped.atRule} / :host ${skipped.host} / page ${skipped.page}）`);
+	console.log(`扫描到规则 ${rules.length} 条（跳过 @规则 ${skipped.atRule} / :host ${skipped.host} / page ${skipped.page} / 死渐变类 ${skipped.deadGradient}）`);
 	console.log(`含调色板取值的规则 ${paletteDecls} 条`);
 	for (const [id, n] of Object.entries(stats)) console.log(`  ${id.padEnd(8)} 生成 ${n} 条覆盖规则`);
 	console.log(`输出：${path.relative(ROOT, OUT)}  ${(fs.statSync(OUT).size / 1024).toFixed(1)}KB`);

@@ -59,6 +59,9 @@ public class DigestFeedServiceImpl implements DigestFeedService {
         "Mozilla/5.0 (compatible; AI-Daily-Digest/1.0; +https://github.com/)";
     private static final String PAGE_ACCEPT = "text/html,application/xhtml+xml";
 
+    /** 检索源的合成源名（只作内部标记：来源名会用条目里的发布方） */
+    private static final String SEARCH_SOURCE_NAME = "search";
+
     private static final List<Pattern> OG_IMAGE_PATTERNS = List.of(
         Pattern.compile("<meta[^>]+property=[\"']og:image:secure_url[\"'][^>]+content=[\"']([^\"']+)[\"']",
             Pattern.CASE_INSENSITIVE),
@@ -113,6 +116,47 @@ public class DigestFeedServiceImpl implements DigestFeedService {
                     Math.max(0, (System.currentTimeMillis() - startedMs) / 1000));
                 return DigestFeedResultDTO.builder()
                     .totalFeeds(FEEDS.size())
+                    .successFeeds(successFeeds)
+                    .articles(articles)
+                    .build();
+            });
+    }
+
+    @Override
+    public Mono<DigestFeedResultDTO> fetchUrls(List<String> feedUrls, int hours) {
+        if (feedUrls == null || feedUrls.isEmpty()) {
+            return Mono.just(DigestFeedResultDTO.builder()
+                .totalFeeds(0).successFeeds(0).articles(List.of()).build());
+        }
+        var cutoff = Instant.now().minusSeconds(Math.max(1, hours) * 3600L);
+        var startedMs = System.currentTimeMillis();
+        var sources = feedUrls.stream().filter(StringUtils::hasText).distinct()
+            .map(url -> new FeedSource(SEARCH_SOURCE_NAME, url, ""))
+            .toList();
+        log.info("[UniHalo][AiContent] 关键词检索：开始抓取 {} 个检索源，时间窗 {}h",
+            sources.size(), hours);
+        return Flux.fromIterable(sources)
+            .flatMapSequential(this::fetchFeedSafely, FEED_CONCURRENCY)
+            .collectList()
+            .map(outcomes -> {
+                var articles = new ArrayList<DigestArticleDTO>();
+                var successFeeds = 0;
+                for (var outcome : outcomes) {
+                    if (outcome.articles().isEmpty()) {
+                        continue;
+                    }
+                    successFeeds++;
+                    for (var article : outcome.articles()) {
+                        if (article.getPubDate() != null && article.getPubDate().isAfter(cutoff)) {
+                            articles.add(article);
+                        }
+                    }
+                }
+                log.info("[UniHalo][AiContent] 关键词检索完成：成功 {}/{} 源，{}-内命中 {} 条，用时 {}s",
+                    successFeeds, sources.size(), hours, articles.size(),
+                    Math.max(0, (System.currentTimeMillis() - startedMs) / 1000));
+                return DigestFeedResultDTO.builder()
+                    .totalFeeds(sources.size())
                     .successFeeds(successFeeds)
                     .articles(articles)
                     .build();
@@ -287,7 +331,11 @@ public class DigestFeedServiceImpl implements DigestFeedService {
         article.setLink(link);
         article.setPubDate(parseDate(pubDate));
         article.setDescription(truncate(DigestTextUtils.stripHtml(rawBody), DESCRIPTION_LIMIT));
-        article.setSourceName(feed.name());
+        // 检索源（Google/Bing 新闻）的条目自带发布方：它比「search」有用得多，
+        // 而内置源没有这个字段，保持原来的源名不变
+        var publisher = SEARCH_SOURCE_NAME.equals(feed.name())
+            ? DigestTextUtils.stripHtml(childText(item, "source")) : "";
+        article.setSourceName(StringUtils.hasText(publisher) ? publisher : feed.name());
         article.setSourceUrl(feed.htmlUrl());
         article.setImageUrl(extractItemImage(item, rawBody, link));
         return article;

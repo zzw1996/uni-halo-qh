@@ -123,6 +123,12 @@ public class DigestEndpoint implements CustomEndpoint {
                     + "provider's official endpoint (DeepSeek: GET /user/balance). Channels that "
                     + "do not support it report that instead of failing. No tokens consumed.")
                 .tag(apiTag))
+            .GET("/digest/models/presets", digestController::aiModelPresets, builder -> builder
+                .operationId("GetDigestModelPresets")
+                .description("Built-in AI provider presets (label, OpenAI-compatible API base, "
+                    + "example model names and notes). The channel panel uses them as a "
+                    + "quick-fill dropdown. Static data, no I/O.")
+                .tag(apiTag))
             .POST("/digest/models/prices/refresh", digestController::refreshAiPrices,
                 builder -> builder
                     .operationId("RefreshDigestPrices")

@@ -8,7 +8,6 @@ export const NeedPluginIds = Object.freeze({
 	PluginMoments: "PluginMoments",
 	PluginSearchWidget: "PluginSearchWidget",
 	PluginCommentWidget: "PluginCommentWidget",
-	PluginVote: "vote",
 	PluginDataStatistics: 'data-statistics'
 })
 
@@ -65,15 +64,6 @@ export const NeedPlugins = new Map([
 			desc: "为用户前台提供完整的评论解决方案",
 			logo: utils.checkUrl("/plugins/PluginCommentWidget/assets/logo.svg"),
 			url: "https://www.halo.run/store/apps/app-YXyaD"
-		}
-	],
-	[
-		NeedPluginIds.PluginVote, {
-			id: "vote",
-			name: "投票管理",
-			desc: "投票模块所需要的插件，用于展示投票和提交投票",
-			logo: utils.checkUrl("/plugins/vote/assets/logo.png"),
-			url: "https://www.halo.run/store/apps/app-veyvzyhv"
 		}
 	],
 	[

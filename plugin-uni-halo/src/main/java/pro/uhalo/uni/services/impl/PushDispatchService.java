@@ -209,7 +209,8 @@ public class PushDispatchService {
         var page = matched.size() == 1
             ? PAGE_ARTICLE + "?name=" + first.getMetadata().getName() : PAGE_HOME;
         return deliver(config, state, target.push(), PushConfigHelper.KIND_NEW_POST, templateId,
-            bizKey, page, message);
+            bizKey, page, message)
+            .map(attempt -> attempt.outcome() == PushOutcome.SENT ? 1 : 0);
     }
 
     // ── 简报线 ──
@@ -232,31 +233,43 @@ public class PushDispatchService {
      * 可能还要等生成；现在只在<b>该用户自己的简报已生成</b>时推送，消息里带真实条数，
      * 点开就是成品。</p>
      *
-     * <p>额度不足（一次性订阅没授权过 / 用完了）时不发送也不报错——调用方据此提示用户去授权。</p>
+     * <p>额度不足（一次性订阅没授权过 / 用完了）时不发送也不报错——调用方据 outcome
+     * 给出确切原因，而不是一律说成「额度不足」。</p>
      *
-     * @return 1 = 已发出，0 = 未发（无额度 / 已推过 / 日上限到顶）
+     * @param manual true = 用户在页面里点的「立即推送」：只看额度，不受用户总开关与
+     *               「今天已经推过」的幂等限制之外的影响
      */
-    public Mono<Integer> pushAiContentReady(String openid, PushConfigDTO config,
-        AiContentIssue issue, AiContentPreferenceDTO preference) {
+    public Mono<PushAttempt> pushAiContentReady(String openid, PushConfigDTO config,
+        AiContentIssue issue, AiContentPreferenceDTO preference, boolean manual) {
         if (!StringUtils.hasText(openid) || issue == null) {
-            return Mono.just(0);
+            return Mono.just(PushAttempt.of(PushOutcome.SEND_FAILED, "缺少推送目标或简报"));
         }
         var date = StringUtils.hasText(issue.getDate())
             ? issue.getDate() : LocalDate.now(ZONE).toString();
         var bizKey = "aidigest:" + date;
         return subscriptionService.load(openid.trim()).flatMap(subscription -> {
-            if (!PushSubscriptionService.hasQuota(subscription, PushConfigHelper.KIND_AI_DIGEST)) {
+            var quota = PushSubscriptionService.quotaOf(subscription,
+                PushConfigHelper.KIND_AI_DIGEST);
+            if (quota <= 0) {
                 log.info("[UniHalo][Push] 用户没有简报推送额度，跳过：openid={}", mask(openid));
-                return Mono.just(0);
+                return Mono.just(PushAttempt.of(PushOutcome.NO_QUOTA,
+                    "剩余额度 0 条"));
+            }
+            // 自动推送尊重用户的总开关；手动点击是一次明确请求，只看额度
+            if (!manual && Boolean.FALSE.equals(subscription.getEnabled())) {
+                log.info("[UniHalo][Push] 用户已关闭推送，定时线跳过：openid={}", mask(openid));
+                return Mono.just(PushAttempt.of(PushOutcome.DISABLED, "用户已关闭推送"));
             }
             return alreadyPushed(openid.trim(), PushConfigHelper.KIND_AI_DIGEST, bizKey)
-                .flatMap(exists -> exists ? Mono.just(0)
+                .flatMap(exists -> exists
+                    ? Mono.just(PushAttempt.of(PushOutcome.ALREADY_PUSHED,
+                        "今天这份简报已经推送过"))
                     : loadState().flatMap(state -> sendAiContentReady(config, state, subscription,
                         issue, preference, bizKey)));
         });
     }
 
-    private Mono<Integer> sendAiContentReady(PushConfigDTO config, PushState state,
+    private Mono<PushAttempt> sendAiContentReady(PushConfigDTO config, PushState state,
         PushSubscription target, AiContentIssue issue, AiContentPreferenceDTO preference,
         String bizKey) {
         var items = AiContentFeedService.parseItems(issue.getItems());
@@ -272,6 +285,34 @@ public class PushDispatchService {
         return deliver(config, state, target, PushConfigHelper.KIND_AI_DIGEST,
             PushConfigHelper.templateOf(config, PushConfigHelper.KIND_AI_DIGEST), bizKey,
             PAGE_AI_CONTENT, message, config.aiDigestFieldMap());
+    }
+
+    /** 一次推送尝试的结果：发出去了，或是因为哪一个原因没发出去 */
+    public record PushAttempt(PushOutcome outcome, String detail) {
+
+        static PushAttempt of(PushOutcome outcome, String detail) {
+            return new PushAttempt(outcome, detail == null ? "" : detail);
+        }
+
+        public boolean sent() {
+            return outcome == PushOutcome.SENT;
+        }
+    }
+
+    /** 推送没能发出的原因（分开是为了给用户可操作的话，而不是一律「额度不足」） */
+    public enum PushOutcome {
+        /** 已发出 */
+        SENT,
+        /** 没有可用额度：需要用户去微信里授权一次 */
+        NO_QUOTA,
+        /** 今天这份已经推送过（幂等键撞名） */
+        ALREADY_PUSHED,
+        /** 整站当日发送量到顶 */
+        DAILY_LIMIT,
+        /** 用户关闭了自动推送 */
+        DISABLED,
+        /** 微信侧发送失败（模板/网络/字段映射等原因） */
+        SEND_FAILED
     }
 
     /**
@@ -292,32 +333,51 @@ public class PushDispatchService {
     }
 
     /** 一次发送：先看整站日上限 → 调微信 → 按结果记账（扣额度 / 清零 / 记错误码） */
-    private Mono<Integer> deliver(PushConfigDTO config, PushState state, PushSubscription target,
-        String kind, String templateId, String bizKey, String page,
+    private Mono<PushAttempt> deliver(PushConfigDTO config, PushState state,
+        PushSubscription target, String kind, String templateId, String bizKey, String page,
         WxSubscribeMessageService.Message message) {
         return deliver(config, state, target, kind, templateId, bizKey, page, message,
             PushConfigDTO.FieldMap.NEW_POST_DEFAULT);
     }
 
     /** 同上，指定模板字段映射（简报模板的字段名由站长配置） */
-    private Mono<Integer> deliver(PushConfigDTO config, PushState state, PushSubscription target,
-        String kind, String templateId, String bizKey, String page,
+    private Mono<PushAttempt> deliver(PushConfigDTO config, PushState state,
+        PushSubscription target, String kind, String templateId, String bizKey, String page,
         WxSubscribeMessageService.Message message, PushConfigDTO.FieldMap fields) {
         var today = LocalDate.now(ZONE).toString();
         var sameDay = today.equals(state.getDailyDate());
         var sentToday = sameDay ? orZero(state.getDailySent()) : 0;
         if (sentToday >= config.getDailySendLimit()) {
             log.warn("[UniHalo][Push] 已达整站每日发送上限 {}，本轮停止发送"
-                + "（检查间隔 { } 分钟，可在「消息推送」设置里调整）",
+                    + "（检查间隔 { } 分钟，可在「消息推送」设置里调整）",
                 config.getDailySendLimit(), config.getCheckIntervalMinutes());
-            return Mono.just(0);
+            return Mono.just(PushAttempt.of(PushOutcome.DAILY_LIMIT,
+                "站点今日推送量已达上限"));
         }
         return messageService.send(target.getWxOpenid(), templateId, message, page,
                 config.getMiniprogramState(), fields)
             .flatMap(result -> writeRecord(target.getWxOpenid(), kind, bizKey, page, result)
                 .then(settle(target, kind, result))
                 .flatMap(counted -> bumpDailyCounter(state, today, result)
-                    .thenReturn(counted ? 1 : 0)));
+                    .thenReturn(result.ok()
+                        ? PushAttempt.of(PushOutcome.SENT, "")
+                        // 微信给出的原因（43101 用户拒收/无额度、47003 模板字段不合法…）
+                        : PushAttempt.of(result.quotaExhausted()
+                                ? PushOutcome.NO_QUOTA : PushOutcome.SEND_FAILED,
+                            describeSendFailure(result)))));
+    }
+
+    /** 把微信的失败回执压成一句能读的话（errorCode + 原始 message） */
+    private static String describeSendFailure(WxSubscribeMessageService.SendResult result) {
+        var code = result.errorCode() > 0 ? "错误码 " + result.errorCode() : "";
+        var message = result.message();
+        if (!code.isEmpty() && StringUtils.hasText(message)) {
+            return code + "：" + message;
+        }
+        if (!code.isEmpty()) {
+            return code;
+        }
+        return StringUtils.hasText(message) ? message : "微信未接受该条消息";
     }
 
     /** 成功扣额度 / 43101 清零；其余情况不动额度（下次可能就好了） */
@@ -342,12 +402,19 @@ public class PushDispatchService {
         return saveState(state);
     }
 
-    /** 审计记录：资源名固定，因此重复写入会撞名（并发/重跑都只留一条） */
+    /**
+     * 审计记录：资源名固定，因此重复写入会撞名（并发/重跑都只留一条）。
+     *
+     * <p>写入失败<b>不能一律当成「已存在」</b>：这里曾经把「字段名踩了 Halo 的 kind」
+     * 这类错误也吞成一句 info（详见 {@code PushRecord.sourceKind} 的注释），
+     * 导致记录表一直是空的、幂等静默失效。现在按错误类型分开处理：
+     * 撞名（已存在）静默跳过，其它错误按 warn 记下来。</p>
+     */
     private Mono<Void> writeRecord(String openid, String kind, String bizKey, String page,
         WxSubscribeMessageService.SendResult result) {
         var record = new PushRecord();
         record.setWxOpenid(openid);
-        record.setKind(kind);
+        record.setSourceKind(kind);
         record.setBizKey(bizKey);
         record.setPage(page);
         record.setStatus(result.ok() ? "SENT" : "FAILED");
@@ -360,9 +427,26 @@ public class PushDispatchService {
         record.setMetadata(metadata);
         return client.create(record).then()
             .onErrorResume(ex -> {
-                log.info("[UniHalo][Push] 推送记录已存在，跳过重复写入：{}", ex.getMessage());
+                if (isDuplicateNameError(ex)) {
+                    log.info("[UniHalo][Push] 推送记录已存在，跳过重复写入：{}", ex.getMessage());
+                } else {
+                    // 其它失败要留痕：这条曾经被吞成 info，掩盖了「记录一条都没写进去」的事实
+                    log.warn("[UniHalo][Push] 推送记录写入失败（不影响本次下发，但幂等会失效）：{}",
+                        ex.getMessage(), ex);
+                }
                 return Mono.empty();
             });
+    }
+
+    /** 资源名冲突（同一件事重复写入）——这是唯一可以静默的情况 */
+    private static boolean isDuplicateNameError(Throwable ex) {
+        var message = ex == null ? null : ex.getMessage();
+        if (message == null || message.isEmpty()) {
+            return false;
+        }
+        var normalized = message.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("already exists") || normalized.contains("duplicate")
+            || normalized.contains("已存在");
     }
 
     /** 是否已处理过：按资源名直接取（幂等键就是资源名，不做全表扫描） */

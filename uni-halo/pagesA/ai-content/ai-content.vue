@@ -145,7 +145,7 @@
 					</block>
 					<view v-else class="empty-tip">站长已关闭自定义主题，请用下方的高级筛选表达你的方向</view>
 					<view class="advanced-toggle" hover-class="advanced-toggle-hover" @click="showAdvanced = !showAdvanced">
-						<text class="advanced-toggle-text">{{ showAdvanced ? '收起高级筛选 ▲' : '展开高级筛选（主题分类 / 来源 / 关键词）▼' }}</text>
+						<text class="advanced-toggle-text">{{ showAdvanced ? '收起高级筛选 ▲' : '展开高级筛选（主题分类 / 关键词）▼' }}</text>
 					</view>
 				</view>
 
@@ -169,24 +169,7 @@
 						</view>
 					</view>
 
-					<view class="section-card">
-						<view class="section-head">
-							<text class="section-title">关注的来源</text>
-							<text class="section-sub">最近 {{ limits.windowDays }} 天出现过的来源（{{ picked.sources.length }}/{{ limits.maxSources }}）</text>
-						</view>
-						<view v-if="sourceOptions.length === 0" class="empty-tip">最近还没有可选的来源</view>
-						<view v-else class="chip-wrap">
-							<view
-								v-for="option in sourceOptions"
-								:key="option.value"
-								:class="['chip', picked.sources.indexOf(option.value) >= 0 ? 'chip-on' : '']"
-								@click="fnToggleSource(option.value)"
-							>
-								<text class="chip-text">{{ option.value }}（{{ option.count }}）</text>
-							</view>
-						</view>
-					</view>
-
+					<!-- 来源维度已取消：简报从实时抓取的源里挑内容，用户只表达「看什么」，不选「从哪看」 -->
 					<view v-if="limits.maxKeywords > 0" class="section-card">
 						<view class="section-head">
 							<text class="section-title">关注的关键词</text>
@@ -286,7 +269,9 @@
 					<view class="section-head section-head-with-action">
 						<view class="section-head-main">
 							<text class="section-title">{{ feedTitle }}</text>
-							<text class="section-sub">{{ feedLoading ? '正在为你生成今天的简报…' : (feed && feed.summary ? feed.summary : '') }}</text>
+							<text class="section-sub">{{ feedLoading ? '正在读取今天的简报…' : (feed && feed.summary ? feed.summary : '') }}</text>
+							<!-- 剩余生成次数：付费功能的成本阀门，用户随时能看到还能生成几次 -->
+							<text v-if="quotaText" class="section-quota">{{ quotaText }}</text>
 						</view>
 						<text
 							v-if="feedItems.length && !feedLoading"
@@ -297,56 +282,106 @@
 					</view>
 
 					<view v-if="feedLoading" class="feed-loading">
-						<text class="feed-loading-text">首次打开会调用一次 AI 生成，通常几秒到十几秒</text>
+						<text class="feed-loading-text">正在读取今天的简报…</text>
 					</view>
 
 					<block v-else>
-						<view v-if="feed && feed.intro" class="feed-intro">
-							<text class="feed-intro-text">{{ feed.intro }}</text>
-						</view>
-
-						<view v-if="!feedItems.length" class="empty-tip">
-							{{ feed && feed.summary ? feed.summary : '暂时没有可展示的内容' }}
-						</view>
-
-						<view v-for="(item, i) in feedItems" :key="(item.postName || item.title) + i">
-							<!-- AI 按定制主题生成的专属内容：私有，可做海报分享 -->
-							<view v-if="item.generated" class="feed-generated">
-								<view class="feed-generated-head">
-									<text class="feed-generated-tag">定制</text>
-									<text class="feed-generated-title">{{ item.title }}</text>
-								</view>
-								<text class="feed-generated-body">{{ item.body }}</text>
-								<text class="feed-generated-note">以上内容由 AI 按你的定制主题原创生成，仅你自己可见</text>
+						<!-- 生成中：进度由服务端写入，这里只负责显示（退出页面不影响生成） -->
+						<view v-if="feedStatus === 'RUNNING'" class="feed-progress">
+							<view class="feed-progress-head">
+								<text class="feed-progress-stage">{{ feedStage || '正在生成…' }}</text>
+								<text class="feed-progress-num">{{ feedProgress }}%</text>
 							</view>
-							<view v-else class="feed-item">
-								<view class="feed-item-main" hover-class="feed-item-hover" @click="fnOpenItem(item)">
-									<view class="feed-item-head">
-										<text class="feed-item-title">{{ item.title }}</text>
-										<text v-if="item.postName" class="feed-item-arrow">›</text>
+							<view class="feed-progress-track">
+								<view class="feed-progress-fill" :style="{ width: feedProgress + '%' }"></view>
+							</view>
+							<text class="feed-progress-tip">可以离开这个页面：生成在服务端继续，完成后回来就能看到</text>
+						</view>
+
+						<!-- 还没生成过：给一个明确的起点，而不是自动烧掉一次 AI -->
+						<view v-else-if="feedStatus === 'NONE'" class="feed-empty">
+							<text class="feed-empty-title">{{ isViewingToday ? '今天还没有生成简报' : '这一天没有生成简报' }}</text>
+							<text class="feed-empty-desc">{{ feed && feed.summary ? feed.summary : '按你的关注方向实时抓取最新内容，生成一份只属于你的简报' }}</text>
+							<text v-if="quotaText" class="feed-empty-desc">{{ quotaText }}</text>
+							<view v-if="isViewingToday" class="feed-empty-btn"
+								:class="{ 'is-off': !canGenerateNow }" hover-class="save-btn-hover"
+								@click="fnGenerate">
+								<text class="feed-empty-btn-text">{{ generating ? '正在开始…' : (canGenerateNow ? '生成今日简报' : '生成次数已用完') }}</text>
+							</view>
+						</view>
+
+						<!-- 生成失败/中断：给原因与重试入口（往期补不回来，只给原因） -->
+						<view v-else-if="feedStatus === 'FAILED'" class="feed-empty">
+							<text class="feed-empty-title">{{ isViewingToday ? '今天的简报没有生成成功' : '这一天的简报没有生成成功' }}</text>
+							<text class="feed-empty-desc">{{ feedError || '生成中断了，可以再试一次' }}</text>
+							<text v-if="quotaText" class="feed-empty-desc">{{ quotaText }}</text>
+							<view v-if="isViewingToday" class="feed-empty-btn"
+								:class="{ 'is-off': !canGenerateNow }" hover-class="save-btn-hover"
+								@click="fnGenerate">
+								<text class="feed-empty-btn-text">{{ generating ? '正在开始…' : (canGenerateNow ? '重新生成' : '生成次数已用完') }}</text>
+							</view>
+						</view>
+
+						<block v-else>
+							<view v-if="feed && feed.intro" class="feed-intro">
+								<text class="feed-intro-text">{{ feed.intro }}</text>
+							</view>
+
+							<view v-if="!feedItems.length" class="empty-tip">
+								{{ feed && feed.summary ? feed.summary : '暂时没有可展示的内容' }}
+							</view>
+
+							<view v-for="(item, i) in feedItems" :key="(item.postName || item.title) + i">
+								<!-- AI 按定制主题生成的专属内容：私有，可做海报分享 -->
+								<view v-if="item.generated" class="feed-generated">
+									<view class="feed-generated-head">
+										<text class="feed-generated-tag">定制</text>
+										<text class="feed-generated-title">{{ item.title }}</text>
 									</view>
+									<text class="feed-generated-body">{{ item.body }}</text>
+									<text class="feed-generated-note">以上内容由 AI 按你的定制主题原创生成，仅你自己可见</text>
+								</view>
+								<view v-else class="feed-item">
+									<view class="feed-item-main" hover-class="feed-item-hover" @click="fnOpenItem(item)">
+										<view class="feed-item-head">
+											<view class="feed-item-head-main">
+												<text class="feed-item-title">{{ item.title }}</text>
+												<text v-if="item.postName" class="feed-item-arrow">›</text>
+											</view>
+											<!-- 原文头图（已转存进站点附件库）：点图可放大看 -->
+											<image v-if="item.cover" class="feed-item-cover" :src="fnItemCover(item)"
+												mode="aspectFill" lazy-load @click.stop="fnPreviewCover(item)"></image>
+										</view>
 									<view class="feed-item-meta">
 										<text v-if="item.categoryLabel" class="feed-item-tag">{{ item.categoryEmoji }} {{ item.categoryLabel }}</text>
-										<text v-if="item.sourceName" class="feed-item-source">{{ item.sourceName }}</text>
+										<!-- 显示发布时间而不是来源：简报的卖点是「刚抓到的」，来源对读者不是有效信息 -->
+										<text v-if="item.publishedAt" class="feed-item-time">{{ item.publishedAt }}</text>
 									</view>
 									<text v-if="item.reason" class="feed-item-reason">{{ item.reason }}</text>
 									<text v-else-if="item.summary" class="feed-item-summary">{{ item.summary }}</text>
 									<text v-if="item.matchedReason" class="feed-item-match">{{ item.matchedReason }}</text>
+									</view>
 								</view>
 							</view>
+
+							<!-- AI 小结：这一份里唯一的原创观点段落，放在条目之后收尾 -->
+						<view v-if="feed && feed.outro" class="feed-outro">
+							<text class="feed-outro-label">✍️ AI 小结</text>
+							<text class="feed-outro-text">{{ feed.outro }}</text>
 						</view>
 
 						<!-- 空态给出一键放宽：偏好太窄是「没有内容」最常见的原因 -->
-						<view v-if="!feedItems.length && categoryOptions.length" class="chip-wrap">
-							<view
-								v-for="option in categoryOptions.slice(0, 6)"
-								:key="option.key"
-								class="chip chip-ghost"
-								@click="fnQuickPick(option.key)"
-							>
-								<text class="chip-text">关注 {{ option.label }}</text>
+							<view v-if="!feedItems.length && categoryOptions.length" class="chip-wrap">
+								<view
+									v-for="option in categoryOptions.slice(0, 6)"
+									:key="option.key"
+									class="chip chip-ghost"
+									@click="fnQuickPick(option.key)"
+								>
+									<text class="chip-text">关注 {{ option.label }}</text>
+								</view>
 							</view>
-						</view>
+						</block>
 					</block>
 				</view>
 
@@ -371,7 +406,7 @@
 			</block>
 
 			<view class="footer-tip">
-				<text>简报按你的定制主题与关注方向生成：优先从站长已精选的日报内容里检索并重写，素材不足时由 AI 原创补充；内容仅你自己可见，可生成海报分享。每天最多生成一次，反复打开不会重复消耗 AI 额度。</text>
+				<text>简报按你的定制主题与关键词生成：服务端<b>实时抓取各源最近 {{ limits.liveHours }} 小时的内容</b>，再由 AI 挑出属于你的几条并写成中文标题与摘要；内容仅你自己可见，可生成海报分享。每天最多生成一次，反复打开不会重复消耗 AI 额度。</text>
 			</view>
 
 			<!-- 效果示例弹窗：页面保持简洁，细节按需展开 -->
@@ -386,7 +421,7 @@
 						<view v-for="(item, i) in demoItems" :key="i" class="demo-item">
 							<view class="demo-item-meta">
 								<text class="demo-item-cat">{{ item.category }}</text>
-								<text class="demo-item-source">{{ item.source }}</text>
+								<text class="demo-item-time">{{ item.time }}</text>
 							</view>
 							<text class="demo-item-title">{{ item.title }}</text>
 							<text class="demo-item-reason">推荐理由：{{ item.reason }}</text>
@@ -415,6 +450,7 @@
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import liuPoster from '@/uni_modules/liu-poster/components/liu-poster/liu-poster.vue';
 	import { checkHasWxLogin } from '@/utils/auth.js';
+	import { getCommentAuthorInfo } from '@/utils/comment.js';
 	import { getAppConfigs } from '@/config/index.js';
 	import { payVirtualGoods } from '@/utils/virtualPay.js';
 	import {
@@ -424,6 +460,11 @@
 		pushRemindState,
 		PUSH_KINDS
 	} from '@/utils/subscribeMessage.js';
+
+	/** 海报上最多列几条：条数再多就成了「列表截图」，而不是一张能发出去的海报 */
+	const POSTER_ITEM_LIMIT = 3;
+	/** 海报绘制的兜底超时：画布在图片异常时不会回调，得自己收尾 */
+	const POSTER_TIMEOUT_MS = 20000;
 
 	export default {
 		components: {
@@ -439,22 +480,22 @@
 				status: null,
 				limits: {
 					maxCategories: 5,
-					maxSources: 5,
 					maxKeywords: 10,
 					maxTopics: 3,
 					maxItems: 10,
+					/** 实时素材时间窗：页面要说清「内容取自最近 N 小时」 */
+					liveHours: 48,
 					windowDays: 7,
 					aiIntroEnabled: true
 				},
 				benefitNote: '',
 				categoryOptions: [],
-				sourceOptions: [],
 				/** 站长配置的预设定制主题（点一下即加入） */
 				presetTopics: [],
 				/** 积分兑换通道参数（pointsPrice=0 表示未开启） */
 				redeem: { pointsPrice: 0, pointsDays: 30 },
 				/** 正在编辑的关注方向与推送设置（保存前的本地状态） */
-				picked: { categories: [], sources: [], keywords: [], customTopics: [], pushEnabled: false, pushHour: null },
+				picked: { categories: [], keywords: [], customTopics: [], pushEnabled: false, pushHour: null },
 				/** 推送可选项与状态（服务端下发） */
 				pushSettings: { hourOptions: [], ready: false },
 				/** 用户当前的推送额度与授权状态 */
@@ -469,19 +510,19 @@
 				demoItems: [
 					{
 						category: '🤖 AI / ML',
-						source: '36氪',
+						time: '今天 08:40',
 						title: '某地放开校内 AI 助教试点，秋季学期开始落地',
 						reason: '政策放开是这条赛道的转折点，建议先看它'
 					},
 					{
 						category: '🛠 工具',
-						source: '少数派',
+						time: '今天 07:55',
 						title: '两款课堂 AI 产品同期发布，都主打「给老师减负」',
 						reason: '同一天两家的取舍不同，对比着看更有意思'
 					},
 					{
 						category: '💬 观点',
-						source: '量子位',
+						time: '昨天 21:10',
 						title: '一线教师的实测反思：AI 助教进课堂后，谁更累了',
 						reason: '唯一来自真实课堂的声音，比发布会更值得看'
 					}
@@ -493,6 +534,14 @@
 				feed: null,
 				feedItems: [],
 				feedLoading: false,
+				/** 生成状态：NONE（今天还没生成）/ RUNNING / READY / FAILED */
+				feedStatus: 'NONE',
+				/** 生成中的阶段文案与进度（服务端写入，轮询读到） */
+				feedStage: '',
+				feedProgress: 0,
+				feedError: '',
+				/** 正在调用「触发生成」接口（防连点） */
+				generating: false,
 				activeDate: '',
 				issues: [],
 				payingIndex: -1
@@ -580,6 +629,45 @@
 					(item) => item && item.goodsId && item.type === 'ai_content'
 				);
 			},
+			/**
+			 * 剩余生成次数文案。
+			 *
+			 * <p>{@code remainingGenerations = -1} 表示不限（特权用户）或本次未查到——
+			 * 后者不显示，宁可少一行字也不显示一个错的数字。</p>
+			 */
+			quotaText() {
+				const feed = this.feed;
+				if (!feed || typeof feed.remainingGenerations !== 'number' || feed.remainingGenerations < 0) {
+					return '';
+				}
+				const parts = ['本期还可生成 ' + feed.remainingGenerations + ' 次'];
+				if (feed.dailyGenerationLimit > 0) {
+					parts.push('今日已生成 ' + (feed.todayGenerations || 0) + '/' + feed.dailyGenerationLimit + ' 次');
+				}
+				return parts.join(' · ');
+			},
+			/** 现在还能不能生成（前端先挡一道，服务端仍是权威判定） */
+			canGenerateNow() {
+				const feed = this.feed;
+				if (!feed) {
+					return true;
+				}
+				if (typeof feed.remainingGenerations === 'number' && feed.remainingGenerations === 0) {
+					return false;
+				}
+				return !(feed.dailyGenerationLimit > 0
+					&& (feed.todayGenerations || 0) >= feed.dailyGenerationLimit);
+			},
+			/** 当前看的是不是今天（往期只读：没生成过就补不回来，别给生成按钮） */
+			isViewingToday() {
+				if (!this.activeDate) {
+					return true;
+				}
+				const now = new Date();
+				const pad = (n) => (n < 10 ? '0' + n : '' + n);
+				const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+				return this.activeDate === today;
+			},
 			feedTitle() {
 				const date = this.activeDate || (this.feed && this.feed.date);
 				return date ? `我的简报 · ${date}` : '我的简报';
@@ -594,6 +682,23 @@
 		onPullDownRefresh() {
 			this.fnLoad();
 		},
+		onShow() {
+			// 生成在服务端跑：离开期间它照跑（也可能是定时推送线生成的），回来对齐一次状态。
+			// 首次进页面时权益状态还没到，交给 fnLoad 负责
+			if (this.status) {
+				this.fnRefreshFeedQuietly();
+			}
+		},
+		onUnload() {
+			// 海报还没画完就离开页面：把兜底定时器收掉，别在别的页面上弹提示
+			clearTimeout(this._posterTimer);
+			this.posterBusy = false;
+			// 轮询也停掉：生成本身在服务端，停的只是「显示进度」这件事
+			this.fnStopPolling();
+		},
+		onHide() {
+			this.fnStopPolling();
+		},
 		methods: {
 			async fnLoad() {
 				this.loading = 'loading';
@@ -607,14 +712,13 @@
 					this.limits = Object.assign({}, this.limits, body.limits || {});
 					this.benefitNote = body.benefitNote || '';
 					this.categoryOptions = Array.isArray(body.categoryOptions) ? body.categoryOptions : [];
-					this.sourceOptions = Array.isArray(body.sourceOptions) ? body.sourceOptions : [];
 					this.presetTopics = Array.isArray(body.presetTopics) ? body.presetTopics : [];
 					this.redeem = body.redeem || { pointsPrice: 0, pointsDays: 30 };
 					this.pushSettings = body.push || { hourOptions: [], ready: false };
 					const preference = body.preference || {};
 					this.picked = {
 						categories: Array.isArray(preference.categories) ? preference.categories.slice() : [],
-						sources: Array.isArray(preference.sources) ? preference.sources.slice() : [],
+
 						keywords: Array.isArray(preference.keywords) ? preference.keywords.slice() : [],
 						customTopics: Array.isArray(preference.customTopics) ? preference.customTopics.slice() : [],
 						pushEnabled: preference.pushEnabled === true,
@@ -642,7 +746,12 @@
 					this.fnLoadIssues();
 				}
 			},
-			/** 读取某一天的简报（留空 = 今天，服务端会在首次打开时生成） */
+			/**
+			 * 读取某一天的简报（<b>只读</b>：打开页面不再自动生成）。
+			 *
+			 * <p>生成由用户点按钮触发，进度靠轮询这条接口拿——所以这里既要把状态写进本地，
+			 * 也要根据状态决定是否开始轮询（生成中时每 2.5 秒看一次）。</p>
+			 */
 			async fnLoadFeed(date) {
 				this.feedLoading = true;
 				try {
@@ -651,9 +760,7 @@
 					if (body.error) {
 						throw { error: body.error };
 					}
-					this.feed = body;
-					this.feedItems = Array.isArray(body.items) ? body.items : [];
-					this.activeDate = body.date || date || '';
+					this.fnApplyFeed(body, date);
 					if (!date) {
 						this.fnLoadIssues();
 					}
@@ -664,6 +771,105 @@
 					});
 				} finally {
 					this.feedLoading = false;
+				}
+			},
+
+			/** 把服务端读模型落到本地状态，并据此决定要不要继续轮询 */
+			fnApplyFeed(body, date) {
+				this.feed = body;
+				this.feedItems = Array.isArray(body.items) ? body.items : [];
+				this.activeDate = body.date || date || '';
+				this.feedStatus = body.status || 'NONE';
+				this.feedStage = body.stage || '';
+				this.feedProgress = Number(body.progress || 0);
+				this.feedError = body.error || '';
+				if (this.feedStatus === 'RUNNING' && !date) {
+					// 生成在服务端跑，退出页面也不会中断；页面上只要把进度显示出来
+					this.fnStartPolling();
+				} else {
+					this.fnStopPolling();
+				}
+			},
+
+			/** 生成中：每 2.5 秒问一次进度（服务端在后台跑，不依赖这个定时器） */
+			fnStartPolling() {
+				if (this._pollTimer) {
+					return;
+				}
+				this._pollTimer = setInterval(() => {
+					if (this.feedStatus !== 'RUNNING') {
+						this.fnStopPolling();
+						return;
+					}
+					this.fnRefreshFeedQuietly();
+				}, 2500);
+			},
+
+			fnStopPolling() {
+				if (this._pollTimer) {
+					clearInterval(this._pollTimer);
+					this._pollTimer = null;
+				}
+			},
+
+			/** 轮询用：失败不弹提示（网络抖动不该在生成过程中打扰用户） */
+			async fnRefreshFeedQuietly() {
+				try {
+					const res = await this.$httpApi.v2.getAiContentFeed();
+					const body = res?.data || res || {};
+					if (body.error) {
+						return;
+					}
+					const wasRunning = this.feedStatus === 'RUNNING';
+					this.fnApplyFeed(body, '');
+					if (wasRunning && this.feedStatus === 'READY') {
+						uni.showToast({ title: '今天的简报已生成', icon: 'none' });
+						this.fnLoadIssues();
+					} else if (wasRunning && this.feedStatus === 'FAILED') {
+						this.fnStopPolling();
+					}
+				} catch (err) {
+					// 静默：下一轮再试
+				}
+			},
+
+			/** 用户点「生成」：服务端后台跑，这里只负责把状态与进度显示出来 */
+			async fnGenerate() {
+				if (this.generating || this.feedStatus === 'RUNNING') {
+					return;
+				}
+				if (!this.canGenerateNow) {
+					uni.showModal({
+						title: '生成次数已用完',
+						content: '本次权益内的生成次数已经用完，可以再购买或积分兑换；'
+							+ '站长也能在后台调整「每个权益日赠送几次」。',
+						showCancel: false,
+						confirmText: '知道了'
+					});
+					return;
+				}
+				this.generating = true;
+				try {
+					const res = await this.$httpApi.v2.generateAiContent();
+					const body = res?.data || res || {};
+					if (body.error) {
+						throw { error: body.error };
+					}
+					this.fnApplyFeed(body, '');
+					if (this.feedStatus === 'READY') {
+						// 走到这里说明服务端判定「已有一份可用内容」（例如上一次生成还在收尾）——
+						// 措辞不能再写成「已是最新」：那句话会让用户以为「点生成被跳过了」
+						uni.showToast({ title: '当前显示的是最近一次生成的简报', icon: 'none' });
+					} else {
+						uni.showToast({ title: '已开始生成，可离开页面，生成好再回来查看', icon: 'none' });
+					}
+				} catch (err) {
+					uni.showToast({
+						title: err?.error || err?.detail || '生成失败，请稍后重试',
+						icon: 'none'
+					});
+				} finally {
+					this.generating = false;
 				}
 			},
 			async fnLoadIssues() {
@@ -693,21 +899,6 @@
 					return;
 				}
 				this.picked.categories.push(key);
-			},
-			fnToggleSource(value) {
-				const index = this.picked.sources.indexOf(value);
-				if (index >= 0) {
-					this.picked.sources.splice(index, 1);
-					return;
-				}
-				if (this.picked.sources.length >= this.limits.maxSources) {
-					uni.showToast({
-						title: `最多关注 ${this.limits.maxSources} 个来源`,
-						icon: 'none'
-					});
-					return;
-				}
-				this.picked.sources.push(value);
 			},
 			fnAddKeyword() {
 				const word = (this.keywordDraft || '').trim();
@@ -880,10 +1071,33 @@
 					}
 					if (body.pushed) {
 						uni.showToast({ title: body.message || '已推送到你的微信', icon: 'none' });
+					} else if (body.needQuota) {
+						// 额度是「一次授权一条」：这里直接把人引到微信的授权弹窗，
+						// 授权成功后自动重试一次，省掉「回页面再点一遍」
+						uni.showModal({
+							title: '没有推送额度',
+							content: body.message || '微信要求每次推送前授权一次，点「去授权」继续',
+							confirmText: '去授权',
+							confirmColor: '#2F54EB',
+							success: (modal) => {
+								if (!modal.confirm) {
+									return;
+								}
+								this.fnAskPushPermission().then((granted) => {
+									if (granted) {
+										this.fnPushNow();
+									}
+								});
+							}
+						});
 					} else {
-						uni.showToast({
-							title: body.message || '推送额度不足，请先授权',
-							icon: 'none'
+						// 文案由服务端给全（已推过 / 站点日上限 / 微信拒收的原始原因），
+						// 前端不再自己拼「额度不足」——那句错话曾让用户以为功能坏了
+						uni.showModal({
+							title: '暂时不能推送',
+							content: body.message || '请稍后重试',
+							showCancel: false,
+							confirmText: '知道了'
 						});
 					}
 					this.fnLoadPushStatus();
@@ -954,60 +1168,240 @@
 				openSubscribeSetting();
 			},
 
-			// ── 简报海报（钩子式：只带日期/导语摘录/条目标题，不含全文） ──
-			fnGeneratePoster() {
+			// ── 简报海报 ──
+			/**
+			 * 生成简报海报。
+			 *
+			 * <p>版式：品牌渐变头部（日期 + 署名）→ 导语卡（左侧强调条）→ 条目卡（序号 / 分类与时间 /
+			 * 标题）→ 小程序码。旧的「白底 + 几行文字」在海报场景里等于没设计——海报是要发给别人看的，
+			 * 所以头部与卡片必须有层次，并给出扫码入口。</p>
+			 *
+			 * <p>图片先下载成本地文件再交给画布：`liu-poster` 只对含 http 的地址走 downloadFile，
+			 * 相对路径会被原样丢进 canvas（开发者工具里解析成 pageframe 地址 → 永远下载不完 →
+			 * 绘制链挂住，loading 一直转）。站长的码图又常配成相对路径，所以这里统一兜住。</p>
+			 */
+			async fnGeneratePoster() {
 				if (this.posterBusy) return;
-				const siteTitle = getAppConfigs()?.basicConfig?.startConfig?.title || '';
+				this.posterBusy = true;
+				// 定时器先上：图片下载或画布任一步不回调，都能收尾（否则按钮会永久卡住）
+				this.fnArmPosterTimeout();
+				try {
+					const configs = await this.fnBuildPosterConfigs();
+					this.$refs.liuPoster.init(configs);
+				} catch (err) {
+					this.posterBusy = false;
+					uni.hideLoading();
+					uni.showToast({ title: '海报生成失败，请稍后重试', icon: 'none' });
+				}
+			},
+
+			/**
+			 * 组装海报元素。
+			 *
+			 * <p>画布吃坐标不吃样式，四条硬约束必须自己守住（改坐标前先读这一条）：</p>
+			 * <ul>
+			 *   <li><b>不能用换行符</b>：渲染层按字符逐个测量，`\n` 不会换行，两句话会挤成一行
+			 *       —— 要分行就分开写两个 text 元素；</li>
+			 *   <li><b>y 不是第一行的基线</b>：实际画的是 {@code y + lineHeight × (第几行+1)}，
+			 *       所以「想让首行基线落在 B」就传 {@code y = B - lineHeight}。
+			 *       早前按「y 即基线」摆坐标，序号数字被推出了方块、标题第二行压到卡片外；</li>
+			 *   <li><b>高度按 lineHeight 的整数倍给</b>：放不下时只画前 N 行、末行自动加省略号；想完整显示
+			 *       两行就给 {@code 2 × lineHeight} 的高度；</li>
+			 *   <li>文字顶端 ≈ 首行基线 − fontSize：方块与标题之间的间隙要按这个估算，不能只留几像素。</li>
+			 * </ul>
+			 */
+			async fnBuildPosterConfigs() {
+				const appConfigs = getAppConfigs() || {};
+				const siteTitle = appConfigs?.basicConfig?.startConfig?.title || '';
+				const appInfo = appConfigs?.appConfig?.appInfo || {};
+				const qrPath = await this.fnPreparePosterImage(appInfo.qrCodeImageUrl);
+				const nickname = (getCommentAuthorInfo()?.displayName || '').trim();
 				const date = this.activeDate || (this.feed && this.feed.date) || '';
-				const intro = ((this.feed && this.feed.intro) || '').slice(0, 90);
-				const titles = this.feedItems
-					.filter((item) => !item.generated)
-					.slice(0, 3)
-					.map((item) => '· ' + (item.title || ''));
+				const intro = ((this.feed && this.feed.intro) || '').slice(0, 130);
+				const items = this.feedItems.slice(0, POSTER_ITEM_LIMIT).map((item) => ({
+					title: item.title || '（无标题）',
+					meta: [item.categoryLabel, item.publishedAt].filter(Boolean).join(' · ')
+				}));
+
 				const configs = [
+					// 卡片底
 					{
 						type: 'color', width: 674, height: 1000, x: 0, y: 0,
-						radius: 24, lineWidth: 0, lineColor: '#ffffff',
+						radius: 28, lineWidth: 0, lineColor: '#ffffff',
 						colorObj: { colorList: ['#FFFFFF'], direction: 2 }
 					},
+					// 头部渐变卡：24..204
 					{
-						type: 'text', width: 626, height: 44, x: 24, y: 40,
-						color: '#1f1f1f', fontSize: 36, lineHeight: 44, bold: true,
-						content: '我的定制简报' + (date ? ' · ' + date : '')
+						type: 'color', width: 626, height: 180, x: 24, y: 24,
+						radius: 24, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['#2f54eb', '#6b4df0'], direction: 3 }
+					},
+					// 头部装饰圆
+					{
+						type: 'color', width: 180, height: 180, x: 440, y: 10,
+						radius: 90, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['rgba(255,255,255,0.10)'], direction: 2 }
 					},
 					{
-						type: 'text', width: 626, height: 34, x: 24, y: 96,
-						color: '#9a9a94', fontSize: 24, lineHeight: 34,
-						content: siteTitle ? '来自 ' + siteTitle : '我的 AI 定制简报'
+						type: 'color', width: 120, height: 120, x: 30, y: 140,
+						radius: 60, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['rgba(255,255,255,0.08)'], direction: 2 }
+					},
+					// 首行基线 92（y = 92 - 34）
+					{
+						type: 'text', width: 260, height: 34, x: 52, y: 58,
+						color: 'rgba(255,255,255,0.88)', fontSize: 22, lineHeight: 34, bold: false,
+						content: '✦ AI 定制简报'
+					},
+					// 首行基线 152（y = 152 - 56）
+					{
+						type: 'text', width: 460, height: 56, x: 52, y: 96,
+						color: '#FFFFFF', fontSize: 38, lineHeight: 56, bold: true,
+						content: date || '我的简报'
+					},
+					// 首行基线 190（y = 190 - 34）
+					{
+						type: 'text', width: 520, height: 34, x: 52, y: 156,
+						color: 'rgba(255,255,255,0.82)', fontSize: 21, lineHeight: 34, bold: false,
+						content: (nickname ? nickname + ' 的专属简报' : '我的专属简报')
+							+ (siteTitle ? ' · ' + siteTitle : '')
 					}
 				];
-				let y = 150;
+
+				let y = 220;
 				if (intro) {
+					// 导语卡 220..360：三行（37×3=111），首行基线 271（y = 234）
 					configs.push({
-						type: 'text', width: 626, height: 150, x: 24, y: y,
-						color: '#333333', fontSize: 25, lineHeight: 40,
+						type: 'color', width: 626, height: 140, x: 24, y: y,
+						radius: 20, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['#F3F5FC'], direction: 2 }
+					});
+					configs.push({
+						type: 'color', width: 6, height: 96, x: 46, y: y + 28,
+						radius: 3, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['#2f54eb'], direction: 2 }
+					});
+					configs.push({
+						type: 'text', width: 552, height: 111, x: 70, y: y + 14,
+						color: '#3c3c46', fontSize: 23, lineHeight: 37, bold: false,
 						content: intro
 					});
-					y += 170;
+					y += 154;
 				}
-				titles.forEach((title) => {
+
+				items.forEach((item, index) => {
+					// 条目卡 136 高：方块 y+16..y+60
 					configs.push({
-						type: 'text', width: 626, height: 60, x: 24, y: y,
-						color: '#1f1f1f', fontSize: 26, lineHeight: 40,
-						content: title
+						type: 'color', width: 626, height: 136, x: 24, y: y,
+						radius: 18, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['#FAFBFF'], direction: 2 }
 					});
-					y += 60;
+					configs.push({
+						type: 'color', width: 44, height: 44, x: 44, y: y + 16,
+						radius: 14, lineWidth: 0, lineColor: '#ffffff',
+						colorObj: { colorList: ['#2f54eb', '#6b4df0'], direction: 3 }
+					});
+					// 序号：方块的竖直中线 ≈ y+38，字号 22 → 首行基线给到 y+47（y = y+17）
+					configs.push({
+						type: 'text', width: 60, height: 30, x: 53, y: y + 17,
+						color: '#FFFFFF', fontSize: 22, lineHeight: 30, bold: true,
+						content: '0' + (index + 1)
+					});
+					// 分类 / 发布时间：与方块同一行（首行基线 y+46 → y = y+16）
+					if (item.meta) {
+						configs.push({
+							type: 'text', width: 420, height: 30, x: 104, y: y + 16,
+							color: '#2f54eb', fontSize: 20, lineHeight: 30, bold: true,
+							content: item.meta
+						});
+					}
+					// 标题：两行（30×2=60），首行基线 y+88 → 文字顶端 ≈ y+64，方块下沿 y+60 之上留 4px
+					configs.push({
+						type: 'text', width: 566, height: 60, x: 44, y: y + 58,
+						color: '#1f1f28', fontSize: 24, lineHeight: 30, bold: true,
+						content: item.title
+					});
+					y += 144;
 				});
-				y += 20;
+
+				// 页脚：跟着内容走，但不越过固定底线（条目少时上移，避免中间一大块空白）
+				const footerTop = Math.min(Math.max(y + 10, 760), 812);
 				configs.push({
-					type: 'text', width: 626, height: 80, x: 24, y: y,
-					color: '#9a9a94', fontSize: 22, lineHeight: 34,
-					content: '简报内容仅主人可见；打开小程序定制一份你自己的每日简报'
+					type: 'line', width: 1, color: '#E4E6F0', lineType: 'dash',
+					startX: 44, startY: footerTop, endX: 630, endY: footerTop
 				});
-				this.posterBusy = true;
-				this.$refs.liuPoster.init(configs);
+				if (qrPath) {
+					configs.push({
+						type: 'image', width: 96, height: 96, x: 24, y: footerTop + 14,
+						radius: 12, lineWidth: 0, lineColor: '#ffffff',
+						path: qrPath
+					});
+				}
+				// 说明文字分两行写：画布不认换行符。首行基线 footerTop+56（y = footerTop+22）、
+				// 第二行基线 footerTop+90（y = footerTop+56），与二维码竖直居中对齐
+				configs.push({
+					type: 'text', width: 470, height: 34, x: 140, y: footerTop + 22,
+					color: '#5a5a66', fontSize: 23, lineHeight: 34, bold: false,
+					content: qrPath ? '长按识别小程序码' : '在小程序里搜索「' + (siteTitle || '本站') + '」'
+				});
+				configs.push({
+					type: 'text', width: 470, height: 34, x: 140, y: footerTop + 56,
+					color: '#5a5a66', fontSize: 23, lineHeight: 34, bold: false,
+					content: '定制一份你自己的每日简报'
+				});
+				// 底部小字固定在最下方（首行基线 962 → y = 932）
+				configs.push({
+					type: 'text', width: 626, height: 30, x: 24, y: 932,
+					color: '#9a9aa6', fontSize: 20, lineHeight: 30, bold: false,
+					content: '内容仅你自己可见 · 每天一份按你的方向挑的最新内容'
+				});
+
+				return configs;
 			},
+
+			/**
+			 * 把海报里的图片准备成「本地临时文件路径」。
+			 *
+			 * <p>两步都不能省：① 站长的码图常配成相对路径（{@code /upload/xxx.jpg}），
+			 * 先补成站点绝对地址；② 画布只能画本地文件，所以自己先 downloadFile——
+			 * `liu-poster` 对不含 http 的地址会原样丢给 canvas，失败时那条 Promise 不落地，
+			 * 整个绘制链就挂住（表现是「正在绘制」一直转）。</p>
+			 */
+			async fnPreparePosterImage(raw) {
+				const url = this.$utils.checkUrl(String(raw || '').trim());
+				if (!/^https?:\/\//i.test(url)) {
+					return '';
+				}
+				try {
+					const res = await new Promise((resolve, reject) => {
+						uni.downloadFile({ url, success: resolve, fail: reject });
+					});
+					if (res && res.statusCode === 200 && res.tempFilePath) {
+						return res.tempFilePath;
+					}
+					console.warn('[ai-content] 海报图片下载异常，已跳过：', res && res.statusCode);
+					return '';
+				} catch (err) {
+					console.warn('[ai-content] 海报图片下载失败，已跳过：', err?.errMsg || err);
+					return '';
+				}
+			},
+
+			/** 绘制兜底超时：图片出问题时不至于让「正在绘制」永远转下去 */
+			fnArmPosterTimeout() {
+				clearTimeout(this._posterTimer);
+				this._posterTimer = setTimeout(() => {
+					if (!this.posterBusy) {
+						return;
+					}
+					this.posterBusy = false;
+					uni.hideLoading();
+					uni.showToast({ title: '海报绘制超时，请稍后重试', icon: 'none' });
+				}, POSTER_TIMEOUT_MS);
+			},
+
 			handleOnPosterChange(posterUrl) {
+				clearTimeout(this._posterTimer);
 				this.posterBusy = false;
 				if (!posterUrl) {
 					uni.showToast({ title: '海报生成失败，请稍后重试', icon: 'none' });
@@ -1015,6 +1409,17 @@
 				}
 				uni.previewImage({ urls: [posterUrl] });
 			},
+			/**
+			 * 条目封面地址。
+			 *
+			 * <p>检索结果的图已转存进站点附件库（相对路径），不补域名在真机上加载不出来；
+			 * 已经是绝对地址的不动。</p>
+			 */
+			fnItemCover(item) {
+				const cover = (item && item.cover) || '';
+				return this.$utils.checkIsUrl(cover) ? cover : this.$utils.checkUrl(cover);
+			},
+
 			/** 空简报时的一键关注：点一下就把该主题加进去并保存 */
 			fnQuickPick(key) {
 				if (this.picked.categories.indexOf(key) < 0) {
@@ -1032,7 +1437,6 @@
 				try {
 					const res = await this.$httpApi.v2.saveAiContentPreference({
 						categories: this.picked.categories,
-						sources: this.picked.sources,
 						keywords: this.picked.keywords,
 						customTopics: this.picked.customTopics,
 						pushEnabled: this.picked.pushEnabled,
@@ -1045,18 +1449,17 @@
 					// 以服务端返回为准回写：避免本地与服务端不一致
 					this.picked = {
 						categories: (body.categories || []).slice(),
-						sources: (body.sources || []).slice(),
 						keywords: (body.keywords || []).slice(),
 						customTopics: (body.customTopics || []).slice(),
 						pushEnabled: body.pushEnabled === true,
 						pushHour: typeof body.pushHour === 'number' ? body.pushHour : this.picked.pushHour
 					};
 					this.fnLoadPushStatus();
-					uni.showToast({ title: '已保存，正在按新的方向生成简报', icon: 'none' });
 					// 刚配好关注方向是最自然的授权时机：此时问「简报就绪时通知你」不会被当成打扰
 					this.fnMaybeAskPushPermission();
-					// 关注方向变了，今天的简报要重新生成（服务端当天已按新方向重建）
-					this.fnLoadFeed('');
+					// 保存后直接触发生成（服务端后台跑）：改过方向时当天那份已被作废，
+					// 没改过或已生成则由服务端原样返回，不会重复烧 AI 额度
+					await this.fnGenerate();
 				} catch (err) {
 					uni.showToast({
 						title: err?.error || err?.detail || '保存失败，请稍后重试',
@@ -1128,13 +1531,35 @@
 				}
 				await this.fnAskPushPermission();
 			},
+			/**
+			 * 打开一条内容。
+			 *
+			 * <p>实时素材来自站外源头（没有站内文章），小程序又不能直接开外链，
+			 * 所以这类条目走「弹窗看摘要 + 复制原文链接」：至少让用户能把链接带走。
+			 * 只有兜底路径（站内日报内容）的条目才跳详情页。</p>
+			 */
 			fnOpenItem(item) {
-				if (!item.postName) {
-					uni.showToast({ title: '这条内容暂不可跳转', icon: 'none' });
+				if (item.postName) {
+					uni.navigateTo({
+						url: '/pagesA/article-detail/article-detail?name=' + item.postName
+					});
 					return;
 				}
-				uni.navigateTo({
-					url: '/pagesA/article-detail/article-detail?name=' + item.postName
+				if (!item.link) {
+					uni.showToast({ title: '这条内容没有可跳转的原文', icon: 'none' });
+					return;
+				}
+				uni.showModal({
+					title: item.title || '原文链接',
+					content: (item.summary ? item.summary + '\n\n' : '')
+						+ '复制链接后可在浏览器里打开原文。',
+					confirmText: '复制链接',
+					confirmColor: '#2F54EB',
+					success: (res) => {
+						if (res.confirm) {
+							uni.setClipboardData({ data: item.link });
+						}
+					}
 				});
 			},
 			fnPrice(cents) {
@@ -1499,6 +1924,44 @@
 		justify-content: space-between;
 	}
 
+	.feed-item-head-main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	/* 缩略图：有图更醒目；没图时这一块整个不渲染，标题照旧占满 */
+	.feed-item-cover {
+		flex: none;
+		width: 150rpx;
+		height: 104rpx;
+		margin-left: 16rpx;
+		border-radius: $uh-radius-md;
+		background-color: $uh-fill;
+	}
+
+	/* AI 小结：与上面的条目用一条浅分隔线隔开，像编辑手记 */
+	.feed-outro {
+		margin-top: 18rpx;
+		padding: 18rpx 20rpx;
+		border-radius: $uh-radius-md;
+		background-color: $uh-fill;
+	}
+
+	.feed-outro-label {
+		display: block;
+		font-size: 22rpx;
+		font-weight: 600;
+		color: $uh-accent;
+	}
+
+	.feed-outro-text {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.7;
+		color: $uh-ink-2;
+	}
+
 	.feed-item-title {
 		flex: 1;
 		font-size: 27rpx;
@@ -1521,8 +1984,107 @@
 		color: $uh-ink-3;
 	}
 
+	/* ── 生成进度（服务端写入状态，前端只读） ── */
+	.feed-progress {
+		padding: 8rpx 0 4rpx;
+	}
+
+	.feed-progress-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.feed-progress-stage {
+		font-size: 25rpx;
+		color: $uh-ink-1;
+	}
+
+	.feed-progress-num {
+		font-size: 24rpx;
+		color: $uh-accent;
+	}
+
+	.feed-progress-track {
+		height: 10rpx;
+		margin-top: 16rpx;
+		border-radius: $uh-radius-pill;
+		background-color: $uh-fill;
+		overflow: hidden;
+	}
+
+	.feed-progress-fill {
+		height: 10rpx;
+		border-radius: $uh-radius-pill;
+		background-image: $uh-grad-accent;
+		transition: width 0.3s ease;
+	}
+
+	.feed-progress-tip {
+		display: block;
+		margin-top: 14rpx;
+		font-size: 22rpx;
+		color: $uh-ink-3;
+	}
+
+	/* ── 空态（今天还没生成 / 生成失败）：给一个明确的起点与重试入口 ── */
+	.feed-empty {
+		padding: 12rpx 0 4rpx;
+	}
+
+	.feed-empty-title {
+		display: block;
+		font-size: 27rpx;
+		font-weight: 600;
+		color: $uh-ink-1;
+	}
+
+	.feed-empty-desc {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: $uh-ink-3;
+	}
+
+	.feed-empty-btn {
+		margin-top: 22rpx;
+		padding: 20rpx 0;
+		border-radius: $uh-radius-pill;
+		background-image: $uh-grad-accent;
+		text-align: center;
+	}
+
+	.section-quota {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: $uh-accent;
+	}
+
+	.feed-empty-btn.is-off {
+		background-image: none;
+		background-color: $uh-fill;
+	}
+
+	.feed-empty-btn.is-off .feed-empty-btn-text {
+		color: $uh-ink-3;
+	}
+
+	.feed-empty-btn-text {
+		font-size: 27rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
 	.feed-item-tag {
 		margin-right: 14rpx;
+	}
+
+	/* 发布时间与分类同一行：让读者一眼看出「这是刚抓到的」 */
+	.feed-item-time {
+		font-size: 20rpx;
+		color: $uh-ink-4;
 	}
 
 	.feed-item-reason {
@@ -1788,7 +2350,7 @@
 		color: $uh-ink-3;
 	}
 
-	.demo-item-source {
+	.demo-item-time {
 		margin-left: 12rpx;
 		font-size: 20rpx;
 		color: $uh-ink-3;

@@ -39,7 +39,33 @@ export async function fetchCategorySubscription(httpApi) {
 	}
 }
 
-/** 订阅上限：以服务端下发为准，没下发时按 5（服务端仍会拦，界面不至于放开） */
+/**
+ * 「不限量」的判定。
+ *
+ * <p>站点所有者/管理员的订阅上限在服务端是 {@link UNLIMITED_SENTINEL}（Integer.MAX_VALUE）——
+ * 那是个哨兵值，不是给人看的数字。优先读服务端下发的 {@code unlimited} 布尔；
+ * 老服务端没有这个字段时按数值兜底判断，否则界面上会出现「已订阅 6/2147483647 个分类」。</p>
+ */
+export const UNLIMITED_SENTINEL = 1000000;
+
+export function isUnlimitedQuota(limits) {
+	if (limits?.unlimited === true) {
+		return true;
+	}
+	const limit = Number(limits?.limit);
+	return Number.isFinite(limit) && limit >= UNLIMITED_SENTINEL;
+}
+
+/** 上限文案：不限量时给「不限」，其余按数字（服务端没下发时按 5 兜底） */
+export function quotaText(limits) {
+	return isUnlimitedQuota(limits) ? '不限' : String(subscriptionLimit(limits));
+}
+
+/**
+ * 订阅上限的数值：用于切片与比较（不限量时它是个很大的数，比任何实际订阅数都大，
+ * 因此「是否已满」之类的比较天然为 false）。
+ * 展示请用 {@link quotaText}，别把它直接拼进文案。
+ */
 export function subscriptionLimit(limits) {
 	const limit = Number(limits?.limit);
 	return Number.isFinite(limit) && limit > 0 ? limit : 5;

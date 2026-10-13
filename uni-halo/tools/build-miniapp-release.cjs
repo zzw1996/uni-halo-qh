@@ -30,6 +30,25 @@ const { spawnSync } = require('child_process')
 const ROOT = path.resolve(__dirname, '..')
 const OUT_DIR = path.join(ROOT, 'unpackage', 'dist', 'build', 'mp-weixin')
 
+/** 解析微信开发者工具 CLI（只为在结尾打印一条可直接复制的上传命令） */
+function resolveDevtoolsCli() {
+  const env = process.env.WX_DEVTOOLS_CLI
+  if (env && fs.existsSync(env)) return env
+  const names = ['微信web开发者工具', '微信开发者工具']
+  const roots = ['C:', 'D:', 'E:', 'F:']
+  const subs = ['Program Files (x86)\\Tencent', 'Program Files\\Tencent', 'chengxu', 'software', '']
+  for (const drive of roots) {
+    for (const sub of subs) {
+      for (const name of names) {
+        const p = path.join(drive + '\\', sub, name, 'cli.bat')
+        if (fs.existsSync(p)) return p
+      }
+    }
+  }
+  return '<微信开发者工具>\\cli.bat'
+}
+const CLI_BAT = resolveDevtoolsCli()
+
 function log(msg) {
   console.log(msg)
 }
@@ -141,9 +160,11 @@ function main() {
   })
   if (check.status === 0) {
     log('')
-    log('上传步骤：微信开发者工具 → 打开项目 → 选下面这个目录（不要选 dist/dev）')
-    log(`  ${OUT_DIR}`)
-    log('然后点「上传」，填版本号与备注即可。')
+    log('上传步骤（开发者工具里必须打开下面这个目录，别开 dist/dev —— 见 小程序上传超限与主包体积.md）：')
+    log(`  1) 打开项目：${OUT_DIR}`)
+    log('  2) 点「上传」，填版本号与备注')
+    log('  或者直接用命令行上传（开发者工具需在运行中且已登录）：')
+    log(`     "${CLI_BAT}" upload --project "${OUT_DIR}" -v <版本号> -d "<备注>"`)
   }
   process.exit(check.status || 0)
 }

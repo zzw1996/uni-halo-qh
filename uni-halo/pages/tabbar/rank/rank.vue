@@ -425,9 +425,6 @@
 				}, {
 					label: '点赞文章',
 					value: `+${pointsOf('upvote', 2)} / 次`
-				}, {
-					label: '参与投票',
-					value: `+${pointsOf('vote', 10)} / 次`
 				}];
 				if (this.haloConfigs?.inviteConfig?.enabled !== false) {
 					const reward = Number(this.haloConfigs?.inviteConfig?.rewardPoints);

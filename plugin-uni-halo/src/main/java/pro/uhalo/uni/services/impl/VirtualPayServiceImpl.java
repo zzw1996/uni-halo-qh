@@ -859,6 +859,11 @@ public class VirtualPayServiceImpl implements VirtualPayService {
                                 latest.setAiContentExpireAt(
                                     AiContentConfigHelper.extend(latest.getAiContentExpireAt(),
                                         days));
+                                // 同时发放生成次数（天数 × 每天次数，上限见配置）：
+                                // 与积分兑换通道同一条口径
+                                var added = AiContentConfigHelper.creditsForDays(days, config);
+                                latest.setAiContentCredits(
+                                    AiContentEntitlementService.creditsOf(latest) + added);
                                 return pointsPersistence.saveAccount(latest)
                                     .doOnNext(saved -> log.info(
                                         "AI 定制内容权益已发放：outTradeNo={}, 购买 {} 天, 到期={}",

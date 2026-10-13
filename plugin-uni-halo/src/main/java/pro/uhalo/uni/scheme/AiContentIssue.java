@@ -37,8 +37,19 @@ public class AiContentIssue extends AbstractExtension {
     /** AI 导语；未开启导语生成或生成失败时为空串（前端按「无导语」渲染） */
     private String intro;
 
+    /** AI 导语；未开启导语生成或生成失败时为空串（前端按「无导语」渲染） */
+    private String outro;
+
     /** 条目列表（AiContentItemDTO 数组的 JSON） */
     private String items;
+
+    /**
+     * 这一份的素材是否来自「用户关键词的联网检索」。
+     *
+     * <p>决定说明文案说「联网检索到的 N 条相关报道」还是「最近 N 小时抓到的 N 条」——
+     * 用户要能看出来内容为什么与自己的关键词相关。</p>
+     */
+    private Boolean searched;
 
     /** 候选池条数（用来解释「为什么只有这几条」） */
     private Integer candidateCount;
@@ -48,6 +59,37 @@ public class AiContentIssue extends AbstractExtension {
 
     /** 导语是否由 AI 生成（false = 纯筛选结果，或 AI 失败降级） */
     private Boolean aiGenerated;
+
+    /**
+     * 这一份是否用了「最近几小时抓到的实时素材」（null/0 = 退回站内日报内容）。
+     *
+     * <p>存下来是为了让「这一天这份是怎么来的」可追溯：说明文案要说「最近 N 小时」，
+     * 而 N 是当时的配置值，事后改配置不该改写历史简报的说明。</p>
+     */
+    private Integer liveHours;
+
+    /**
+     * 生成状态：{@code RUNNING}（生成中）/ {@code READY}（已完成）/ {@code FAILED}（失败可重试）。
+     *
+     * <p>为什么状态要落库：生成由用户触发、在服务端后台跑（页面退出也不中断），
+     * 所以「跑到哪一步了」必须能被后来的请求读到——页面靠轮询这条记录显示进度，
+     * 再进页面才能直接看到结果，而不是重新烧一次 AI。</p>
+     *
+     * <p>null 视为 {@code READY}：升级前落库的老记录都已完成。</p>
+     */
+    private String status;
+
+    /** 当前阶段文案（生成中给用户看，例如「AI 正在挑选与撰写」） */
+    private String stage;
+
+    /** 进度百分比 0-100（只是观感，不参与任何判定） */
+    private Integer progress;
+
+    /** 失败原因（status=FAILED 时有值，前端直接展示） */
+    private String error;
+
+    /** 这条记录的最近一次写入时间：用来判断「卡住的生成」（超过阈值按失败处理） */
+    private Instant updatedAt;
 
     private Instant createdAt;
 }

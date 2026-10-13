@@ -100,6 +100,13 @@
 					}
 				},
 				{
+					"path": "my-articles/my-articles",
+					"style": {
+						"navigationBarTitleText": "我的投稿",
+						"enablePullDownRefresh": true
+					}
+				},
+				{
 					"path": "article-detail/article-detail",
 					"style": {
 						"navigationBarTitleText": "内容详情",
@@ -255,32 +262,6 @@
 					"style": {
 						"navigationBarTitleText": "发表瞬间",
 						"enablePullDownRefresh": false
-					}
-				},
-				{
-					"path": "votes/votes",
-					"style": {
-						"navigationBarTitleText": "投票列表",
-						"enablePullDownRefresh": true,
-						"app-plus": {
-							"pullToRefresh": {
-								"color": "#2F54EB",
-								"style": "circle"
-							}
-						}
-					}
-				},
-				{
-					"path": "vote-detail/vote-detail",
-					"style": {
-						"navigationBarTitleText": "投票详情",
-						"enablePullDownRefresh": true,
-						"app-plus": {
-							"pullToRefresh": {
-								"color": "#2F54EB",
-								"style": "circle"
-							}
-						}
 					}
 				},
 				{

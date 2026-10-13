@@ -44,4 +44,20 @@ public class AiContentStatusDTO {
      * 显示成「管理员」而不是「剩余 N 天」。</p>
      */
     private boolean viaPrivilege;
+
+    /**
+     * 还能生成几次简报；{@code -1} 表示不限（特权用户）。
+     *
+     * <p>付费功能的成本阀门：用户在有效期内随时可以重新生成，但总次数有限。</p>
+     */
+    private long remainingGenerations;
+
+    /** 今天已经生成几次（与前端的每日上限提示同一口径） */
+    private int todayGenerations;
+
+    /** 每天最多生成几次；0 = 不限制每天 */
+    private int dailyGenerationLimit;
+
+    /** 每个权益日赠送几次（购买页说明用） */
+    private int creditsPerDay;
 }

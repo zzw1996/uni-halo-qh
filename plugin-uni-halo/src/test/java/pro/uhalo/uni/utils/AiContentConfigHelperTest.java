@@ -28,7 +28,12 @@ class AiContentConfigHelperTest {
         assertThat(config.isEnabled()).isFalse();
         assertThat(config.isAiIntroEnabled()).isTrue();
         assertThat(config.getMaxCategories()).isEqualTo(5);
-        assertThat(config.getMaxSources()).isEqualTo(5);
+        // 实时素材默认 48 小时：简报的卖点是最新，素材来自现抓而不是已发布的日报
+        assertThat(config.getLiveHours()).isEqualTo(48);
+        // 生成次数：买 1 天给 2 次、永久卡按上限 100 次、每天最多 3 次
+        assertThat(config.getCreditsPerDay()).isEqualTo(2);
+        assertThat(config.getMaxCreditsPerGrant()).isEqualTo(100);
+        assertThat(config.getDailyGenerationLimit()).isEqualTo(3);
         assertThat(config.getMaxKeywords()).isEqualTo(10);
         assertThat(config.getMaxItems()).isEqualTo(10);
         assertThat(config.getWindowDays()).isEqualTo(7);
@@ -39,7 +44,7 @@ class AiContentConfigHelperTest {
     @Test
     void parseShouldReadAndClampValues() throws Exception {
         var config = AiContentConfigHelper.parse(MAPPER.readTree("""
-            {"enabled":true,"aiIntroEnabled":false,"maxCategories":0,"maxSources":999,
+            {"enabled":true,"aiIntroEnabled":false,"maxCategories":0,"liveHours":1,
              "maxKeywords":-5,"maxItems":100,"windowDays":0,"introWords":9999,
              "benefitNote":"  每天一份  "}"""));
 
@@ -47,7 +52,8 @@ class AiContentConfigHelperTest {
         assertThat(config.isAiIntroEnabled()).isFalse();
         // 维度上限至少 1（0 会让用户一个都选不了，等于功能不可用）
         assertThat(config.getMaxCategories()).isEqualTo(1);
-        assertThat(config.getMaxSources()).isEqualTo(30);
+        // 实时时间窗下限 6 小时：再小就经常抓不到内容
+        assertThat(config.getLiveHours()).isEqualTo(6);
         // 关键词允许 0：站长可以用它整个关掉这一维度
         assertThat(config.getMaxKeywords()).isZero();
         assertThat(config.getMaxItems()).isEqualTo(30);
@@ -63,6 +69,18 @@ class AiContentConfigHelperTest {
         assertThat(config.getMaxCategories()).isEqualTo(5);
         assertThat(config.getWindowDays()).isEqualTo(7);
         assertThat(AiContentConfigHelper.parse(null).isEnabled()).isFalse();
+    }
+
+    /** 赠送次数 = 天数 × 每天次数，永久卡（days ≤ 0）按上限给——不能按 36500 天算 */
+    @Test
+    void creditsShouldFollowDaysAndCap() {
+        var config = AiContentConfigHelper.defaults();
+
+        assertThat(AiContentConfigHelper.creditsForDays(1, config)).isEqualTo(2);
+        assertThat(AiContentConfigHelper.creditsForDays(30, config)).isEqualTo(60);
+        assertThat(AiContentConfigHelper.creditsForDays(90, config)).isEqualTo(100);
+        assertThat(AiContentConfigHelper.creditsForDays(0, config)).isEqualTo(100);
+        assertThat(AiContentConfigHelper.creditsForDays(-1, config)).isEqualTo(100);
     }
 
     @Test

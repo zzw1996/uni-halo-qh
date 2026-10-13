@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import pro.uhalo.uni.dto.UserPublishArticleRequest;
 import pro.uhalo.uni.infra.PointsPersistence;
 import pro.uhalo.uni.scheme.PointsRecord;
 import pro.uhalo.uni.scheme.UserPoints;
@@ -77,8 +78,12 @@ class UserPublishServiceImplTest {
     private UserPublishServiceImpl userPublishService;
 
     private void stubConfig() throws Exception {
+        stubConfig(CONFIG_JSON);
+    }
+
+    private void stubConfig(String json) throws Exception {
         lenient().when(settingFetcher.get("userPublishConfig"))
-            .thenReturn(Mono.just(MAPPER.readTree(CONFIG_JSON)));
+            .thenReturn(Mono.just(MAPPER.readTree(json)));
         // 无 ownerOpenid：本组用例只走「角色含 admin」这条特权判定
         lenient().when(settingFetcher.get("wxAppConfig"))
             .thenReturn(Mono.just(MAPPER.readTree("{}")));
@@ -165,5 +170,215 @@ class UserPublishServiceImplTest {
                 assertThat(status.isCanPublishMoment()).isTrue();
             })
             .verifyComplete();
+    }
+
+    /**
+     * 投稿必须把「作者手选的分类/标签 + slug」原样交给发布器。
+     *
+     * <p>此前投稿只发标题/正文/封面：分类标签全丢（作者选了也不生效），slug 为空
+     * （站点上其他路径都带 slug）。这里锁定这两处不再回退。</p>
+     */
+    @Test
+    void articlePublishShouldCarrySlugCategoriesAndTags() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"direct","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("admin-user");
+        stubPrivileged(true);
+        when(postPublisher.publish(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt()))
+            .thenReturn(Mono.just(pro.uhalo.uni.dto.HaloPostPublishResultDTO.builder()
+                .postName("post-name-1")
+                .permalink("/archives/hello")
+                .state("PUBLISHED")
+                .build()));
+
+        var request = new UserPublishArticleRequest();
+        request.setTitle("黄河岸边的盛夏");
+        request.setContent("## 小标题\n\n正文");
+        // 界面传的是 metadata.name；这里混入重复项、空白项与超量项，验证服务端归一化
+        request.setCategories(List.of("category-jQopC", "手册", "   ", "category-jQopC",
+            "ai-ml", "tools"));
+        request.setTags(List.of("travel", "travel", "family", "birthday", "parenting", "ios", "duo"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(pro.uhalo.uni.dto.HaloPostPublishDTO.class);
+        StepVerifier.create(userPublishService.publishArticle("openid-1", request))
+            .assertNext(result -> {
+                assertThat(result.getMode()).isEqualTo("direct");
+                assertThat(result.getStatusText()).isEqualTo("已发布");
+            })
+            .verifyComplete();
+
+        org.mockito.Mockito.verify(postPublisher)
+            .publish(captor.capture(), org.mockito.ArgumentMatchers.anyInt());
+        var dto = captor.getValue();
+        // 中文标题取不到 ASCII 片段，回退 post-日期-随机后缀
+        assertThat(dto.getSlug()).matches("^post-\\d{8}-[0-9a-f]{5}$");
+        assertThat(dto.getCategoryNames()).containsExactly("category-jQopC", "手册", "ai-ml");
+        assertThat(dto.getTagNames())
+            .containsExactly("travel", "family", "birthday", "parenting", "ios");
+    }
+
+    /**
+     * 「我的投稿」：按 owner 过滤拉取，已发布/待审都要在，回收站里的不出现。
+     *
+     * <p>过滤放在 Halo 侧是关键——列表里只会出现自己的文章，客户端无须再筛。</p>
+     */
+    @Test
+    void listMyArticlesShouldMapStatesAndHideRecycled() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"draft","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("admin-user");
+        stubPrivileged(false);
+
+        // 真实响应是 ListedPost：文章本体嵌在 post 里（这里连「别人的文章」一起塞进去，
+        // 验证归属过滤确实生效——Halo 的 owner 查询参数是不存在的，传了也会被忽略）
+        var body = """
+            {"items":[
+              {"post":{"metadata":{"name":"p1","creationTimestamp":"2026-10-08T02:00:00Z"},
+                       "spec":{"title":"我的已发布","slug":"live-one","publish":true,
+                               "owner":"admin-user","publishTime":"2026-10-08T02:00:00Z",
+                               "deleted":false,"categories":["category-jQopC"],"tags":["travel"]},
+                       "status":{"permalink":"/archives/live-one"}}},
+              {"post":{"metadata":{"name":"p2","creationTimestamp":"2026-10-08T03:00:00Z"},
+                       "spec":{"title":"我的待审","slug":"pending-one","publish":false,
+                               "owner":"admin-user","deleted":false}}},
+              {"post":{"metadata":{"name":"p3"},
+                       "spec":{"title":"回收站里的","publish":true,"owner":"admin-user","deleted":true}}},
+              {"post":{"metadata":{"name":"p4"},
+                       "spec":{"title":"别人的文章","publish":true,"owner":"someone-else"}}}
+            ]}
+            """;
+        when(haloClient.get(org.mockito.ArgumentMatchers.argThat(
+                path -> !path.contains("owner=")), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.readTree(body)));
+
+        StepVerifier.create(userPublishService.listMyArticles("openid-1"))
+            .assertNext(items -> {
+                assertThat(items).hasSize(2);
+                assertThat(items.get(0).getName()).isEqualTo("p1");
+                assertThat(items.get(0).getTitle()).isEqualTo("我的已发布");
+                assertThat(items.get(0).getState()).isEqualTo("published");
+                assertThat(items.get(0).getStateText()).isEqualTo("已发布");
+                assertThat(items.get(0).getPermalink()).isEqualTo("/archives/live-one");
+                assertThat(items.get(0).getCategories()).containsExactly("category-jQopC");
+                assertThat(items.get(0).getTags()).containsExactly("travel");
+                assertThat(items.get(1).getState()).isEqualTo("pending");
+                assertThat(items.get(1).getStateText()).contains("待审");
+            })
+            .verifyComplete();
+    }
+
+    /** 多页：第一页 hasNext=true 必须继续翻，否则站长的文章会被截断在第一页。 */
+    @Test
+    void listMyArticlesShouldFollowPagination() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"draft","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("admin-user");
+        stubPrivileged(false);
+        when(haloClient.get(org.mockito.ArgumentMatchers.contains("page=0"),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.readTree("""
+                {"hasNext":true,"items":[
+                  {"post":{"metadata":{"name":"a1"},
+                           "spec":{"title":"第一页的","owner":"admin-user","publish":true}}}
+                ]}
+                """)));
+        when(haloClient.get(org.mockito.ArgumentMatchers.contains("page=1"),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.readTree("""
+                {"hasNext":false,"items":[
+                  {"post":{"metadata":{"name":"a2"},
+                           "spec":{"title":"第二页的","owner":"admin-user","publish":false}}}
+                ]}
+                """)));
+
+        StepVerifier.create(userPublishService.listMyArticles("openid-1"))
+            .assertNext(items -> {
+                assertThat(items).hasSize(2);
+                assertThat(items).extracting(
+                        pro.uhalo.uni.dto.UserPublishArticleDTO::getTitle)
+                    .containsExactly("第一页的", "第二页的");
+            })
+            .verifyComplete();
+    }
+
+    /** 普通用户删别人的文章：自己的列表里没有这篇，必须被拦下，且不能发出回收请求。 */
+    @Test
+    void regularUserShouldNotDeleteOthersArticle() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"draft","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("normal-user");
+        stubPrivileged(false);
+        when(haloClient.get(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.readTree("{\"items\":[{\"post\":"
+                + "{\"metadata\":{\"name\":\"mine\"},"
+                + "\"spec\":{\"title\":\"我的\",\"owner\":\"normal-user\",\"publish\":true}}}]}")));
+
+        StepVerifier.create(userPublishService.deleteArticle("openid-1", "others-post"))
+            .expectErrorSatisfies(err ->
+                assertThat(err.getMessage()).contains("只能删除自己发布的文章"))
+            .verify();
+
+        org.mockito.Mockito.verify(haloClient, org.mockito.Mockito.never())
+            .put(org.mockito.ArgumentMatchers.contains("/recycle"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 本人的文章：走 Halo 的 /recycle（进回收站），不是物理删除。 */
+    @Test
+    void ownerShouldRecycleOwnArticle() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"draft","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("normal-user");
+        stubPrivileged(false);
+        when(haloClient.get(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.readTree("{\"items\":[{\"post\":"
+                + "{\"metadata\":{\"name\":\"mine\"},"
+                + "\"spec\":{\"title\":\"我的\",\"owner\":\"normal-user\",\"publish\":true}}}]}")));
+        when(haloClient.put(org.mockito.ArgumentMatchers.contains("/recycle"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.createObjectNode()));
+
+        StepVerifier.create(userPublishService.deleteArticle("openid-1", "mine"))
+            .verifyComplete();
+
+        org.mockito.Mockito.verify(haloClient).put(
+            org.mockito.ArgumentMatchers.contains("posts/mine/recycle"),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 博主/管理员代删：不校验归属，直接回收。 */
+    @Test
+    void privilegedShouldRecycleAnyArticle() throws Exception {
+        stubConfig("""
+            {"enabled":true,"defaultRoleMode":"direct","articleCost":50,"minPointsToShow":0,
+             "dailyArticleLimit":0,"requireHaloBind":false}
+            """);
+        stubUser("admin-user");
+        stubPrivileged(true);
+        when(haloClient.put(org.mockito.ArgumentMatchers.contains("/recycle"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Mono.just(MAPPER.createObjectNode()));
+
+        StepVerifier.create(userPublishService.deleteArticle("openid-1", "someone-else-post"))
+            .verifyComplete();
+
+        org.mockito.Mockito.verify(haloClient).put(
+            org.mockito.ArgumentMatchers.contains("posts/someone-else-post/recycle"),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(haloClient, org.mockito.Mockito.never())
+            .get(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any());
     }
 }

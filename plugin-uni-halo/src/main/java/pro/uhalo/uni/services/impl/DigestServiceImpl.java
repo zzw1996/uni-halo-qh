@@ -805,7 +805,8 @@ public class DigestServiceImpl implements DigestService {
                 trace.usage.record(DigestAiTask.WRITE, reply);
                 var applied = applySummaries(batch, reply.text());
                 if (applied == 0) {
-                    throw new IllegalStateException("摘要结果为空");
+                    throw new IllegalStateException("摘要结果为空"
+                        + (DigestAiHelper.isOutputTruncated(reply) ? "（输出被长度上限截断）" : ""));
                 }
             })
             .then()
@@ -846,10 +847,11 @@ public class DigestServiceImpl implements DigestService {
                 continue;
             }
             var article = batch.items().get(index);
-            article.setTitleZh(result.path("titleZh").asText(""));
-            article.setSummary(result.path("summary").asText(""));
-            article.setAiTake(result.path("aiTake").asText(""));
-            article.setReason(result.path("reason").asText(""));
+            // 只写非空字段：模型这次漏回的字段保持原值，别把已经写好的内容抹成空串
+            var carried = writeIfPresent(result, "titleZh", article::setTitleZh);
+            carried |= writeIfPresent(result, "summary", article::setSummary);
+            carried |= writeIfPresent(result, "aiTake", article::setAiTake);
+            carried |= writeIfPresent(result, "reason", article::setReason);
             var points = new ArrayList<String>();
             for (var point : result.path("points")) {
                 if (points.size() >= 4) {
@@ -860,12 +862,26 @@ public class DigestServiceImpl implements DigestService {
                     points.add(text.trim());
                 }
             }
-            article.setPoints(points);
-            if (StringUtils.hasText(article.getSummary())) {
+            if (!points.isEmpty()) {
+                article.setPoints(points);
+                carried = true;
+            }
+            if (carried) {
                 applied++;
             }
         }
         return applied;
+    }
+
+    /** 只写非空值：返回值表示这次响应是否真的带了内容（与公众号成稿同一口径） */
+    private static boolean writeIfPresent(JsonNode result, String field,
+        java.util.function.Consumer<String> setter) {
+        var value = result.path(field).asText("");
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        setter.accept(value.trim());
+        return true;
     }
 
     private Mono<List<DigestArticleDTO>> fillMissingSummaries(List<DigestArticleDTO> articles,

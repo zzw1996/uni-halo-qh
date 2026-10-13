@@ -13,6 +13,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class DigestAiHelperTest {
 
+    @Test
+    void parseJsonShouldStripThinkBlocksBeforeParsing() {
+        // 思考型模型经部分网关会把 <think>…</think> 混进 content
+        var node = DigestAiHelper.parseJson(
+            "<think>用户想要一篇关于 AI 的稿子 {也许要举例}</think>\n"
+                + "{\"title\": \"标题\", \"body\": \"正文\"}");
+
+        assertThat(node.path("title").asText()).isEqualTo("标题");
+        assertThat(node.path("body").asText()).isEqualTo("正文");
+    }
+
+
     private static DigestArticleDTO article(String title, String description) {
         var article = new DigestArticleDTO();
         article.setTitle(title);

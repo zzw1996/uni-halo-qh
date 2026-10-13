@@ -39,8 +39,15 @@ public final class DigestAiErrorExplainer {
             return "API Key 无效或没有该模型的权限（检查是否多带了空格，或用错了平台的 Key）";
         }
         if (status == 404) {
+            // 认得出是哪家就按家说（智谱是 /api/paas/v4、通义是 /compatible-mode/v1、方舟是 /api/v3，
+            // 「少了 /v1」对它们全是误导）；认不出才给通用建议
+            var hint = AiProviderPresets.hintFor(base);
+            if (!hint.isEmpty()) {
+                return "端点不存在（HTTP 404）：" + hint;
+            }
             return "端点不存在：" + DigestAiChannelResolver.normalizeBase(base)
-                + " 多半少了 /v1 —— OpenAI 兼容协议的地址通常以 /v1 结尾";
+                + " —— OpenAI 兼容协议的地址通常以版本路径结尾（/v1、/v4、/api/v3 等），"
+                + "请对照所用平台的接口文档核对 API Base";
         }
         if (status == 429) {
             return "被限流或账户余额不足（稍后再试，或换一条通道）";

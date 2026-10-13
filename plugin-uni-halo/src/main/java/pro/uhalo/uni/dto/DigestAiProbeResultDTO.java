@@ -26,6 +26,9 @@ public class DigestAiProbeResultDTO {
 
     private String apiBase;
 
+    /** 本次实际请求的完整地址（Base 填没填对，看一眼就知道） */
+    private String url;
+
     /** 本次实际发出的模型名 */
     private String model;
 

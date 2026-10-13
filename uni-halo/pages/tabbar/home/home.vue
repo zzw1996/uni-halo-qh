@@ -127,12 +127,40 @@
 					</tm-translate>
 				</view>
 				<view class="load-text mt-12">{{ loadMoreText }}</view>
-				<!-- offset 里加上底栏高度：原生栏被隐藏后窗口占满全屏，不抬高会被自绘底栏压住 -->
-				<tm-flotbutton v-if="articleList.length > 10" :width="90" color="indigo" @click="fnToTopPage"
-					size="s" :offset="calcFlotOffset" icon="icon-angle-up"></tm-flotbutton>
 			</block>
 		</block>
 
+		<!--
+			右下角悬浮动作区：写文章 + 回到顶部。
+			两个按钮放在同一个从底往上排的竖列里，而不是各用各的 tm-flotbutton——
+			那组件的 offset 只在 mounted 时算一次，运行时改 offset 不会重新定位
+			（源码里 thisPos 只在 init() 里赋值）。共用一个贴底的容器，
+			「回到顶部」出现/消失时「写文章」就会被自然顶上/落回原位。
+
+			「写文章」的资格由服务端判定（总开关 / 积分门槛 / 角色策略），
+			客户端只额外滤掉演示模式；入口不再挂在「我的」页。
+		-->
+		<view class="home-fabs" :style="calcFabsStyle">
+			<view
+				v-if="loading === 'success' && canPublishArticle"
+				class="home-fab home-fab--publish"
+				hover-class="home-fab--pressed"
+				:hover-stay-time="60"
+				@click="fnToPublishArticle"
+			>
+				<tm-icons name="icon-plus" :size="24" color="#fff"></tm-icons>
+				<text class="home-fab_label">写文章</text>
+			</view>
+			<view
+				v-if="showTopButton"
+				class="home-fab home-fab--top"
+				hover-class="home-fab--pressed"
+				:hover-stay-time="60"
+				@click="fnToTopPage(400)"
+			>
+				<tm-icons name="icon-angle-up" :size="24" color="#fff"></tm-icons>
+			</view>
+		</view>
 
 		<!-- 弹窗 -->
 		<NotifyDialog v-if="notify.show" :show="notify.show" :title="notify.data.title" :content="notify.data.content"
@@ -146,7 +174,6 @@
 	import tmMenubars from '@/tm-vuetify/components/tm-menubars/tm-menubars.vue';
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 	import tmTranslate from '@/tm-vuetify/components/tm-translate/tm-translate.vue';
-	import tmFlotbutton from '@/tm-vuetify/components/tm-flotbutton/tm-flotbutton.vue';
 	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmGrid from '@/tm-vuetify/components/tm-grid/tm-grid.vue';
@@ -158,14 +185,19 @@
 	import { openChannelsProfile } from '@/utils/channels.js';
 	import { tabbarBottomOffsetPx } from '@/utils/tabbar.js';
 	import { accumulatePushQuota } from '@/utils/subscribeMessage.js';
+	import { refreshAppConfigs } from '@/utils/configRefresh.js';
 	import qs from 'qs'
 	import {
 		checkHasWxLogin,
 		getWxLoginInfo
 	} from '@/utils/auth.js';
+	import { fetchUserPublishStatus } from '@/utils/userPublish.js';
 
 	/** 零订阅引导条「知道了」的本地标记：关掉后不再打扰（它不是功能提示，只是建议） */
 const HOME_GUIDE_DISMISSED_KEY = 'home.feedGuideDismissed';
+
+/** 下滑超过这个距离才给「回到顶部」：一两屏以内本来也不难回顶，出现反而碍眼 */
+const TOP_BUTTON_THRESHOLD = 300;
 
 export default {
 		mixins: [loadMoreMixin],
@@ -173,7 +205,6 @@ export default {
 			tmMenubars,
 			tmSkeleton,
 			tmTranslate,
-			tmFlotbutton,
 			tmIcons,
 			tmEmpty,
 			tmGrid,
@@ -200,6 +231,18 @@ export default {
 					data: {}
 				},
 				wxUserInfo: null,
+				/**
+				 * 「写文章」悬浮入口是否显示。
+				 *
+				 * <p>必须声明在 data 里：未声明的实例属性没有响应性，读它的 watcher
+				 * 会把首次算出的值永久缓存住，入口就会定格成不显示。</p>
+				 */
+				canPublishArticle: false,
+				/**
+				 * 「回到顶部」是否显示：跟着滚动位置走，而不是「列表够长」这种静态条件——
+				 * 静态条件下只要这一屏的文章数没到阈值，用户滑到底也看不到回顶按钮。
+				 */
+				showTopButton: false,
 				/** 订阅的分类（站点分类的 metadata.name），由分类页设置 */
 				subscription: { postCategories: [], inheritedCategories: [], effectiveCategories: [] },
 				/** 主列表是否正在按订阅分类筛选 / 是否已回落站内默认列表 */
@@ -252,9 +295,6 @@ export default {
 			calcAuditModeEnabled() {
 				return !!this.haloConfigs?.auditConfig?.auditModeEnabled
 			},
-			calcVotePluginEnabled() {
-				return !!this.haloConfigs?.pluginIntegrations?.vote
-			},
 			calcLinksPluginEnabled() {
 				return !!this.haloConfigs?.pluginIntegrations?.links;
 			},
@@ -266,9 +306,18 @@ export default {
 			calcBannerShowDots() {
 				return this.globalAppSettings?.banner?.useDot !== false;
 			},
-			/** 悬浮按钮偏移：自绘底栏关闭时与历史一致（默认 16px），开启时抬高一个底栏高度 */
-			calcFlotOffset() {
-				return [16, 16 + tabbarBottomOffsetPx()];
+			/**
+			 * 悬浮动作区距屏幕底部的距离。
+			 *
+			 * <p>与 tm-flotbutton 同口径：底部安全区 + 自绘底栏占用（它内部算的是
+			 * {@code bottom: offset + safeArea}）。自绘底栏关闭时 tabbarBottomOffsetPx()
+			 * 为 0，退化成「离底 16px + 安全区」，与改用竖列之前的位置一致。</p>
+			 */
+			calcFabsStyle() {
+				const sys = uni.getSystemInfoSync();
+				const screenBottom = (sys && sys.safeArea && sys.safeArea.bottom) || 0;
+				const safeArea = Math.abs((sys && sys.screenHeight ? sys.screenHeight : 0) - screenBottom);
+				return `bottom: ${16 + tabbarBottomOffsetPx() + safeArea}px;`;
 			},
 			calcBannerDotPosition() {
 				return this.globalAppSettings?.banner?.dotPosition === 'bottom' ? 'bottom' : 'right';
@@ -363,6 +412,17 @@ export default {
 				},
 				deep: true,
 				immediate: true,
+			},
+			/**
+			 * 演示模式（审核模式）展示的是 mock 内容，绝不能让真投稿入口出现——
+			 * 否则审核员点「写文章」就发到真实站点上了。开关翻转时立刻重判。
+			 */
+			calcAuditModeEnabled(val) {
+				if (val) {
+					this.canPublishArticle = false;
+				} else {
+					this.fnRefreshPublishPermission();
+				}
 			}
 		},
 		onLoad() {
@@ -372,8 +432,13 @@ export default {
 		created() {
 			this.fnSyncWxUser();
 			uni.$on('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
+			uni.$on('wx_login_status_changed', this.fnRefreshPublishPermission);
 			// 订阅是在分类页改的：改完切回首页要立刻生效，不能等下拉刷新
 			uni.$on('category_subscription_changed', this.fnOnSubscriptionChanged);
+			// 投稿门槛按余额算：赚够积分（或花掉）之后要能立刻看到/收起入口
+			uni.$on('points_updated', this.fnRefreshPublishPermission);
+			// 投稿成功返回列表：把新文章带进来
+			uni.$on('article_list_should_refresh', this.fnReloadArticleList);
 			this.fnQuery();
 		},
 		onShow() {
@@ -382,10 +447,27 @@ export default {
 			// 事件通知可能因为页面生命周期错过（例如首页还没创建就改了订阅），
 			// 所以切回本 tab 时再按版本号对一次，双保险。
 			this.fnCheckSubscriptionChanged();
+			// 入口的显示条件全在服务端，进页面取一次最新结论
+			this.fnRefreshPublishPermission();
+		},
+		/**
+		 * 「回到顶部」跟着滚动位置显隐。
+		 *
+		 * <p>只在跨阈值那一刻写 data：scroll 事件很密（小程序里每次 setData 都要过桥），
+		 * 每次都赋值会让滚动明显发涩。</p>
+		 */
+		onPageScroll(e) {
+			const next = (e && e.scrollTop ? e.scrollTop : 0) > TOP_BUTTON_THRESHOLD;
+			if (next !== this.showTopButton) {
+				this.showTopButton = next;
+			}
 		},
 		onUnload() {
 			uni.$off('wx_login_status_changed', this.fnOnWxLoginStatusChanged);
+			uni.$off('wx_login_status_changed', this.fnRefreshPublishPermission);
 			uni.$off('category_subscription_changed', this.fnOnSubscriptionChanged);
+			uni.$off('points_updated', this.fnRefreshPublishPermission);
+			uni.$off('article_list_should_refresh', this.fnReloadArticleList);
 		},
 		onPullDownRefresh() {
 			this.isLoadMore = false;
@@ -393,6 +475,8 @@ export default {
 			this.queryParams.page = 1;
 			// 多路分页也要重置，否则下拉后每一路都从中间页继续取
 			this.feedPages = {};
+			// 顺手对齐一次站点配置（节流）：站长在后台改完底部导航/首页布局，下拉就能看到
+			refreshAppConfigs();
 			this.fnQuery();
 		},
 		onReachBottom() {
@@ -423,6 +507,39 @@ export default {
 				if (info && info.openid) {
 					this.fnQuery();
 				}
+			},
+			/**
+			 * 「写文章」入口的显隐判定。
+			 *
+			 * <p>能不能发、入口显不显示，一律以服务端结论为准（总开关、积分门槛、角色策略、
+			 * 每日额度都在服务端算好）。未登录或接口不可用时拿到 null，入口不显示——
+			 * 与「发表瞬间」一致，不在客户端另拼一套条件。</p>
+			 */
+			async fnRefreshPublishPermission() {
+				if (this.calcAuditModeEnabled) {
+					this.canPublishArticle = false;
+					return;
+				}
+				const status = await fetchUserPublishStatus(this.$httpApi.v2);
+				this.canPublishArticle = !!(status && status.canPublishArticle && status.visible);
+			},
+			fnToPublishArticle() {
+				if (!this.canPublishArticle || this.calcAuditModeEnabled) {
+					return;
+				}
+				if (!checkHasWxLogin()) {
+					uni.showToast({ icon: 'none', title: '请先登录后再投稿' });
+					return;
+				}
+				uni.navigateTo({ url: '/pagesA/article-publish/article-publish' });
+			},
+			/** 投稿成功返回列表时重拉：订阅分流、置顶排序都要跟着重算，不能只插一条 */
+			fnReloadArticleList() {
+				this.isLoadMore = false;
+				this.fnLoadMoreDone();
+				this.queryParams.page = 1;
+				this.feedPages = {};
+				this.fnQuery();
 			},
 			/**
 			 * 首页数据入口。
@@ -1422,5 +1539,62 @@ export default {
 
 	.nav-item-text {
 		font-size: 24rpx;
+	}
+
+	/*
+	 * 右下角悬浮动作区。
+	 *
+	 * 固定贴右下角、从底往上排：「回到顶部」在竖列末尾（贴角），
+	 * 「写文章」在它上面——后者出现/消失时前者会被自然顶上/落回。
+	 * 配色全部走设计 Token（强调渐变 + 强调色），换皮肤/暗色由
+	 * tools/gen-skins.cjs 生成覆盖，不写死颜色。
+	 */
+	.home-fabs {
+		position: fixed;
+		right: 16px;
+		z-index: 900;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.home-fab {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		box-shadow: $uh-shadow-md;
+	}
+
+	.home-fab--pressed {
+		opacity: 0.86;
+	}
+
+	/* 写文章：强调渐变 + 图标与文字（与投稿页主按钮同一套 Token） */
+	.home-fab--publish {
+		width: 92rpx;
+		padding: 12rpx 6rpx;
+		border-radius: 26rpx;
+		background-image: $uh-grad-accent;
+	}
+
+	.home-fab_label {
+		margin-top: 2rpx;
+		font-size: 20rpx;
+		line-height: 1.2;
+		color: #fff;
+	}
+
+	/* 回到顶部：圆形，纯强调色，单独占角落 */
+	.home-fab--top {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 50%;
+		background-color: $uh-accent;
+	}
+
+	.home-fab--publish + .home-fab--top {
+		margin-top: 16rpx;
 	}
 </style>

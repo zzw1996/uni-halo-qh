@@ -33,6 +33,24 @@ rules:
       # 消息推送看板与自检
       - "pushStats"
       - "pushDiagnose"
+      # 微信公众号：状态 / 稿件 / 生成 / 推送 / 历史补推 / 自检（子路径按需放行）
+      - "mp"
+      - "mp/*"
+      - "mp/issues"
+      - "mp/issues/*"
+      - "mp/selfcheck"
+      - "mp/backfill"
+      # 今日头条号：状态 / 生成 / 历史（记录名在 history 子路径下）
+      - "toutiao"
+      - "toutiao/*"
+      - "toutiao/status"
+      - "toutiao/generate"
+      - "toutiao/history"
+      - "toutiao/history/*"
       - "plugins/digest"
       - "plugins/digest/*"
+      - "plugins/mp"
+      - "plugins/mp/*"
+      - "plugins/toutiao"
+      - "plugins/toutiao/*"
     verbs: [ "get", "list", "create", "update", "delete" ]

@@ -87,8 +87,9 @@ public class AiContentPreferenceService {
                 || Boolean.TRUE.equals(request.getEnabled());
             var categories = sanitizeCategories(request == null ? null : request.getCategories(),
                 catalog, config.getMaxCategories());
-            var sources = sanitize(request == null ? null : request.getSources(),
-                config.getMaxSources(), "关注的来源");
+            // 来源维度已取消（简报内容改为从实时抓取的源里挑，来源不再由用户指定）：
+            // 一律存空。历史记录里配过来源的用户，也不会因为这条旧偏好被筛成空简报
+            var sources = List.<String>of();
             var keywords = sanitize(request == null ? null : request.getKeywords(),
                 config.getMaxKeywords(), "关注的关键词");
             var customTopics = sanitize(request == null ? null : request.getCustomTopics(),

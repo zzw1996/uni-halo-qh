@@ -41,9 +41,11 @@ class UniHaloPluginTest {
      *
      * <p>加了新 scheme 就要同步这个数字，并在下面的「注册/摘除」用例里补上断言——
      * 这个数字存在的意义是「注册了 N 种就必须能摘掉 N 种」，漏摘会让索引永远建不起来。
-     * 1.0.171 加的是 {@code UserAppSettings}（应用设置跟账号走）。</p>
+     * 1.0.171 加的是 {@code UserAppSettings}（应用设置跟账号走）；
+     * 1.0.203 加的是 {@code MpIssue}（微信公众号稿件与推送记录）；
+     * 1.0.219 加的是 {@code ToutiaoArticle}（今日头条号生成稿）。</p>
      */
-    private static final int EXPECTED_TYPE_COUNT = 16;
+    private static final int EXPECTED_TYPE_COUNT = 19;
 
     @Mock
     private SchemeManager schemeManager;

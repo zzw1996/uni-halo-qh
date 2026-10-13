@@ -217,4 +217,36 @@ class SubscriptionQuotaServiceTest {
             .expectNext(5)
             .verifyComplete();
     }
+
+    /**
+     * 特权用户（站长/管理员）：限额是哨兵值，同时把 {@code unlimited} 标记下发出去。
+     *
+     * <p>客户端不该去猜 {@code Integer.MAX_VALUE}——线上出现过「已订阅 6/2147483647 个分类」，
+     * 就是因为它把哨兵值当真实上限拼进了文案。契约：显示「不限量」看的是这个布尔。</p>
+     */
+    @Test
+    void privilegedUserShouldBeUnlimitedAndFlagged() {
+        when(privilegeService.isPrivileged(OPENID)).thenReturn(Mono.just(true));
+        stubAccount(null, 0L, null);
+
+        StepVerifier.create(service.limitsOf(OPENID, List.of()))
+            .assertNext(limits -> {
+                assertThat(limits.getLimit()).isEqualTo(Integer.MAX_VALUE);
+                assertThat(limits.isUnlimited()).isTrue();
+            })
+            .verifyComplete();
+    }
+
+    /** 普通用户：给真实上限（免费 5）且不带不限量标记，客户端显示「6/5」这种真实比值 */
+    @Test
+    void regularUserShouldGetRealLimitWithoutFlag() {
+        stubAccount(null, 0L, null);
+
+        StepVerifier.create(service.limitsOf(OPENID, List.of()))
+            .assertNext(limits -> {
+                assertThat(limits.isUnlimited()).isFalse();
+                assertThat(limits.getLimit()).isEqualTo(5);
+            })
+            .verifyComplete();
+    }
 }

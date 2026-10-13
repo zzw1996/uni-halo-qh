@@ -295,3 +295,45 @@ API Base / Key / 模型名、有独立的**启用开关**、可以排序（顺�
 - 多通道并发调用 / 负载均衡：日报是串行流水线，按序故障转移就够。
 - 按通道配 `max_tokens` / 温度（成稿的 8192 仍是全局常量）、按任务调批大小与超时。
 - 用途的必填校验：不强制每个任务都被勾到，缺了就按宽松回退走，面板与日志说明即可。
+
+
+## 9. 供应商预设与地址纠偏（1.0.218 已实现）
+
+「配置失败」最多的不是协议不通（主流大模型已全部实现 OpenAI 的 chat/completions 协议），
+而是 **API Base 填法**：把完整接口地址整条粘进来（多了 `/chat/completions`）、或只填域名
+（少了 `/api/paas/v4` 这类版本路径）。1.0.218 从四个地方兜住：
+
+1. **内置供应商预设**（`utils/AiProviderPresets`，`GET /digest/models/presets` 下发）：
+   智谱 / DeepSeek / 通义 / Kimi / 火山方舟 / SiliconFlow / OpenAI / Gemini / OpenRouter /
+   Groq / MiniMax / 千帆 / 混元 / Ollama 各一条（Base + 常见模型名示例 + 备注）。
+   控制台「大模型通道」面板每行上方有「供应商」下拉，选中即自动填 Base、示例模型名与显示名；
+   独立管理页（ai-digest-admin.html）同款。
+2. **地址纠偏**：保存清单与发起调用前都过 `normalizeApiBase`——去尾斜杠、把误粘的
+   `…/chat/completions` 尾巴剥掉；实际请求地址统一由 `chatCompletionsUrl(apiBase)` 拼出。
+3. **测试连通性回显实际请求 URL**（`DigestAiProbeResultDTO.url`）：Base 填没填对看一眼就知道。
+4. **404 按家给提示**：错误解释器按域名识别供应商（`hintFor`），直接说
+   「这个域名是「智谱 GLM」的接口，API Base 应填 https://open.bigmodel.cn/api/paas/v4，
+   模型名如 glm-4.6 / glm-4-flash」；认不出的域名才回落到通用建议。
+
+**常见家的正确填法速查**：
+
+| 供应商 | API Base | 模型名示例 |
+|---|---|---|
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | glm-4.6 / glm-4-plus / glm-4-flash |
+| DeepSeek | `https://api.deepseek.com/v1` | deepseek-chat / deepseek-reasoner |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | qwen-max / qwen-plus / qwen-turbo |
+| Kimi | `https://api.moonshot.cn/v1` | moonshot-v1-8k / kimi-k2 |
+| 火山方舟（豆包） | `https://ark.cn-beijing.volces.com/api/v3` | 方舟控制台的接入点 ID（ep- 开头） |
+| SiliconFlow | `https://api.siliconflow.cn/v1` | deepseek-ai/DeepSeek-V3 等（带前缀） |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | gemini-2.5-flash / gemini-2.5-pro |
+
+鉴权一律是 `Authorization: Bearer <API Key>`（智谱的 Key 直接填，不需要旧版的 JWT 拼接）。
+401 = Key 无效/过期、429 = 限流或欠费、404 = Base 填错（看测试结果里回显的实际请求地址）。
+
+**思考型模型（GLM-4.5+ / glm-5.x / o 系列等，1.0.219）**：这类模型会先「思考」再输出。
+测试连通性只给 8 个 token，思考就把额度耗光了，于是 200 返回里正文是空的——
+1.0.218 会误判成「不是兼容端点」。1.0.219 起测试的判定标准改为「返回体是不是
+chat/completions 结构」：结构对就判连通，并提示「思考型模型在极小限额内没产出正文，正式调用不受影响」。
+另外，部分网关（vLLM、Ollama、一些中转站）会把思考过程以 `<think>…</think>` 混进正文，
+解析器现在会先剥掉再解析 JSON。提示：写稿这类长输出任务接思考型模型时，注意
+`finish_reason=length` 的截断提示（思考会消耗输出额度），必要时换非思考模型或调高字数预算。

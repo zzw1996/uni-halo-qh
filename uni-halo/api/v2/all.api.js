@@ -632,40 +632,6 @@ export default {
 		return HttpHandler.Post(`/apis/api.halo.run/v1alpha1/trackers/upvote`, data, {})
 	},
 
-	getVoteList: (params) => {
-		return HttpHandler.Get(`/apis/api.vote.kunkunyu.com/v1alpha1/votes`, params)
-	},
-
-	getVoteDetail: (name) => {
-		return HttpHandler.Get(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/detail`, {})
-	},
-
-	getVoteUserList: (name) => {
-		return HttpHandler.Get(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/user-list`, {})
-	},
-
-	/**
-	 * 提交投票。
-	 *
-	 * <p>匿名投票直接调投票插件接口；非匿名投票需要身份，原先由客户端带个人令牌提交，
-	 * 令牌不再下发后改由插件服务端代办（服务端持有令牌）。</p>
-	 */
-	submitVote: async (name, data, canAnonymously = true) => {
-		if (canAnonymously) {
-			return HttpHandler.Post(`/apis/api.vote.kunkunyu.com/v1alpha1/votes/${name}/submit`, data)
-		}
-		const openid = getOpenid();
-		if (!openid) {
-			return Promise.reject({ error: '请先完成微信登录' });
-		}
-		return directRequest({
-			url: `${buildUniHaloUrl('/userPublish/vote')}/${encodeURIComponent(name)}`,
-			method: 'POST',
-			data: data || {},
-			header: { 'Wechat-Session-Id': openid }
-		})
-	},
-
 	checkPluginAvailable: (name) => {
 		return HttpHandler.Get(`/apis/api.plugin.halo.run/v1alpha1/plugins/${name}/available`, {})
 	},
@@ -1842,7 +1808,10 @@ export default {
 	},
 
 	/**
-	 * 我的简报（当天；首次打开会在服务端生成一次，可能等几秒到十几秒）。
+	 * 我的简报（只读，不会触发生成）。
+	 *
+	 * 返回 status 决定页面显示什么：NONE（今天还没生成）/ RUNNING（生成中，带 stage 与
+	 * progress）/ READY（有 items）/ FAILED（带 error 可重试）。
 	 *
 	 * @param {string} [date] 指定日期看往期；留空为今天
 	 */
@@ -1851,6 +1820,21 @@ export default {
 		return directRequest({
 			url: buildUniHaloUrl('/ai/content/feed') + query,
 			method: 'GET',
+			header: buildOpenidHeader()
+		});
+	},
+
+	/**
+	 * 触发生成今天的简报。
+	 *
+	 * 服务端立刻返回（status=RUNNING）、生成在后台跑完：用户退出页面也不中断，
+	 * 前端轮询 getAiContentFeed 拿进度，生成好再进页面直接就能看到。
+	 * 今天已生成时原样返回（不重复烧 AI 额度）。
+	 */
+	generateAiContent: async () => {
+		return directRequest({
+			url: buildUniHaloUrl('/ai/content/generate'),
+			method: 'POST',
 			header: buildOpenidHeader()
 		});
 	},
@@ -2005,6 +1989,115 @@ export default {
 			url: buildUniHaloUrl('/userPublish/article'),
 			method: 'POST',
 			data: payload || {},
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 我的投稿列表（含待审草稿）
+	 * GET /userPublish/articles
+	 * 返回：{ items: [{ name, title, slug, state, stateText, cover, permalink,
+	 *                  publishTime, createTime, categories, tags }] }
+	 *
+	 * 归属过滤在服务端做（按 Halo 的 spec.owner），这里只会拿到自己的文章。
+	 */
+	getMyArticles: async () => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: buildUniHaloUrl('/userPublish/articles'),
+			method: 'GET',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 删除（回收）我的投稿：仅本人，博主/管理员可代删
+	 * DELETE /userPublish/article/{name}
+	 * 服务端走 Halo 的 /recycle：进回收站而非物理删除，站长仍可恢复
+	 */
+	deleteUserArticle: async (name) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/article')}/${encodeURIComponent(name)}`,
+			method: 'DELETE',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 单篇投稿详情（编辑回填用）：带 Markdown 正文原文
+	 * GET /userPublish/article/{name}
+	 * 返回：{ name, title, content, slug, cover, categories, tags, allowComment,
+	 *        published, hasPendingChanges, stateText, permalink, publishTime, createTime }
+	 *
+	 * 正文取的是 head 快照（作者最后一次保存的那份草稿），不是前台渲染的 release 快照。
+	 */
+	getUserArticleDetail: async (name) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/article')}/${encodeURIComponent(name)}`,
+			method: 'GET',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 保存对已投稿文章的修改（标题/正文/封面/分类/标签/是否允许评论）
+	 * PUT /userPublish/article/{name}
+	 * 不扣积分；改动是否立刻在站点上生效由服务端按角色策略决定
+	 * （直发角色保存后自动重新发布，待审投稿等站长发布）
+	 */
+	updateUserArticle: async (name, payload) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/article')}/${encodeURIComponent(name)}`,
+			method: 'PUT',
+			data: payload || {},
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 立即发布 / 重新发布（把尚未生效的修改推上线）
+	 * PUT /userPublish/article/{name}/publish
+	 * 仅直发权限的角色可用：待审投稿不能自己上线，否则审核形同虚设
+	 */
+	publishUserArticleNow: async (name) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/article')}/${encodeURIComponent(name)}/publish`,
+			method: 'PUT',
+			header: { 'Wechat-Session-Id': openid }
+		});
+	},
+
+	/**
+	 * 撤回发布：文章回到草稿态，站点上不再可见（内容保留，可再次发布）
+	 * PUT /userPublish/article/{name}/unpublish
+	 */
+	withdrawUserArticle: async (name) => {
+		const openid = getOpenid();
+		if (!openid) {
+			return Promise.reject({ error: '请先完成微信登录' });
+		}
+		return directRequest({
+			url: `${buildUniHaloUrl('/userPublish/article')}/${encodeURIComponent(name)}/unpublish`,
+			method: 'PUT',
 			header: { 'Wechat-Session-Id': openid }
 		});
 	},

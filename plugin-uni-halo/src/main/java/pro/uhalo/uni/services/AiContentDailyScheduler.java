@@ -64,6 +64,9 @@ public class AiContentDailyScheduler implements InitializingBean {
     @Override
     public void afterPropertiesSet() {
         log.info("[UniHalo][AiContent] 每日简报调度器已就绪（按用户选的整点分桶生成并推送）");
+        // 顺手预热实时素材池：简报的素材来自现抓（上百个源），
+        // 冷启动后第一位用户不该为这次抓取干等（小程序请求超时只有 30 秒）
+        feedService.warmLivePool();
     }
 
     @Scheduled(fixedDelay = CHECK_INTERVAL_MS, initialDelay = INITIAL_DELAY_MS)

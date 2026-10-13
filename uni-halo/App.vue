@@ -6,7 +6,7 @@ import { checkHasWxLogin } from '@/utils/auth.js';
 import { restoreThemeSkin } from '@/utils/themeSkin.js';
 import { restoreAppearance, watchSystemTheme, refreshSystemTheme } from '@/utils/skin.js';
 import { pullAppSettings } from '@/utils/appSettingsSync.js';
-import { hideNativeTabBar } from '@/utils/tabbar.js';
+import { refreshAppConfigs } from '@/utils/configRefresh.js';
 
 import {CheckWxUpdate} from '@/utils/update.js';
 // #ifdef APP-PLUS
@@ -44,10 +44,9 @@ export default {
         // 首屏照旧用本地设置渲染，服务端副本到货后若有差异再平滑应用（换设备/清缓存后自动回来）
         pullAppSettings();
 
-        uni.$tm.vx.actions('config/fetchConfigs').then((res) => {
-            // 配置到手后才能知道是否启用自绘底栏：尽早压掉原生栏，减少冷启动时那一帧闪动
-            hideNativeTabBar();
-        })
+        // 配置到手后才能知道是否启用自绘底栏：尽早压掉原生栏，减少冷启动时那一帧闪动。
+        // force：冷启动必定拉一次（节流只用于回到前台那种自动刷新）
+        refreshAppConfigs({ force: true });
         // 启动检查app的配置是否已经就绪，若未就绪则设置默认的
         uni.$tm.vx.actions('setting/checkAndSetDefaultAppSettings');
 
@@ -69,6 +68,9 @@ export default {
         // 从系统设置切完主题再切回小程序时，onThemeChange 在部分机型不会补发：
         // 这里再对一次，避免「跟随系统」下系统已深色而界面还是浅色
         refreshSystemTheme();
+        // 后台改了「底部导航」这类站点配置后，回到前台就自动对齐（3 分钟节流）——
+        // 否则站长改完得杀进程重进，看起来就像「配置没生效」
+        refreshAppConfigs();
         console.log('App Show');
     },
     onHide: function () {
