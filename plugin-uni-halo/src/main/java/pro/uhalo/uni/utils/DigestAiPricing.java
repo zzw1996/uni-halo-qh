@@ -16,10 +16,11 @@ import java.util.Optional;
 /**
  * 按 token 与单价估算一次调用（或一轮累计）的费用。
  *
- * <p><b>为什么是估算</b>：DeepSeek 官方没有用量/账单查询接口（只有余额查询），
- * 所以「花了多少钱」只能自己算；而且价目表本身还带两个坑——缓存命中与未命中的输入价
- * 差几十倍，高峰与低谷时段又差一倍。价格表只填一套数字，因此结果一律按估算对待，
- * 面板与报告里都带「≈」。真正的官方数字是余额差（见 {@code ChannelCost} 的余额字段），
+ * <p><b>为什么是估算</b>：DeepSeek 与智谱都没有用量/账单查询接口（DeepSeek 只给余额，
+ * 智谱连余额都要到控制台看），所以「花了多少钱」只能自己算；而且价目表本身还带两个坑
+ * ——缓存命中与未命中的输入价差几十倍，DeepSeek 的高峰与空闲时段又差一倍。
+ * 价格表只填一套数字，因此结果一律按估算对待，面板与报告里都带「≈」。
+ * DeepSeek 真正的官方数字是余额差（见 {@code ChannelCost} 的余额字段），
  * 拿它来校验这里的估算。</p>
  *
  * <p>纯函数、不依赖运行时：费率匹配与算钱都能逐条单测钉住——算错的后果是站长对成本
@@ -31,27 +32,56 @@ public final class DigestAiPricing {
     private static final BigDecimal PER_MILLION = new BigDecimal("1000000");
 
     /**
-     * 内置默认单价：DeepSeek 官方价目表（人民币，每百万 token 的<b>高峰价</b>）。
+     * 智谱没有峰谷差价，比例填 1。
      *
-     * <p>数值抄自 {@code https://api-docs.deepseek.com/zh-cn/quick_start/pricing}
-     * （2026-09-28 核对）。有了它，站长<b>不需要</b>手工填任何价格就能看到花费估算；
-     * 官网改价时也不必等插件发版——面板上的「从官网刷新单价」会直接读那份文档，
-     * 或让 {@code priceAutoRefreshEnabled} 在价格表为空时自动填一次。</p>
+     * <p>填 1 而不是留空：留空会走 {@link pro.uhalo.uni.dto.DigestAiPriceDTO} 的默认 0.5
+     * （DeepSeek 口径），那是凭空打折。</p>
      */
-    public static final List<DigestAiPriceDTO> DEFAULT_PRICES = List.of(
-        DigestAiPriceDTO.of("deepseek-flash", "CNY", "0.02", "1", "4"),
-        DigestAiPriceDTO.of("deepseek-v4-pro", "CNY", "0.15", "4.5", "13.5"));
-
-    /** 内置表核对日期（面板展示「内置价目表（核对于 …）」，让站长知道该不该刷新） */
-    public static final String DEFAULT_PRICES_DATE = "2026-09-28";
+    public static final String NO_PEAK_RATIO = "1";
 
     /**
-     * 官方价目表地址：刷新按钮与帮助文案共用同一份来源。
+     * 内置默认单价：DeepSeek 与智谱官方价目表（人民币，每百万 token 的<b>高峰价</b>）。
+     *
+     * <p>数值分别抄自 {@code https://api-docs.deepseek.com/zh-cn/quick_start/pricing} 与
+     * {@code https://docs.bigmodel.cn/cn/guide/start/pricing}（2026-10-14 逐行核对）。
+     * 有了它，站长<b>不需要</b>手工填任何价格就能看到花费估算；官网改价时也不必等插件发版
+     * ——面板上的「从官网刷新单价」会直接读这两份文档。</p>
+     *
+     * <p><b>DeepSeek 那两条填的是高峰价，不是页面上排在前面的一列</b>：官方把
+     * 「空闲时段」放在每组第一行（0.02 / 1 / 4），高峰是它的两倍（0.04 / 2 / 8）。
+     * 早先抄错了列，结果是全时段低估一倍——这一条别再改回去。</p>
+     *
+     * <p>GLM 一律带比例 1：智谱<b>没有峰谷差价</b>，按 DeepSeek 的 0.5 折算会把 GLM
+     * 的费用凭空砍一半。</p>
+     */
+    public static final List<DigestAiPriceDTO> DEFAULT_PRICES = List.of(
+        DigestAiPriceDTO.of("deepseek-flash", "CNY", "0.04", "2", "8"),
+        DigestAiPriceDTO.of("deepseek-v4-pro", "CNY", "0.3", "9", "27"),
+        DigestAiPriceDTO.of("glm-5.3", "CNY", "2", "8", "28", NO_PEAK_RATIO),
+        DigestAiPriceDTO.of("glm-5.3-flash", "CNY", "0.23", "0.8", "2.8", NO_PEAK_RATIO),
+        DigestAiPriceDTO.of("glm-5.3-flashx", "CNY", "0.57", "2", "7", NO_PEAK_RATIO),
+        // 分档计价的模型取最低档（日报的单篇提示词基本都在 32K 以内）
+        DigestAiPriceDTO.of("glm-4.7", "CNY", "0.4", "2", "8", NO_PEAK_RATIO),
+        DigestAiPriceDTO.of("glm-4.7-flashx", "CNY", "0.1", "0.5", "3", NO_PEAK_RATIO),
+        DigestAiPriceDTO.of("glm-4.7-flash", "CNY", "0", "0", "0", NO_PEAK_RATIO));
+
+    /** 内置表核对日期（面板展示「内置价目表（核对于 …）」，让站长知道该不该刷新） */
+    public static final String DEFAULT_PRICES_DATE = "2026-10-14";
+
+    /**
+     * DeepSeek 官方价目表地址：刷新按钮与帮助文案共用同一份来源。
      *
      * <p>结尾的斜杠是必须的——少了它站点会 302 跳到带斜杠的地址（曾经因此报「HTTP 302」）。</p>
      */
     public static final String OFFICIAL_PRICING_URL =
         "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
+
+    /** 智谱官方价目表地址（同一份来源也是 GLM 单价的抓取目标） */
+    public static final String ZHIPU_PRICING_URL =
+        "https://docs.bigmodel.cn/cn/guide/start/pricing";
+
+    /** 智谱官方「财务总览」：GLM 的余额与消费明细只能在这里看（没有对 Key 开放的查询接口） */
+    public static final String ZHIPU_FINANCE_URL = "https://open.bigmodel.cn/finance/overview";
 
     private DigestAiPricing() {
     }
@@ -157,6 +187,22 @@ public final class DigestAiPricing {
             parts.add(price.model() + "：" + price.describe());
         }
         return String.join("；", parts);
+    }
+
+    /**
+     * 官方计费口径（面板「价格说明」那一行）。
+     *
+     * <p>为什么要把规则写在面板上而不只放数字：站长看到的是「≈¥0.31」，他有权知道这个数
+     * 是按哪套规则算出来的、以及它在什么情况下会偏。这里每条都有官方出处，
+     * 也明确说出已知的低估方向（GLM 分档价按最低档）。</p>
+     */
+    public static String describeBillingRules() {
+        return "两家都按「元/百万 Tokens」计价，输入分缓存命中 / 未命中两个价。"
+            + "DeepSeek 有峰谷差价（见上一行）；智谱 GLM 没有峰谷差价，官方口径是"
+            + "「调用费用 = 未命中缓存的输入费用 + 缓存命中费用 + 输出费用 + 缓存存储费用」，"
+            + "其中缓存存储当前限时免费，所以不计。GLM 的思考过程按输出 Token 计费；"
+            + "分档计价（按输入或输出长度）的模型取最低档，真跨到高档时会低估；"
+            + "Token 与汉字约 1:1.6，最终都以响应里的 usage 为准。";
     }
 
     /**

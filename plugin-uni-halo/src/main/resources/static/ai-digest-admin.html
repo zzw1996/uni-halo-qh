@@ -730,10 +730,20 @@
       html += '<span style="display:inline-block;background:#f4f6ff;border-radius:8px;padding:3px 9px;margin:0 6px 4px 0" title="'
         + esc(row.description) + '">' + esc(row.model) + '：' + sym(row.currency) + '命中 ' + esc(row.cacheHit)
         + ' / 未命中 ' + esc(row.cacheMiss) + ' / 输出 ' + esc(row.output)
-        + ' <span style="color:#aab0c0">空闲 ×' + esc(row.offPeakRatio) + '</span></span>';
+        + ' <span style="color:#aab0c0">'
+        + (String(row.offPeakRatio) === '1' ? '不分时段' : '空闲 ×' + esc(row.offPeakRatio))
+        + '</span></span>';
     });
     html += '<div class="tip" style="margin-top:2px">' + esc(prices.peakRule || '')
-      + '　<a href="' + esc(prices.officialUrl) + '" target="_blank" rel="noopener">官方价目表</a></div>';
+      + '　<a href="' + esc(prices.officialUrl) + '" target="_blank" rel="noopener">DeepSeek 价目表</a>'
+      + (prices.zhipuUrl
+        ? '　<a href="' + esc(prices.zhipuUrl) + '" target="_blank" rel="noopener">智谱价目表</a>' : '')
+      + '</div>';
+    // 计费口径是一段话（两家的规则 + 已知的低估方向），单独一行显示
+    if (prices.billingRules) {
+      html += '<div class="tip" style="margin-top:2px;line-height:1.7">'
+        + esc(prices.billingRules) + '</div>';
+    }
     el.innerHTML = html;
   }
 
@@ -758,7 +768,8 @@
 
   /**
    * 查账户余额（DeepSeek 官方 /user/balance，不消耗 token）。
-   * 余额是账号级数据，用来校验报告里的估算；不支持的端点会显示「不支持」，属正常现象。
+   * 余额是账号级数据，用来校验报告里的估算。智谱没有对 Key 开放的余额接口，
+   * 后端会直接回「控制台去哪看」，这种「不支持」是中性提示而不是红色故障。
    */
   async function loadBalances() {
     if (!token()) { showMsg('请先输入 Personal Token', false); return; }
@@ -770,7 +781,8 @@
         var body = item.ok
           ? '余额 ' + sym(item.currency) + esc(item.totalBalance)
             + (item.message ? '（' + esc(item.message) + '）' : '')
-          : '<span style="color:#d94a4a">' + esc(item.message || '查询失败') + '</span>';
+          : '<span style="color:' + (item.supported ? '#d94a4a' : '#8a90a8') + '">'
+            + linkify(esc(item.message || '查询失败')) + '</span>';
         return '<span style="display:inline-block;background:#f4f6ff;border-radius:8px;padding:3px 9px;margin:0 6px 4px 0">'
           + '<b>' + esc(item.label) + '</b> ' + body + '</span>';
       }).join('');
@@ -780,6 +792,12 @@
     } finally {
       document.getElementById('btnBalances').disabled = false;
     }
+  }
+
+  /** 提示里带的官方页面地址变可点：入参必须是已经 esc() 过的文本，插的标签只有这一对 <a> */
+  function linkify(escaped) {
+    return String(escaped || '').replace(/(https?:\/\/[^\s\u4e00-\u9fff，。；（）)]+)/g,
+      '<a href="$1" target="_blank" rel="noopener">$1</a>');
   }
 
   function sym(currency) {

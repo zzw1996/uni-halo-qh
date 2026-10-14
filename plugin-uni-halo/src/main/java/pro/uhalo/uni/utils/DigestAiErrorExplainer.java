@@ -56,7 +56,14 @@ public final class DigestAiErrorExplainer {
             return "对方服务异常（HTTP " + status + "）：不是配置问题，稍后再试或换一条通道";
         }
         if (status == 400) {
-            if (text.contains("model")) {
+            if (AiThinkingPolicy.thinkingSwitchRejected(status, body)) {
+                // 1.0.220 曾对 GLM-5.3 发 thinking.type=disabled，而它「始终思考」：整批成稿
+                // 因此 400、全塌到 RSS 描述。现在按模型族自动降档，走到这里说明纠正后仍被拒
+                return "该模型不接受「关闭思考」的参数（智谱 GLM-5.3 起思考强制开启，只能降档不能关）。"
+                    + "插件已改按 reasoning_effort=" + AiThinkingPolicy.EFFORT + " 重试，仍然被拒："
+                    + "请核对模型名是否与平台上的写法一致（如 glm-5.3-flash），或换一条通道";
+            }
+            if (text.contains("model") || text.contains("模型不存在") || text.contains("1211")) {
                 return "模型名「" + model + "」在该端点上不存在，请核对模型名（大小写、版本后缀）";
             }
             return "请求被拒绝（HTTP 400）：" + snippet(body);

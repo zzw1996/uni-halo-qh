@@ -138,7 +138,11 @@
               （赠送 {{ item.grantedBalance }} / 充值 {{ item.toppedUpBalance }}）
             </span>
           </template>
-          <span v-else class="msg-bad">{{ item.message }}</span>
+          <span
+            v-else
+            :class="item.supported ? 'msg-bad' : 'msg-warn'"
+            v-html="autolink(item.message)"
+          ></span>
         </span>
       </div>
 
@@ -149,10 +153,19 @@
         </span>
         <span v-for="row in modelPrices.items" :key="row.model" class="model-price-chip" :title="row.description">
           {{ row.model }}：{{ moneySymbol(row.currency) }}命中 {{ row.cacheHit }} / 未命中 {{ row.cacheMiss }} / 输出 {{ row.output }}
-          <span class="model-price-sub">空闲 ×{{ row.offPeakRatio }}</span>
+          <span v-if="row.offPeakRatio === '1'" class="model-price-sub">不分时段</span>
+          <span v-else class="model-price-sub">空闲 ×{{ row.offPeakRatio }}</span>
         </span>
         <span class="model-price-sub">{{ modelPrices.peakRule }}</span>
-        <a :href="modelPrices.officialUrl" target="_blank" rel="noopener" class="link">官方价目表</a>
+        <div class="model-price-sub model-price-rules">{{ modelPrices.billingRules }}</div>
+        <a :href="modelPrices.officialUrl" target="_blank" rel="noopener" class="link">DeepSeek 价目表</a>
+        <a
+          v-if="modelPrices.zhipuUrl"
+          :href="modelPrices.zhipuUrl"
+          target="_blank"
+          rel="noopener"
+          class="link"
+        >智谱价目表</a>
       </div>
 
       <ul v-if="modelHints.length" class="model-hints">
@@ -690,7 +703,9 @@ interface ModelPrices {
   source: string;
   fetchedAt: string | null;
   officialUrl: string;
+  zhipuUrl: string;
   peakRule: string;
+  billingRules: string;
   items: Array<{
     model: string;
     currency: string;
@@ -1135,6 +1150,7 @@ const balances = ref<
   Array<{
     key: string;
     label: string;
+    supported: boolean;
     ok: boolean;
     currency: string | null;
     totalBalance: string | null;
@@ -1148,7 +1164,9 @@ const balanceBusy = ref(false);
 /**
  * 查账户余额（DeepSeek 官方接口，不消耗 token）。
  *
- * <p>余额是账号级数据，用来校验详细报告里的估算；不支持的端点会在结果里写「不支持」。</p>
+ * <p>余额是账号级数据，用来校验详细报告里的估算。智谱没有对 API Key 开放的余额接口，
+ * 后端会直接回「去哪看」而不是发一次注定 404 的请求，所以这种「不支持」是中性提示
+ * （msg-warn），只有「本该能查却查失败」才标红。</p>
  */
 async function loadBalances() {
   balanceBusy.value = true;
@@ -1413,6 +1431,25 @@ function moneySymbol(currency?: string | null): string {
 
 function round4(value: number): string {
   return String(Number(value.toFixed(4)));
+}
+
+/**
+ * 后端提示里常带官方页面地址（比如智谱「去控制台看余额」），把它变成可点的链接。
+ *
+ * <p>模板用 v-html，所以这里<b>先自己转义</b>再插 <a>：URL 本身来自后端文案，
+ * 不转义就等于给服务端文本开了注入口。匹配时排掉汉字与中文标点，
+ * 免得「…overview。扣费顺序」里的句号被算进链接。</p>
+ */
+function autolink(text?: string | null): string {
+  const escaped = String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return escaped.replace(
+    /(https?:\/\/[^\s\u4e00-\u9fff，。；（）)】]+)/g,
+    '<a href="$1" target="_blank" rel="noopener" class="link">$1</a>'
+  );
 }
 
 const statItems = computed(() => {  const stats = detail.value?.stats;
@@ -1791,6 +1828,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .preflight-name { color: #3c4160; font-weight: 600; min-width: 130px; }
 .preflight-msg { color: #7a8095; }
 .msg-bad { color: #d94a4a; }
+.msg-warn { color: #8a90a8; }
 .preflight-tip { padding: 0 14px 12px; font-size: 12px; color: #9aa1b5; }
 .markdown-view { flex: 1; margin: 0; background: #fbfcff; border: 1px solid #eef1fb; border-radius: 10px; padding: 14px; font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: #3c4160; }
 
@@ -1815,6 +1853,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .model-prices-head { font-weight: 600; color: #4c5480; }
 .model-price-chip { background: #f4f6ff; border-radius: 8px; padding: 3px 9px; }
 .model-price-sub { color: #aab0c0; }
+/* 计费口径是一段话，独占一行才好读（父容器是 flex 横排） */
+.model-price-rules { flex-basis: 100%; line-height: 1.7; color: #8a90a8; }
 .model-balances { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 14px 0; font-size: 12.5px; color: #4c5480; }
 .model-balance { background: #f4f6ff; border-radius: 8px; padding: 4px 10px; }
 .model-balance-sub { color: #8b90a0; }

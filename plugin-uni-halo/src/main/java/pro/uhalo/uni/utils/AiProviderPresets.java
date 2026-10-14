@@ -36,8 +36,8 @@ public final class AiProviderPresets {
      */
     public static final List<Preset> ALL = List.of(
         new Preset("zhipu", "智谱 GLM", "https://open.bigmodel.cn/api/paas/v4",
-            "glm-4.6 / glm-4-plus / glm-4-flash",
-            "glm-4-flash 便宜，适合评分这类小任务"),
+            "glm-5.3-flash / glm-4.6 / glm-4-flash",
+            "glm-4-flash 便宜，适合评分这类小任务；glm-5.3 起思考强制开启，插件会自动按 low 降档"),
         new Preset("deepseek", "DeepSeek", "https://api.deepseek.com/v1",
             "deepseek-chat / deepseek-reasoner", ""),
         new Preset("dashscope", "通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1",

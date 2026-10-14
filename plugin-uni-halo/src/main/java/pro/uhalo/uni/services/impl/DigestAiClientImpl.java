@@ -17,12 +17,13 @@ import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.enums.DigestAiTask;
 import pro.uhalo.uni.services.DigestAiClient;
 import pro.uhalo.uni.utils.AiProviderPresets;
+import pro.uhalo.uni.utils.AiThinkingPolicy;
 import pro.uhalo.uni.utils.DigestAiChannelResolver;
 import pro.uhalo.uni.utils.DigestAiErrorExplainer;
+import pro.uhalo.uni.utils.DigestAiPricing;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,8 +51,18 @@ public class DigestAiClientImpl implements DigestAiClient {
     /** 默认输出上限：10 篇一批的 JSON 容易被截断，顶到 8K */
     private static final int MAX_OUTPUT_TOKENS = 8192;
 
+    /**
+     * 思考关不掉的模型（GLM-5.3 起）改用这个上限：思考 token 与正文<b>共享</b> max_tokens，
+     * 8K 会被推理先吃掉大半，成稿 JSON 拦腰断。这类模型官方标称输出上限 128K，16K 既留足
+     * 余量也不会顶到别家的墙上。
+     */
+    private static final int THINKING_MAX_OUTPUT_TOKENS = 16384;
+
     /** 测试只验证「能不能通」，多要一个 token 都是浪费 */
     private static final int PROBE_MAX_TOKENS = 8;
+
+    /** 但思考强制开启的模型，8 token 全花在推理上、正文是空的：给一点空间才测得出「能出字」 */
+    private static final int THINKING_PROBE_TOKENS = 512;
 
     private static final double NORMAL_TEMPERATURE = 0.3;
 
@@ -81,6 +92,14 @@ public class DigestAiClientImpl implements DigestAiClient {
 
     /** 本轮已经提示过「回退到全部通道」的任务：一轮只提醒一次，不刷屏 */
     private final Set<DigestAiTask> fallbackNotified = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 实测「关不掉思考」的模型名（归一后）：撞一次 400 就记住，之后直接按强制思考发。
+     *
+     * <p>刻意<b>不</b>随 {@link #resetForNewRun()} 清空——这是模型的固有属性而不是本轮的降级位置，
+     * 每天一轮日报都重新撞一次同样的 400 没有任何意义。</p>
+     */
+    private final Set<String> alwaysThinkingModels = ConcurrentHashMap.newKeySet();
 
     @Override
     public void resetForNewRun() {
@@ -114,7 +133,7 @@ public class DigestAiClientImpl implements DigestAiClient {
     @Override
     public Mono<DigestAiProbeResultDTO> probe(DigestAiProviderDTO channel) {
         var startedAt = System.nanoTime();
-        return post(channel, PROBE_PROMPT, PROBE_MAX_TOKENS, PROBE_TEMPERATURE)
+        return send(channel, PROBE_PROMPT, PROBE_MAX_TOKENS, PROBE_TEMPERATURE)
             .timeout(PROBE_TIMEOUT)
             .map(answer -> toProbeResult(channel, answer, elapsedMs(startedAt)))
             .onErrorResume(ex -> Mono.just(baseResult(channel, elapsedMs(startedAt))
@@ -122,6 +141,36 @@ public class DigestAiClientImpl implements DigestAiClient {
                 .message(DigestAiErrorExplainer.explainThrowable(ex, channel.apiBase()))
                 .detail(DigestAiErrorExplainer.snippet(String.valueOf(ex.getMessage())))
                 .build()));
+    }
+
+    /**
+     * 发一次请求；模型「不接受关闭思考」时就地纠正、再发一次。
+     *
+     * <p>按模型名分档是主路径，但智谱每隔几个月就把「可关」的边界往后推，模型名还可能带中转站
+     * 自己加的前缀或后缀。撞一次 400 就把这条模型记成强制思考：比让整批成稿拆半重试、单篇补请求、
+     * 最后全塌到 RSS 描述兜底便宜得多——那正是「配了强模型，文章反而更差」的来路。</p>
+     *
+     * <p>只在原本按 {@code DISABLE} 发过时才重试：按 {@code NONE}/{@code ALWAYS_ON} 发出去
+     * 还收到同一句报错，说明是对端自己的口径问题，重发一遍只会多一份同样的失败。</p>
+     */
+    private Mono<AiHttpAnswer> send(DigestAiProviderDTO channel, String prompt, int maxTokens,
+        double temperature) {
+        return post(channel, prompt, tokensFor(stanceFor(channel.model()), maxTokens), temperature)
+            .flatMap(answer -> {
+                if (!AiThinkingPolicy.thinkingSwitchRejected(answer.status(), answer.body())
+                    || stanceFor(channel.model()) != AiThinkingPolicy.Stance.DISABLE) {
+                    return Mono.just(answer);
+                }
+                var model = AiThinkingPolicy.canonicalName(channel.model());
+                if (alwaysThinkingModels.add(model)) {
+                    log.warn("[UniHalo][Digest] 模型「{}」不接受关闭思考（{}），改按 reasoning_effort={} 重发，"
+                            + "后续调用直接走这一档",
+                        channel.model(), DigestAiErrorExplainer.snippet(answer.body()),
+                        AiThinkingPolicy.EFFORT);
+                }
+                return post(channel, prompt,
+                    tokensFor(stanceFor(channel.model()), maxTokens), temperature);
+            });
     }
 
     /**
@@ -160,7 +209,7 @@ public class DigestAiClientImpl implements DigestAiClient {
      */
     protected Mono<DigestAiReplyDTO> complete(DigestAiProviderDTO channel, String prompt,
         int maxTokens, double temperature) {
-        return post(channel, prompt, maxTokens, temperature)
+        return send(channel, prompt, maxTokens, temperature)
             .timeout(AI_TIMEOUT)
             .map(answer -> {
                 if (answer.status() < 200 || answer.status() >= 300) {
@@ -171,10 +220,13 @@ public class DigestAiClientImpl implements DigestAiClient {
                 var finishReason = parseFinishReason(answer.body());
                 if (isTruncated(finishReason)) {
                     // 「撞到长度上限」是长 JSON 被砍半的第一嫌疑：日志里必须留下这一条，
-                    // 否则下游只看到「JSON 解析失败」，无从判断是模型还是通道的问题
+                    // 否则下游只看到「JSON 解析失败」，无从判断是模型还是通道的问题。
+                    // 上限在这里现算而不是用入参：思考关不掉的那一档会被抬到 16K，
+                    // 报成 8192 会把站长引到完全错误的方向上。
                     log.warn("[UniHalo][Digest] 通道「{}」的输出达到长度上限被截断"
                         + "（finish_reason=length，max_tokens={}）：下游会拆小批次重试",
-                        channel.label(), maxTokens);
+                        channel.label(),
+                        tokensFor(stanceFor(channel.model()), maxTokens));
                 }
                 return DigestAiReplyDTO.of(extractContent(answer.body()), channel, channel.model(),
                     parseUsage(answer.body()), finishReason);
@@ -241,6 +293,11 @@ public class DigestAiClientImpl implements DigestAiClient {
         var total = intOf(usage, "total_tokens");
         var hit = intOf(usage, "prompt_cache_hit_tokens");
         var miss = intOf(usage, "prompt_cache_miss_tokens");
+        // 智谱按 OpenAI 的写法只在 prompt_tokens_details 里给 cached_tokens：不接这个字段
+        // 就把命中的那部分也按未命中价算（GLM-5.3-Flash 是 0.23 对 0.8，等于高估三倍多）
+        if (hit <= 0) {
+            hit = intOf(usage.path("prompt_tokens_details"), "cached_tokens");
+        }
         var reasoning = intOf(usage.path("completion_tokens_details"), "reasoning_tokens");
         if (total <= 0) {
             total = prompt + completion;
@@ -263,11 +320,18 @@ public class DigestAiClientImpl implements DigestAiClient {
      * <p>端点不在 {@code /v1} 下，所以要先把通道地址里的版本段去掉再拼 {@code /user/balance}。
      * 非 DeepSeek 通道会 404 或回别的结构——那属于预期情况，返回「不支持」而不是错误信号，
      * 不能让一次余额查询把整轮日报带崩。</p>
+     *
+     * <p>已经知道「这家压根没有接口」的（智谱）先短路掉，不发那一次注定 404 的请求，
+     * 而是直接把官方查看位置说给站长——见 {@link #balanceUnsupportedHint}。</p>
      */
     @Override
     public Mono<DigestAiBalanceDTO> queryBalance(DigestAiProviderDTO channel) {
         var key = channel.key();
         var label = channel.label();
+        var hint = balanceUnsupportedHint(channel.apiBase());
+        if (hint != null) {
+            return Mono.just(DigestAiBalanceDTO.notSupported(key, label, channel.apiBase(), hint));
+        }
         var base = balanceBase(channel.apiBase());
         if (!StringUtils.hasText(base) || !StringUtils.hasText(channel.apiKey())) {
             return Mono.just(DigestAiBalanceDTO.notSupported(key, label, channel.apiBase(),
@@ -320,6 +384,27 @@ public class DigestAiClientImpl implements DigestAiClient {
         }
     }
 
+    /**
+     * 这家供应商没有对 API Key 开放的余额接口时，给出「该去哪看」的话；有接口的返回 null。
+     *
+     * <p>智谱是明确的：官方文档通篇只有 chat/completions 那一套端点，费用的问题全部指向
+     * 控制台页面（财务总览 / 费用账单 / 资源包）。以前照样会去 GET 一次 {@code /user/balance}
+     * 拿一个 404，站长看到的是一句像故障的「该端点没有余额接口」——把官方入口和扣费顺序
+     * 直接说清楚才有用。</p>
+     *
+     * <p>包级可见留给单测：这条结论不该靠真发一次请求来验证。</p>
+     */
+    static String balanceUnsupportedHint(String apiBase) {
+        var preset = AiProviderPresets.byHost(apiBase);
+        if (preset.isEmpty() || !"zhipu".equals(preset.get().key())) {
+            return null;
+        }
+        return "智谱不提供用 API Key 查余额的接口：请到控制台「财务总览」查看 "
+            + DigestAiPricing.ZHIPU_FINANCE_URL
+            + "。扣费顺序是先扣资源包、再扣现金余额；GLM Coding Plan 套餐不按量扣余额，"
+            + "所以这里的报告只能给出估算花费";
+    }
+
     /** 余额端点在根路径上：把 {@code .../v1} 这段版本号去掉 */
     static String balanceBase(String apiBase) {
         var normalized = DigestAiChannelResolver.normalizeBase(apiBase);
@@ -335,6 +420,8 @@ public class DigestAiClientImpl implements DigestAiClient {
      * <p>protected 与包级可见的返回值都是留给单测的接缝：「测试连通性」的结论完全由
      * 「状态码 + 响应体」推导，把它替换成构造好的响应就能逐条断言文案，
      * 不必真的起一个 HTTP 服务。</p>
+     *
+     * <p>{@code maxTokens} 已由 {@link #send} 按档位定档，这里只负责照发，不再二次换算。</p>
      */
     protected Mono<AiHttpAnswer> post(DigestAiProviderDTO channel, String prompt, int maxTokens,
         double temperature) {
@@ -342,7 +429,8 @@ public class DigestAiClientImpl implements DigestAiClient {
             .uri(AiProviderPresets.chatCompletionsUrl(channel.apiBase()))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.apiKey())
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(buildRequestBody(channel, prompt, maxTokens, temperature))
+            .bodyValue(buildRequestBody(channel.model(), prompt, maxTokens, temperature,
+                stanceFor(channel.model())))
             // 用 exchangeToMono 而不是 retrieve()：测试接口要原样回报状态码与响应体，
             // 4xx/5xx 也不能变成异常丢掉正文（正文里才有「模型名不存在」这类关键信息）
             .exchangeToMono(response -> response.bodyToMono(String.class)
@@ -351,36 +439,45 @@ public class DigestAiClientImpl implements DigestAiClient {
     }
 
     /**
+     * 这条模型名按哪种方式处理思考参数：按名判断的档位，被实测驳回过的一律按「关不掉」处理。
+     */
+    private AiThinkingPolicy.Stance stanceFor(String model) {
+        var stance = AiThinkingPolicy.stance(model);
+        return stance == AiThinkingPolicy.Stance.DISABLE
+            && alwaysThinkingModels.contains(AiThinkingPolicy.canonicalName(model))
+            ? AiThinkingPolicy.Stance.ALWAYS_ON : stance;
+    }
+
+    /** 思考关不掉时输出上限必须给推理留位置，否则正文照旧被拦腰截断 */
+    static int tokensFor(AiThinkingPolicy.Stance stance, int maxTokens) {
+        return stance == AiThinkingPolicy.Stance.ALWAYS_ON ? thinkingTokens(maxTokens) : maxTokens;
+    }
+
+    /** 探测请求只要挤出几个字证明能出正文，正式调用要给整批 JSON 留位置 */
+    private static int thinkingTokens(int maxTokens) {
+        return maxTokens <= PROBE_MAX_TOKENS ? THINKING_PROBE_TOKENS : THINKING_MAX_OUTPUT_TOKENS;
+    }
+
+    /**
      * 组装 chat/completions 请求体（包级可见留给单测）。
      *
-     * <p>GLM-4.5 起的模型默认开动态思考，而思考 token 与正文<b>共享 max_tokens 预算</b>。
-     * 日报的每一类调用都是「按格式回 JSON / 定长段落」的结构化输出，一次还是 10 篇一批的
-     * 长 JSON——思考只会挤占正文预算，把输出砍成半截（finish_reason=length）再触发拆批重试，
-     * 因此对这一族模型显式关掉。其它供应商不带 thinking 字段：控制方式各家不同
-     * （o 系列根本不走这个字段），多发只添风险。</p>
+     * <p>日报的每一类调用都是「按格式回 JSON / 定长段落」的结构化输出，一次还是 10 篇一批的
+     * 长 JSON——思考只会挤占正文预算，能关就关；关不掉的（GLM-5.3 起）按
+     * {@link AiThinkingPolicy} 降档，发 {@code disabled} 会让整批请求直接 400。
+     * 其它供应商不带 thinking 字段：控制方式各家不同（o 系列根本不走这个字段），
+     * 多发只添风险。</p>
      */
-    static Map<String, Object> buildRequestBody(DigestAiProviderDTO channel, String prompt,
-        int maxTokens, double temperature) {
+    static Map<String, Object> buildRequestBody(String model, String prompt, int maxTokens,
+        double temperature, AiThinkingPolicy.Stance stance) {
         var body = new LinkedHashMap<String, Object>();
-        body.put("model", channel.model());
+        body.put("model", model);
         body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
         body.put("temperature", temperature);
         body.put("top_p", 0.8);
         body.put("max_tokens", maxTokens);
         body.put("stream", false);
-        if (thinkingDefaultOn(channel.model())) {
-            body.put("thinking", Map.of("type", "disabled"));
-        }
+        body.putAll(AiThinkingPolicy.requestFields(stance));
         return body;
-    }
-
-    /**
-     * GLM-4.5 起默认启用思考（官方文档：{@code thinking.type} 默认 enabled，可显式关闭）；
-     * glm-4-flash 那一代没有这个参数，发了反而是多余字段。按模型名判断而不是按端点：
-     * 中转站转发 GLM 时端点五花八门，模型名始终以 glm- 开头。
-     */
-    static boolean thinkingDefaultOn(String model) {
-        return model != null && model.toLowerCase(Locale.ROOT).matches("glm-(4\\.[5-9]|[5-9]).*");
     }
 
     /** 一次 HTTP 往返的原始结果：故障转移报错与「测试连通性」需要的是同一份材料 */

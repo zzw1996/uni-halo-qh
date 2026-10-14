@@ -139,11 +139,20 @@ public class DigestAiModelService {
      * 从官网读一次单价并写入配置（面板「从官网刷新单价」按钮）。
      *
      * <p>同名（模型匹配串相同）覆盖，其它条目保留——站长的价格表里可能还有
-     * 别的供应商，刷 DeepSeek 的价不该把它们清掉。</p>
+     * 别的供应商，刷 DeepSeek / 智谱的价不该把它们清掉。</p>
+     *
+     * <p>两家一起读，<b>单边读不到不报错</b>：那一条留在表里的旧价继续用，日志里说明是
+     * 哪家没读到。两家都读不到才算这次失败（继续用内置表，不影响运行）。</p>
      */
     public Mono<DigestAiModelViewDTO> refreshPrices() {
-        return priceFetcher.fetchOfficial()
-            .flatMap(fetched -> savePrices(fetched, true))
+        return priceFetcher.fetchAllSources()
+            .flatMap(sources -> {
+                if (!sources.failures().isEmpty()) {
+                    log.warn("[UniHalo][Digest] 本次官网刷新不完整：{}",
+                        String.join("；", sources.failures()));
+                }
+                return savePrices(sources.prices(), true);
+            })
             .onErrorResume(ex -> Mono.error(new IllegalStateException(
                 ex.getMessage() + "（可继续使用内置价目表，不影响运行）", ex)));
     }
@@ -162,8 +171,8 @@ public class DigestAiModelService {
             if (config.getAiPrices() != null && !config.getAiPrices().isEmpty()) {
                 return Mono.empty();
             }
-            return priceFetcher.fetchOfficial()
-                .flatMap(fetched -> savePrices(fetched, false))
+            return priceFetcher.fetchAllSources()
+                .flatMap(sources -> savePrices(sources.prices(), false))
                 .then()
                 .onErrorResume(ex -> {
                     log.info("[UniHalo][Digest] 未能自动读取官网单价，继续使用内置价目表：{}",

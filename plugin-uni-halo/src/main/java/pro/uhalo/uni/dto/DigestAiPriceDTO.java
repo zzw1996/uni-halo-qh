@@ -6,9 +6,10 @@ import java.math.RoundingMode;
 /**
  * 模型单价（设置分组里的 {@code aiPrices} 一行）。
  *
- * <p>三个价格填的都是<b>高峰时段</b>的价（DeepSeek 价目表的主价），空闲时段按
- * {@link #offPeakRatio()} 折算——官方原文是「空闲时段价格为高峰时段价格的一半」，
- * 所以默认 0.5。不区分时段的供应商把比例填 1 即可。</p>
+ * <p>三个价格填的都是<b>高峰时段</b>的价。DeepSeek 的价目表把「空闲时段」排在前面，
+ * 高峰是它的两倍——抄错列会全时段低估一倍。空闲时段按比例折算，官方原文是
+ * 「空闲时段价格为高峰时段价格的一半」，所以默认 0.5。
+ * <b>不区分时段的供应商（智谱 GLM 等）必须把比例填 1</b>，留空会走 0.5 而凭空打折。</p>
  *
  * <p>命中/未命中分开是硬要求：DeepSeek 的缓存命中输入价是未命中价的<b>五十分之一</b>
  * （0.02 vs 1 元/百万 token），而日报评分的提示词前缀固定、跨批次极易命中前缀缓存，
@@ -65,10 +66,12 @@ public record DigestAiPriceDTO(String model, String currency, BigDecimal cacheHi
 
     /** 展示用：一行说清三个价（面板与日志里用） */
     public String describe() {
+        var window = offPeakRatio.compareTo(BigDecimal.ONE) == 0
+            ? "（每百万 token，不分时段）"
+            : "（每百万 token，高峰价；空闲 ×"
+                + offPeakRatio.stripTrailingZeros().toPlainString() + "）";
         return (currency == null ? "" : currency + " ") + "命中 " + plain(cacheHit)
-            + " / 未命中 " + plain(cacheMiss) + " / 输出 " + plain(output)
-            + "（每百万 token，高峰价；空闲 ×" + offPeakRatio.stripTrailingZeros().toPlainString()
-            + "）";
+            + " / 未命中 " + plain(cacheMiss) + " / 输出 " + plain(output) + window;
     }
 
     private static String plain(BigDecimal value) {

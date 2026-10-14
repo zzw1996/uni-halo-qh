@@ -4,10 +4,13 @@ import org.junit.jupiter.api.Test;
 import pro.uhalo.uni.dto.DigestAiProviderDTO;
 import pro.uhalo.uni.dto.DigestConfigDTO;
 import pro.uhalo.uni.enums.DigestAiTask;
+import pro.uhalo.uni.utils.AiThinkingPolicy;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +52,26 @@ class DigestAiClientImplTest {
                     "Connection refused: " + channel.apiBase()));
             }
             return Mono.just(answer);
+        }
+    }
+
+    /** 记录每次请求实际用到的 max_tokens，并按脚本依次回包（用于验证思考档位与自愈重试） */
+    private static class RecordingClient extends DigestAiClientImpl {
+
+        private final List<Integer> maxTokens = new ArrayList<>();
+        private final Deque<AiHttpAnswer> script = new ArrayDeque<>();
+
+        void script(int status, String body) {
+            script.add(new AiHttpAnswer(status, body));
+        }
+
+        @Override
+        protected Mono<AiHttpAnswer> post(DigestAiProviderDTO channel, String prompt, int tokens,
+            double temperature) {
+            maxTokens.add(tokens);
+            var answer = script.poll();
+            return answer == null ? Mono.error(new IllegalStateException("脚本已经用尽"))
+                : Mono.just(answer);
         }
     }
 
@@ -381,41 +404,203 @@ class DigestAiClientImplTest {
             .verifyComplete();
     }
 
-    // ── 请求体：GLM-4.5 起默认开思考，思考 token 与正文共享 max_tokens 预算 ──
+    // ── 请求体：思考参数按 GLM 代际分档，思考 token 与正文共享 max_tokens 预算 ──
 
     private static DigestAiProviderDTO providerWithModel(String model) {
         return new DigestAiProviderDTO("a", "a", "https://a.example/v1", "sk-a", model, true);
     }
 
+    private static Map<String, Object> bodyFor(String model, int maxTokens) {
+        return DigestAiClientImpl.buildRequestBody(model, "hi", maxTokens, 0.3,
+            AiThinkingPolicy.stance(model));
+    }
+
     @Test
-    void requestBodyShouldDisableThinkingForNewGlmModels() {
-        for (var model : List.of("glm-5.3-flash", "GLM-4.6", "glm-4.5-flash", "glm-5")) {
-            var body = DigestAiClientImpl.buildRequestBody(providerWithModel(model),
-                "hi", 8192, 0.3);
+    void requestBodyShouldDisableThinkingWhereTheModelAllowsIt() {
+        for (var model : List.of("glm-4.5-flash", "GLM-4.6", "glm-5", "glm-5.2")) {
+            var body = bodyFor(model, 8192);
             assertThat(body.get("thinking")).as("model " + model)
                 .isEqualTo(Map.of("type", "disabled"));
+            assertThat(body).as("model " + model).doesNotContainKey("reasoning_effort");
             assertThat(body.get("model")).as("model " + model).isEqualTo(model);
-            assertThat(body.get("max_tokens")).as("model " + model).isEqualTo(8192);
+        }
+    }
+
+    @Test
+    void requestBodyShouldLowerEffortInsteadOfDisablingForAlwaysThinkingModels() {
+        // 对 GLM-5.3 发 disabled 不是被忽略，而是整批请求直接 400（业务码 1210）
+        for (var model : List.of("glm-5.3", "glm-5.3-flash", "ZHIPU/GLM-5.3-Flash", "glm-6")) {
+            var body = bodyFor(model, 16384);
+            assertThat(body.get("thinking")).as("model " + model)
+                .isEqualTo(Map.of("type", "enabled"));
+            assertThat(body.get("reasoning_effort")).as("model " + model)
+                .isEqualTo(AiThinkingPolicy.EFFORT);
         }
     }
 
     @Test
     void requestBodyShouldNotSendThinkingWhereItDoesNotApply() {
-        // 其它供应商对 thinking 的控制方式各不相同；glm-4-flash 那一代没有这个参数
-        for (var model : List.of("deepseek-chat", "gpt-4o-mini", "glm-4-flash")) {
-            assertThat(DigestAiClientImpl.buildRequestBody(providerWithModel(model),
-                "hi", 8192, 0.3)).as("model " + model).doesNotContainKey("thinking");
+        // 其它供应商对 thinking 的控制方式各不相同；glm-4 那一代没有这个参数
+        for (var model : List.of("deepseek-chat", "gpt-4o-mini", "glm-4-flash", "chatglm3-6b")) {
+            var body = bodyFor(model, 8192);
+            assertThat(body).as("model " + model).doesNotContainKey("thinking");
+            assertThat(body).as("model " + model).doesNotContainKey("reasoning_effort");
         }
     }
 
     @Test
     void requestBodyShouldKeepBaseFieldsForEveryChannel() {
-        var body = DigestAiClientImpl.buildRequestBody(providerWithModel("glm-5.3-flash"),
-            "hi", 8192, 0.3);
+        var body = bodyFor("glm-5.3-flash", 16384);
         assertThat(body)
+            .containsEntry("model", "glm-5.3-flash")
+            .containsEntry("max_tokens", 16384)
             .containsEntry("stream", false)
             .containsEntry("temperature", 0.3)
             .containsEntry("top_p", 0.8);
         assertThat((List<?>) body.get("messages")).hasSize(1);
+    }
+
+    // ── 输出上限：思考关不掉的模型要给推理留位置 ──
+
+    @Test
+    void alwaysThinkingModelsShouldGetMoreOutputRoom() {
+        var thinking = new RecordingClient();
+        thinking.script(200, content("OK"));
+        thinking.call(config(providerWithModel("glm-5.3-flash")), "hi", DigestAiTask.WRITE).block();
+        assertThat(thinking.maxTokens).containsExactly(16384);
+
+        var plain = new RecordingClient();
+        plain.script(200, content("OK"));
+        plain.call(config(providerWithModel("glm-4.6")), "hi", DigestAiTask.WRITE).block();
+        assertThat(plain.maxTokens).containsExactly(8192);
+    }
+
+    @Test
+    void probeShouldAskForEnoughTokensToShowRealContent() {
+        // 8 token 对强制思考的模型只够想、不够说话：测试按钮会一直停在「没产出正文」
+        var thinking = new RecordingClient();
+        thinking.script(200, content("OK"));
+        thinking.probe(providerWithModel("glm-5.3-flash")).block();
+        assertThat(thinking.maxTokens).containsExactly(512);
+
+        var plain = new RecordingClient();
+        plain.script(200, content("OK"));
+        plain.probe(providerWithModel("glm-4.6")).block();
+        assertThat(plain.maxTokens).containsExactly(8);
+    }
+
+    @Test
+    void thinkingSwitchRejectionShouldRetryOnceAndBeRemembered() {
+        // 按名字分档迟早赶不上智谱改默认值：撞一次 1210 就改按 reasoning_effort 走，
+        // 之后的调用不再重复撞——否则每一批成稿都要先白失败一次再降级
+        var client = new RecordingClient();
+        client.script(400, "{\"error\":{\"code\":\"1210\",\"message\":\"该模型始终思考，"
+            + "不支持关闭思考；请使用 low、high 或 max。\"}}");
+        client.script(200, content("OK"));
+        client.script(200, content("OK-2"));
+
+        StepVerifier.create(client.call(config(providerWithModel("glm-5.2-turbo")), "hi",
+                DigestAiTask.WRITE))
+            .assertNext(reply -> assertThat(reply.text()).isEqualTo("OK"))
+            .verifyComplete();
+        assertThat(client.maxTokens).containsExactly(8192, 16384);
+
+        StepVerifier.create(client.call(config(providerWithModel("glm-5.2-turbo")), "hi again",
+                DigestAiTask.WRITE))
+            .assertNext(reply -> assertThat(reply.text()).isEqualTo("OK-2"))
+            .verifyComplete();
+        assertThat(client.maxTokens).containsExactly(8192, 16384, 16384);
+    }
+
+    @Test
+    void thinkingSwitchErrorOnAnAlwaysThinkingModelShouldNotBeRetried() {
+        // 已经按 enabled + low 发了还被这样回，说明是对端自己的口径：重发一遍只是多一份同样的失败
+        var client = new RecordingClient();
+        client.script(400, "{\"error\":{\"code\":\"1210\",\"message\":\"该模型始终思考，"
+            + "不支持关闭思考；请使用 low、high 或 max。\"}}");
+
+        StepVerifier.create(client.call(config(providerWithModel("glm-5.3-flash")), "hi",
+                DigestAiTask.WRITE))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage()).contains("思考"))
+            .verify();
+        assertThat(client.maxTokens).containsExactly(16384);
+    }
+
+    @Test
+    void otherBadRequestShouldNotBeRetriedAsAThinkingProblem() {
+        // 「模型不存在」重发一遍还是不存在：只有那句「关不掉思考」才值得纠正重试
+        var client = new RecordingClient();
+        client.script(400, "{\"error\":{\"code\":\"1211\",\"message\":\"模型不存在，请检查模型代码\"}}");
+
+        StepVerifier.create(client.call(config(providerWithModel("glm-5.2")), "hi",
+                DigestAiTask.WRITE))
+            .expectErrorSatisfies(ex -> assertThat(ex.getMessage())
+                .contains("glm-5.2").contains("不存在"))
+            .verify();
+        assertThat(client.maxTokens).containsExactly(8192);
+    }
+
+    // ── 用量里的缓存命中：智谱按 OpenAI 写法只给 prompt_tokens_details.cached_tokens ──
+
+    @Test
+    void parseUsageShouldReadOpenAiStyleCachedTokens() {
+        // 数值形状取自智谱官方「上下文缓存」文档里的示例响应
+        var usage = DigestAiClientImpl.parseUsage("""
+            {"choices":[{"message":{"content":"ok"}}],
+             "usage":{"prompt_tokens":1075,"completion_tokens":241,"total_tokens":1316,
+                      "prompt_tokens_details":{"cached_tokens":1024}}}""");
+
+        // 不认这个字段，1024 个命中 token 会按未命中价算（GLM-5.3-Flash 是 0.23 对 0.8）
+        assertThat(usage.cacheHitTokens()).isEqualTo(1024);
+        assertThat(usage.hasCacheBreakdown()).isTrue();
+        assertThat(usage.inputTokens()).isEqualTo(1075);
+        assertThat(usage.completionTokens()).isEqualTo(241);
+    }
+
+    @Test
+    void parseUsageShouldPreferExplicitCacheHitFields() {
+        // DeepSeek 直接给 prompt_cache_hit_tokens：两处同时出现时以显式的那个为准
+        var usage = DigestAiClientImpl.parseUsage("""
+            {"usage":{"prompt_tokens":1000,"completion_tokens":200,
+                     "prompt_cache_hit_tokens":700,"prompt_cache_miss_tokens":300,
+                     "prompt_tokens_details":{"cached_tokens":900}}}""");
+
+        assertThat(usage.cacheHitTokens()).isEqualTo(700);
+    }
+
+    // ── 余额：智谱没有对 API Key 开放的查询接口 ──
+
+    private static DigestAiProviderDTO zhipuChannel() {
+        return new DigestAiProviderDTO("z", "智谱 GLM", "https://open.bigmodel.cn/api/paas/v4",
+            "sk-z", "glm-5.3-flash", true);
+    }
+
+    @Test
+    void zhipuChannelShouldAnswerWhereToLookInsteadOfFailing() {
+        // 官方文档通篇没有余额端点，费用的问题全部指向控制台页面。
+        // 以前会真的发一次 GET 拿 404，回一句像故障的「该端点没有余额接口」
+        var hint = DigestAiClientImpl.balanceUnsupportedHint(zhipuChannel().apiBase());
+
+        assertThat(hint).contains("智谱").contains("财务总览")
+            .contains("open.bigmodel.cn/finance/overview");
+
+        // 结论来自这条提示而不是发出去的那次请求（StubClient 没给这条通道打桩，真发就走网络）
+        StepVerifier.create(new StubClient().queryBalance(zhipuChannel()))
+            .assertNext(balance -> {
+                assertThat(balance.supported()).isFalse();
+                assertThat(balance.ok()).isFalse();
+                assertThat(balance.message()).isEqualTo(hint);
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void otherChannelsShouldStillTryTheBalanceEndpoint() {
+        // 认不出是智谱的一律照旧去探一次：中转站自己实现了 /user/balance 的情况不能被短路丢掉
+        assertThat(DigestAiClientImpl.balanceUnsupportedHint("https://api.deepseek.com/v1"))
+            .isNull();
+        assertThat(DigestAiClientImpl.balanceUnsupportedHint("https://gw.example.com/v1"))
+            .isNull();
+        assertThat(DigestAiClientImpl.balanceUnsupportedHint(null)).isNull();
     }
 }

@@ -33,6 +33,11 @@ class DigestAiPricingTest {
         java.time.ZonedDateTime.of(java.time.LocalDateTime.parse("2026-09-28T10:00"),
             DigestAiPeakWindow.ZONE).toInstant();
 
+    /** 固定的空闲时刻（2026-10-04 是周日） */
+    private static final java.time.Instant OFF_PEAK =
+        java.time.ZonedDateTime.of(java.time.LocalDateTime.parse("2026-10-04T10:00"),
+            DigestAiPeakWindow.ZONE).toInstant();
+
     private static DigestAiUsageDTO usage(int prompt, int completion, int hit, int miss,
         boolean reported) {
         return new DigestAiUsageDTO(prompt, completion, prompt + completion, hit, miss, 0,
@@ -117,6 +122,51 @@ class DigestAiPricingTest {
             .isEqualTo(DigestAiPricing.DEFAULT_PRICES);
         assertThat(DigestAiPricing.estimate(config, "deepseek-flash", usage(1000, 1000, 0, 0, true)))
             .isPresent();
+    }
+
+    // ── 智谱 GLM：内置表要覆盖到，且不套峰谷折扣 ──
+
+    @Test
+    void glmModelsShouldBePriceableWithoutAnyConfig() {
+        var config = configBuilder().build();
+
+        // 站长用 GLM 时不该看到「未配置单价」：内置表里就得有智谱的价
+        var flash = DigestAiPricing.match(config, "glm-5.3-flash").orElseThrow();
+        assertThat(flash.cacheMiss()).isEqualByComparingTo(new BigDecimal("0.8"));
+        assertThat(flash.output()).isEqualByComparingTo(new BigDecimal("2.8"));
+        // glm-5.3 是 glm-5.3-flash 的子串，最长匹配必须把 flash 那条挑出来
+        assertThat(DigestAiPricing.match(config, "glm-5.3").orElseThrow().cacheMiss())
+            .isEqualByComparingTo(new BigDecimal("8"));
+    }
+
+    @Test
+    void glmCostShouldIgnoreThePeakWindowWhileDeepSeekStillHalves() {
+        var config = configBuilder().build();
+        var usage = usage(1000, 1000, 0, 0, true);
+
+        // 2026-10-04 是周日：空闲时段
+        var glmPeak = DigestAiPricing.estimate(config, "glm-5.3-flash", usage, PEAK).orElseThrow();
+        var glmOff = DigestAiPricing.estimate(config, "glm-5.3-flash", usage, OFF_PEAK)
+            .orElseThrow();
+        assertThat(glmPeak).isEqualByComparingTo(glmOff);
+
+        // 同一个时刻差必须体现在 DeepSeek 上，否则上面那条「相等」是空断言
+        var dsPeak = DigestAiPricing.estimate(config, "deepseek-flash", usage, PEAK).orElseThrow();
+        var dsOff = DigestAiPricing.estimate(config, "deepseek-flash", usage, OFF_PEAK)
+            .orElseThrow();
+        assertThat(dsPeak).isEqualByComparingTo(dsOff.multiply(new BigDecimal("2")));
+    }
+
+    @Test
+    void glmCachedTokensShouldBeChargedAtTheHitPrice() {
+        var config = configBuilder().build();
+
+        // glm-5.3-flash 命中 0.23 / 未命中 0.8：1000 输入里 800 命中，500 输出
+        var cost = DigestAiPricing.estimate(config, "glm-5.3-flash",
+            usage(1000, 500, 800, 0, true), PEAK).orElseThrow();
+
+        // 800×0.23 + 200×0.8 + 500×2.8，再除以 1e6
+        assertThat(cost).isEqualByComparingTo(new BigDecimal("0.001744"));
     }
 
     @Test

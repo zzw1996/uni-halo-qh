@@ -105,11 +105,39 @@ class DigestAiPeakWindowTest {
         var flash = DigestAiPricing.match(config, "deepseek-flash").orElseThrow();
 
         assertThat(flash.currency()).isEqualTo("CNY");
-        assertThat(flash.cacheHit()).isEqualByComparingTo(new BigDecimal("0.02"));
-        assertThat(flash.cacheMiss()).isEqualByComparingTo(new BigDecimal("1"));
-        assertThat(flash.output()).isEqualByComparingTo(new BigDecimal("4"));
+        // 存的是高峰价：官网把「空闲时段」排在前面，抄那一列会让所有估算少一半
+        assertThat(flash.cacheHit()).isEqualByComparingTo(new BigDecimal("0.04"));
+        assertThat(flash.cacheMiss()).isEqualByComparingTo(new BigDecimal("2"));
+        assertThat(flash.output()).isEqualByComparingTo(new BigDecimal("8"));
         assertThat(DigestAiPricing.match(config, "deepseek-v4-pro").orElseThrow().output())
-            .isEqualByComparingTo(new BigDecimal("13.5"));
+            .isEqualByComparingTo(new BigDecimal("27"));
+
+        // 空闲价由折扣推出来，推完要和官网「空闲时段」那一列对得上
+        assertThat(flash.priceAt(flash.cacheHit(), false)).isEqualByComparingTo(new BigDecimal("0.02"));
+        assertThat(flash.priceAt(flash.cacheMiss(), false)).isEqualByComparingTo(new BigDecimal("1"));
+        assertThat(flash.priceAt(flash.output(), false)).isEqualByComparingTo(new BigDecimal("4"));
+        assertThat(DigestAiPricing.match(config, "deepseek-v4-pro").orElseThrow()
+            .priceAt(new BigDecimal("27"), false)).isEqualByComparingTo(new BigDecimal("13.5"));
+    }
+
+    @Test
+    void builtInZhipuTableShouldMatchTheOfficialPageAndSkipThePeakWindow() {
+        // 智谱没有峰谷差价：内置表的空闲价必须等于高峰价，否则 DeepSeek 的默认折扣会凭空打对折
+        var config = DigestConfigDTO.builder().aiApiBase("").aiApiKey("").build();
+        var flash = DigestAiPricing.match(config, "glm-5.3-flash").orElseThrow();
+
+        assertThat(flash.currency()).isEqualTo("CNY");
+        assertThat(flash.cacheHit()).isEqualByComparingTo(new BigDecimal("0.23"));
+        assertThat(flash.cacheMiss()).isEqualByComparingTo(new BigDecimal("0.8"));
+        assertThat(flash.output()).isEqualByComparingTo(new BigDecimal("2.8"));
+        assertThat(flash.offPeakRatio()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(flash.priceAt(flash.output(), false)).isEqualByComparingTo(flash.output());
+
+        // 分档模型按最低档内置（日报的单篇提示词落在最低档区间）
+        assertThat(DigestAiPricing.match(config, "glm-4.7").orElseThrow().cacheMiss())
+            .isEqualByComparingTo(new BigDecimal("2"));
+        // 免费模型也要能匹配上，不然「0 元」会被 report 读成「算不出来」
+        assertThat(DigestAiPricing.match(config, "glm-4.7-flash")).isPresent();
     }
 
     @Test

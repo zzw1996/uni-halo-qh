@@ -129,15 +129,19 @@ public record DigestAiModelViewDTO(
      *
      * @param source 来源说明（内置价目表 / 官网读取 / 站长填写）
      * @param fetchedAt 从官网读到的时间（为空表示还在用内置表）
-     * @param officialUrl 官方价目表地址
+     * @param officialUrl DeepSeek 官方价目表地址
+     * @param zhipuUrl 智谱官方价目表地址（GLM 的单价来源）
      * @param peakRule 高峰/空闲时段规则（一句话）
+     * @param billingRules 官方计费口径（这钱按什么规则算、什么情况会偏差）
      * @param items 每一行：模型匹配串、三个高峰价、空闲折扣、币种、说明
      */
     public record Prices(
         String source,
         String fetchedAt,
         String officialUrl,
+        String zhipuUrl,
         String peakRule,
+        String billingRules,
         List<PriceRow> items) {
     }
 
@@ -229,7 +233,8 @@ public record DigestAiModelViewDTO(
         }
         var source = fromOfficial ? "官网读取" : "内置价目表（" + DigestAiPricing.DEFAULT_PRICES_DATE + " 核对）";
         return new Prices(source, fetchedAt, DigestAiPricing.OFFICIAL_PRICING_URL,
-            DigestAiPeakWindow.describe(), List.copyOf(items));
+            DigestAiPricing.ZHIPU_PRICING_URL, DigestAiPeakWindow.describe(),
+            DigestAiPricing.describeBillingRules(), List.copyOf(items));
     }
 
     private static String plain(java.math.BigDecimal value) {

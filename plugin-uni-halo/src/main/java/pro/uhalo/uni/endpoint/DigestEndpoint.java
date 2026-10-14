@@ -120,8 +120,9 @@ public class DigestEndpoint implements CustomEndpoint {
             .GET("/digest/models/balance", digestController::aiBalances, builder -> builder
                 .operationId("GetDigestModelBalances")
                 .description("Query the account balance of each usable AI channel via the "
-                    + "provider's official endpoint (DeepSeek: GET /user/balance). Channels that "
-                    + "do not support it report that instead of failing. No tokens consumed.")
+                    + "provider's official endpoint (DeepSeek: GET /user/balance). Zhipu has no "
+                    + "balance endpoint for API keys, so its channels answer with where to look "
+                    + "in the console instead of a failing request. No tokens consumed.")
                 .tag(apiTag))
             .GET("/digest/models/presets", digestController::aiModelPresets, builder -> builder
                 .operationId("GetDigestModelPresets")
@@ -132,9 +133,11 @@ public class DigestEndpoint implements CustomEndpoint {
             .POST("/digest/models/prices/refresh", digestController::refreshAiPrices,
                 builder -> builder
                     .operationId("RefreshDigestPrices")
-                    .description("Read the model price table from the provider's official pricing "
-                        + "page (DeepSeek documents no price API). Same-model entries are replaced; "
-                        + "other entries in the table are kept. On failure the built-in table stays.")
+                    .description("Read the model price table from the providers' official pricing "
+                        + "pages (DeepSeek and Zhipu both document no price API). Same-model "
+                        + "entries are replaced; other entries in the table are kept. One source "
+                        + "failing does not abort the refresh; if both fail the built-in table "
+                        + "stays in use.")
                     .tag(apiTag))
             .POST("/digest/models/test", digestController::testAiModel, builder -> builder
                 .operationId("TestDigestModel")
