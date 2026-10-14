@@ -380,4 +380,42 @@ class DigestAiClientImplTest {
             })
             .verifyComplete();
     }
+
+    // ── 请求体：GLM-4.5 起默认开思考，思考 token 与正文共享 max_tokens 预算 ──
+
+    private static DigestAiProviderDTO providerWithModel(String model) {
+        return new DigestAiProviderDTO("a", "a", "https://a.example/v1", "sk-a", model, true);
+    }
+
+    @Test
+    void requestBodyShouldDisableThinkingForNewGlmModels() {
+        for (var model : List.of("glm-5.3-flash", "GLM-4.6", "glm-4.5-flash", "glm-5")) {
+            var body = DigestAiClientImpl.buildRequestBody(providerWithModel(model),
+                "hi", 8192, 0.3);
+            assertThat(body.get("thinking")).as("model " + model)
+                .isEqualTo(Map.of("type", "disabled"));
+            assertThat(body.get("model")).as("model " + model).isEqualTo(model);
+            assertThat(body.get("max_tokens")).as("model " + model).isEqualTo(8192);
+        }
+    }
+
+    @Test
+    void requestBodyShouldNotSendThinkingWhereItDoesNotApply() {
+        // 其它供应商对 thinking 的控制方式各不相同；glm-4-flash 那一代没有这个参数
+        for (var model : List.of("deepseek-chat", "gpt-4o-mini", "glm-4-flash")) {
+            assertThat(DigestAiClientImpl.buildRequestBody(providerWithModel(model),
+                "hi", 8192, 0.3)).as("model " + model).doesNotContainKey("thinking");
+        }
+    }
+
+    @Test
+    void requestBodyShouldKeepBaseFieldsForEveryChannel() {
+        var body = DigestAiClientImpl.buildRequestBody(providerWithModel("glm-5.3-flash"),
+            "hi", 8192, 0.3);
+        assertThat(body)
+            .containsEntry("stream", false)
+            .containsEntry("temperature", 0.3)
+            .containsEntry("top_p", 0.8);
+        assertThat((List<?>) body.get("messages")).hasSize(1);
+    }
 }

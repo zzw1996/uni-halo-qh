@@ -338,6 +338,29 @@ public class DigestAiClientImpl implements DigestAiClient {
      */
     protected Mono<AiHttpAnswer> post(DigestAiProviderDTO channel, String prompt, int maxTokens,
         double temperature) {
+        return clientFor(channel.apiBase()).post()
+            .uri(AiProviderPresets.chatCompletionsUrl(channel.apiBase()))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.apiKey())
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(buildRequestBody(channel, prompt, maxTokens, temperature))
+            // 用 exchangeToMono 而不是 retrieve()：测试接口要原样回报状态码与响应体，
+            // 4xx/5xx 也不能变成异常丢掉正文（正文里才有「模型名不存在」这类关键信息）
+            .exchangeToMono(response -> response.bodyToMono(String.class)
+                .defaultIfEmpty("")
+                .map(text -> new AiHttpAnswer(response.statusCode().value(), text)));
+    }
+
+    /**
+     * 组装 chat/completions 请求体（包级可见留给单测）。
+     *
+     * <p>GLM-4.5 起的模型默认开动态思考，而思考 token 与正文<b>共享 max_tokens 预算</b>。
+     * 日报的每一类调用都是「按格式回 JSON / 定长段落」的结构化输出，一次还是 10 篇一批的
+     * 长 JSON——思考只会挤占正文预算，把输出砍成半截（finish_reason=length）再触发拆批重试，
+     * 因此对这一族模型显式关掉。其它供应商不带 thinking 字段：控制方式各家不同
+     * （o 系列根本不走这个字段），多发只添风险。</p>
+     */
+    static Map<String, Object> buildRequestBody(DigestAiProviderDTO channel, String prompt,
+        int maxTokens, double temperature) {
         var body = new LinkedHashMap<String, Object>();
         body.put("model", channel.model());
         body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
@@ -345,17 +368,19 @@ public class DigestAiClientImpl implements DigestAiClient {
         body.put("top_p", 0.8);
         body.put("max_tokens", maxTokens);
         body.put("stream", false);
+        if (thinkingDefaultOn(channel.model())) {
+            body.put("thinking", Map.of("type", "disabled"));
+        }
+        return body;
+    }
 
-        return clientFor(channel.apiBase()).post()
-            .uri(AiProviderPresets.chatCompletionsUrl(channel.apiBase()))
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.apiKey())
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(body)
-            // 用 exchangeToMono 而不是 retrieve()：测试接口要原样回报状态码与响应体，
-            // 4xx/5xx 也不能变成异常丢掉正文（正文里才有「模型名不存在」这类关键信息）
-            .exchangeToMono(response -> response.bodyToMono(String.class)
-                .defaultIfEmpty("")
-                .map(text -> new AiHttpAnswer(response.statusCode().value(), text)));
+    /**
+     * GLM-4.5 起默认启用思考（官方文档：{@code thinking.type} 默认 enabled，可显式关闭）；
+     * glm-4-flash 那一代没有这个参数，发了反而是多余字段。按模型名判断而不是按端点：
+     * 中转站转发 GLM 时端点五花八门，模型名始终以 glm- 开头。
+     */
+    static boolean thinkingDefaultOn(String model) {
+        return model != null && model.toLowerCase(Locale.ROOT).matches("glm-(4\\.[5-9]|[5-9]).*");
     }
 
     /** 一次 HTTP 往返的原始结果：故障转移报错与「测试连通性」需要的是同一份材料 */
