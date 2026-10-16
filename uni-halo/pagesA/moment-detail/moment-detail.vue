@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-moment-detail-moment-detail app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
 			<tm-skeleton model="card"></tm-skeleton>
@@ -12,10 +12,10 @@
 						<image style="width: 80rpx;height: 80rpx;border-radius: 50%;" :src="moment.spec.user.avatar" />
 					</view>
 					<view class="nickname" style="margin-left: 12rpx;">
-						<view style="font-size: 30rpx;font-weight: bold;color: #333333;">
+						<view style="font-size: 30rpx;font-weight: bold;" :style="{color: activeTheme.text}">
 							{{ moment.spec.user.displayName }}
 						</view>
-						<view style="margin-top: 6rpx;font-size: 24rpx;color: #5c5c5c;">
+						<view style="margin-top: 6rpx;font-size: 24rpx;" :style="{color: activeTheme.muted}">
 							{{ {d: moment.spec.releaseTime, f: 'yyyy年MM月dd日 星期w'} | formatTime }}
 						</view>
 					</view>
@@ -350,4 +350,5 @@
 		width: 100%;
 		border-radius: 12rpx;
 	}
+@import '@/common/styles/redesign/pagesA-moment-detail-moment-detail-themes.scss';
 </style>

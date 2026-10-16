@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-invite-landing-invite-landing app-page">
 		<!-- 分享人卡片：一眼看出「这是谁给我挑的」，比一张干巴巴的链接有说服力 -->
 		<view class="sharer-card">
 			<image v-if="landing.sharerAvatar" class="sharer-avatar" :src="landing.sharerAvatar"
@@ -500,4 +500,5 @@
 		font-size: 22rpx;
 		color: $uh-ink-3;
 	}
+@import '@/common/styles/redesign/pagesA-invite-landing-invite-landing-themes.scss';
 </style>

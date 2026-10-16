@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page" :class="[skinClass, uniHaloPluginPageClass]">
+	<view class="theme-page-pagesA-articles-articles app-page" :class="[skinClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
@@ -42,7 +42,7 @@
 									<tm-tags v-else color="green" size="n" model="text">瞬间</tm-tags>
 								</view>
 								<text class="ml-2 text-overflow text-size-n text-weight-b"
-									style="color: #1f1f1f;">{{ item.title }}</text>
+									:style="{color: activeTheme.text}">{{ item.title }}</text>
 							</view>
 							<mp-html class="evan-markdown" lazy-load :domain="markdownConfig.domain"
 								:loading-img="markdownConfig.loadingGif" :scroll-table="true" :selectable="true"
@@ -50,7 +50,7 @@
 								:markdown="true" :showLineNumber="true" :showLanguageName="true"
 								:copyByLongPress="true" />
 							<view class="mt-12 flex flex-center flex-between">
-								<text style="font-size: 24rpx;color:#888">
+								<text style="font-size: 24rpx;" :style="{color: activeTheme.muted}">
 									最近更新时间：{{ {d: item.updateTimestamp, f: 'yyyy年MM月dd日 HH点mm分ss秒'} | formatTime }}
 								</text>
 								<!-- <tm-tags v-if="isArticle(item)" color="indigo" size="n" model="text">文章</tm-tags>
@@ -242,4 +242,5 @@
 		overflow: hidden;
 		margin-bottom: 24rpx;
 	}
+@import '@/common/styles/redesign/pagesA-articles-articles-themes.scss';
 </style>

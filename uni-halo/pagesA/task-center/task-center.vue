@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-task-center-task-center app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看每日任务"></tm-empty>
@@ -403,4 +403,5 @@
 			margin-top: 8rpx;
 		}
 	}
+@import '@/common/styles/redesign/pagesA-task-center-task-center-themes.scss';
 </style>

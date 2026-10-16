@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page flex flex-col">
+    <view :class="skinClass" class="theme-page-pagesA-about-about app-page flex flex-col">
         <view class="logo mt-40 pt-40">
             <image class="logo-img round-3" src="https://uni-halo.925i.cn/logo.png" mode="aspectFill"></image>
         </view>
@@ -96,4 +96,5 @@ export default {
         }
     }
 }
+@import '@/common/styles/redesign/pagesA-about-about-themes.scss';
 </style>

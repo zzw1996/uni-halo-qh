@@ -1,0 +1,25 @@
+const fs = require('fs'), vm = require('vm'), assert = require('node:assert/strict'), path = require('path');
+const file = path.resolve(__dirname, '../pagesA/my-articles/my-articles.vue');
+let source = fs.readFileSync(file, 'utf8').split('<script>')[1].split('</script>')[0];
+source = source.replace(/import[\s\S]*?from\s*['"][^'"]+['"];?/g, '').replace('export default', 'module.exports =');
+const ctx = {module:{exports:{}}, tmEmpty:{},tmButton:{},tmLoadding:{},getOpenid:()=> 'account-a',checkHasWxLogin:()=>true,formatTimeSafe:()=>'',console};
+vm.runInNewContext(source,ctx);
+const component = ctx.module.exports;
+const deferred = () => { let resolve; const promise = new Promise(r=>resolve=r); return {promise,resolve}; };
+(async()=>{
+ const articles=deferred(), categories=deferred(); let calls=0;
+ const page = {...component.data(),$httpApi:{v2:{getMyArticles:()=>{calls++;return articles.promise;}}},$utils:{checkThumbnailUrl:x=>x}};
+ for (const [k,v] of Object.entries(component.methods)) page[k]=v.bind(page);
+ page.fnLoadCategoryLabels=()=>categories.promise;
+ const load=page.fnLoad(); assert.equal(page.fnLoad(),load); assert.equal(calls,1);
+ articles.resolve({items:[{name:'a',title:'Example',categories:['cat-a']}]});
+ await load; assert.equal(page.loading,'success'); assert.equal(page.list.length,1,'文章无需等待分类');
+ categories.resolve({'cat-a':'分类名称'}); await Promise.resolve();
+ assert.equal(page.list[0].categoryLabels[0],'分类名称','分类完成后补齐名称');
+ let refreshes=0; const shown={fnLoad:()=>refreshes++};
+ component.onShow.call(shown);assert.equal(refreshes,0);component.onShow.call(shown);assert.equal(refreshes,1);
+ const renderPage = {filteredList:Array.from({length:334},(_,i)=>i),renderLimit:20};
+ assert.equal(component.computed.renderedList.call(renderPage).length,20);
+ component.onReachBottom.call(renderPage);assert.equal(component.computed.renderedList.call(renderPage).length,40);
+ console.log('PASS: 分类不阻塞首屏、补齐分类名、并发请求去重、首次 onShow 不重复加载。');
+})().catch(e=>{console.error(e);process.exitCode=1;});

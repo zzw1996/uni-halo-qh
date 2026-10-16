@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page">
+    <view :class="skinClass" class="theme-page-pagesA-archives-archives app-page">
 
         <view class="e-fixed">
             <tm-tabs color="indigo" v-model="tab.activeIndex" :list="tab.list" align="center"
@@ -504,4 +504,5 @@ export default {
     font-size: 24rpx;
     color: $uh-ink-3;
 }
+@import '@/common/styles/redesign/pagesA-archives-archives-themes.scss';
 </style>

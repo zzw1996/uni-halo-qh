@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page card-shadow" :class="[skinClass, uniHaloPluginPageClass]">
+	<view class="theme-page-pagesA-friend-links-friend-links app-page card-shadow" :class="[skinClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
@@ -423,4 +423,5 @@
 		width: 100%;
 		height: 300rpx;
 	}
+@import '@/common/styles/redesign/pagesA-friend-links-friend-links-themes.scss';
 </style>

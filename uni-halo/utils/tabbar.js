@@ -18,16 +18,9 @@ import { getAppConfigs, DefaultAppConfigs } from '@/config/index.js';
 /** 底栏内容高度（rpx）。取 100rpx = 50px，与微信原生底栏高度对齐，切换时页面不跳。 */
 export const TABBAR_BAR_HEIGHT_RPX = 100;
 
-/**
- * 玻璃底栏与屏幕底边的间距（悬浮感）。
- *
- * 自绘底栏做成了悬浮胶囊（左右留白 + 下沿留白），所以它比原生栏「更占高度」：
- * 悬浮按钮的抬高量必须把这个间距算进去——漏算就会出现「回到顶部按钮被底栏压住一半」。
- */
-export const TABBAR_GLASS_GAP_RPX = 12;
-
-/** 玻璃胶囊左右留白：与页面内容边距对齐，底下的内容从两侧透出来才有悬浮感 */
-export const TABBAR_GLASS_SIDE_RPX = 20;
+/** 旧导出名保持兼容：纸面底栏满宽、零悬浮间距。 */
+export const TABBAR_GLASS_GAP_RPX = 0;
+export const TABBAR_GLASS_SIDE_RPX = 0;
 
 /**
  * 兜底底栏项：只在「后台已开启，但配置里没有 items」时用（例如服务端返回被截断、

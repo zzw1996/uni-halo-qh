@@ -1,0 +1,13 @@
+// 瞬间：图片优先，内容高度由实际动态决定。
+.app-page { padding-top: 0; padding-bottom: 0; background-color: $uh-bg; }
+.feed-tabs { padding: 0 40rpx 24rpx; gap: 40rpx; }
+.feed-tab { padding: 12rpx 4rpx; font-size: 30rpx; border-radius: 0; background: transparent; border-bottom: 4rpx solid transparent; }
+.feed-tab.is-active { color: $uh-accent; background: transparent; border-bottom-color: $uh-accent; }
+.moment-card { margin: 0 40rpx 24rpx; border: 1rpx solid $uh-line; box-shadow: none; }
+.moment-card__head { padding: 28rpx 28rpx 0; }
+.moment-card__avatar-img { width: 76rpx; height: 76rpx; }
+.moment-card__meta { margin-left: 20rpx; }
+.moment-card__time { color: $uh-ink-3; font-size: 22rpx; }
+.images { padding: 0 22rpx 20rpx; }
+.images .image-item { overflow: hidden; }
+.images-1 > .image-item { height: 400rpx; }

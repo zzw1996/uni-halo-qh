@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-identity-identity app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看身份中心"></tm-empty>
@@ -625,4 +625,5 @@
 		color: #b3800a;
 	}
 
+@import '@/common/styles/redesign/pagesA-identity-identity-themes.scss';
 </style>

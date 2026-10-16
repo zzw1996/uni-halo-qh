@@ -1,5 +1,6 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pages-tabbar-rank-rank app-page">
+		<uh-page-header title="榜单"></uh-page-header>
 		<!-- 一级切换：文章榜 / 用户榜 / 动态 -->
 		<view v-if="boardTabs.length > 1" class="board-tabs">
 			<view
@@ -56,7 +57,15 @@
 						class="ani-fade-up"
 						:style="'animation-delay:' + (index * 50 + 50) + 'ms'"
 					>
-						<view class="rank-item flex" :class="{ 'is-first': index === 0 }" @click="fnToArticle(item)">
+						<view v-if="index === 0" class="rank-feature" @click="fnToArticle(item)">
+							<view class="rank-feature__body">
+								<view class="rank-feature__badge"><text class="rank-feature__number">01</text><text>{{ articleSort === 'visit' ? '阅读最多' : '点赞最多' }}</text></view>
+								<text class="rank-feature__title">{{ item.title || item.name }}</text>
+								<text class="rank-feature__metric">{{ fnMetricText(item) }}</text>
+							</view>
+							<image v-if="fnResolveCover(item)" class="rank-feature__cover" :src="fnResolveCover(item)" mode="aspectFill"></image>
+						</view>
+						<view v-else class="rank-item flex" @click="fnToArticle(item)">
 							<text class="rank-no" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</text>
 							<image
 								v-if="fnResolveCover(item)"
@@ -210,6 +219,7 @@
 </template>
 
 <script>
+import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
@@ -231,6 +241,7 @@
 
 	export default {
 		components: {
+		UhPageHeader,
 			tmSkeleton,
 			tmEmpty,
 			tmButton,
@@ -1098,4 +1109,7 @@
 		font-size: 28rpx;
 		line-height: 1;
 	}
+
+@import '@/common/styles/redesign/rank.scss';
+@import '@/common/styles/redesign/pages-tabbar-rank-rank-themes.scss';
 </style>

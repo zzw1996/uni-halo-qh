@@ -10,7 +10,7 @@ var clipboardJS = require('./clipboardJS');
  @param {Object} list 可以是url数组，也可以是对象，数据比如：["http:url"] or [{url:"https:url",...}]
  @param {Object} rangKey 如果list是对象数组，需要提供url字段。
  */
-import { previewImg } from "./preview.js"
+import previewImg from "./preview.js"
 
 /**
 * 数据分组

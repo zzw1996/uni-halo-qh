@@ -1,0 +1,12 @@
+// 将既有 tmUI 品牌类同步到默认青绿配色；状态语义色保持原有含义。
+.bg-gradient-indigo-accent, .bg-gradient-indigo-accent-b,
+.bg-gradient-primary-accent, .bg-gradient-primary-accent-b {
+ background-image: none !important; background-color: $uh-accent !important; color: #ffffff !important; box-shadow: none !important;
+}
+.bg-gradient-indigo-accent.text, .bg-gradient-indigo-accent.outlined,
+.bg-gradient-primary-accent.text, .bg-gradient-primary-accent.outlined {
+ background: $uh-accent-weak !important; color: $uh-accent !important; border-color: $uh-accent !important;
+}
+.text-indigo { color: $uh-accent !important; }
+.indigo { background-color: $uh-accent !important; color: #ffffff !important; }
+.indigo.text, .indigo.outlined { background: $uh-accent-weak !important; color: $uh-accent !important; border-color: $uh-accent !important; }

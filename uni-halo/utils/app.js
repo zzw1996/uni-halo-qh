@@ -56,7 +56,7 @@ export const _DefaultAppSettings = {
 		// tb_image_text=上图下文
 		// tb_text_image=上文下图
 		// only_text=仅文字
-		cardType: 'lr_image_text',
+		cardType: 'lr_text_image',
 	},
 	// 广告配置（todo）
 	ad: {

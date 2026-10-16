@@ -1,21 +1,17 @@
 <template>
-	<view :class="skinClass" class="app-page">
-		<tm-menubars iconColor="white" color="white" :flat="true" :showback="false">
-			<view slot="left" @click="fnOnLogoToPage" class="header-avatar ml-24">
-				<image v-if="wxUserInfo && wxUserInfo.avatarUrl" class="logo round-24" :src="calcHeaderAvatar"
-					mode="aspectFill"></image>
-				<view v-else class="logo logo--guest round-24 flex flex-center">
-					<tm-icons name="icon-user" :size="34" color="#c0c4cc"></tm-icons>
-				</view>
+	<view :class="skinClass" class="theme-page-pages-tabbar-home-home app-page">
+		<uh-page-header :title="appInfo.name || 'Halo'" brand></uh-page-header>
+
+		<view class="home-search-row">
+			<view class="search-input" @click="fnToSearch">
+				<text class="iconfont icon-search search-input_icon"></text>
+				<text class="search-input_text">搜索内容、发现灵感</text>
 			</view>
-			<view class="search-input round-12 pt-12 pb-12 flex pl-24" @click="fnToSearch">
-				<text class="search-input_icon iconfont text-size-m icon-search text-grey"></text>
-				<view class="search-input_text pl-12 text-size-m text-grey">搜索内容...</view>
+			<view class="header-avatar" @click="fnOnLogoToPage">
+				<image v-if="wxUserInfo && wxUserInfo.avatarUrl" class="logo" :src="calcHeaderAvatar" mode="aspectFill"></image>
+				<view v-else class="logo logo--guest flex flex-center"><text class="iconfont icon-user-circle"></text></view>
 			</view>
-			<!-- #ifdef APP-PLUS || H5 -->
-			<view slot="right" class="mr-24 text-size-m text-grey text-overflow">{{ appInfo.name }}</view>
-			<!-- #endif -->
-		</tm-menubars>
+		</view>
 		<view v-if="loading !== 'success' && articleList.length===0" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
 			<tm-skeleton model="cardActions"></tm-skeleton>
@@ -25,7 +21,7 @@
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 		</view>
 		<block v-else>
-			<view class="banner ml-24 mr-24 mt-12 mb-24 round-6 card-shadow" v-if="bannerConfig.enabled && bannerList.length">
+			<view class="banner ml-24 mr-24 mt-12 mb-24 card-shadow" v-if="bannerConfig.enabled && bannerList.length">
 				<e-swiper :list="bannerList" :autoplay="true" :interval="bannerConfig.interval"
 					:duration="bannerConfig.duration" :fit="bannerConfig.fit"
 					:fallback-height="bannerConfig.fallbackHeight" :show-dots="calcBannerShowDots"
@@ -40,12 +36,12 @@
 			-->
 			<view class="promo-row ml-24 mr-24 mt-16 mb-16" v-if="aiCardVisible || channelsConfig">
 				<!-- AI 定制内容：已开通显示徽章；未开通点进去是购买与积分兑换的引导页 -->
-				<view v-if="aiCardVisible" class="promo-card ai-card round-6 card-shadow"
+				<view v-if="aiCardVisible" class="promo-card ai-card card-shadow"
 					:class="{ 'promo-card--wide': promoIsWide }"
 					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenAiContent">
 					<view class="promo-head flex items-center">
 						<view class="ai-card-icon">
-							<text class="ai-card-icon_text">AI</text>
+							<uh-icon name="sparkles" :size="40"></uh-icon>
 						</view>
 					</view>
 					<view class="promo-body">
@@ -66,7 +62,7 @@
 					卡片内容全部来自后台「视频号」配置；没开启或没填视频号 ID 时整块不渲染——
 					点不动的卡片比没有卡片更糟。跳转与降级见 utils/channels.js。
 				-->
-				<view v-if="channelsConfig" class="promo-card channels-card round-6 card-shadow"
+				<view v-if="channelsConfig" class="promo-card channels-card card-shadow"
 					:class="{ 'promo-card--wide': promoIsWide }"
 					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenChannels">
 					<view class="promo-head flex items-center">
@@ -74,7 +70,7 @@
 							<image v-if="channelsAvatar" class="channels-avatar_img" :src="channelsAvatar" mode="aspectFill"></image>
 							<text v-else class="channels-avatar_text">{{ channelsAvatarText }}</text>
 							<view class="channels-avatar_play">
-								<text class="channels-avatar_triangle"></text>
+								<uh-icon name="play" :size="20"></uh-icon>
 							</view>
 						</view>
 					</view>
@@ -93,11 +89,9 @@
 			</view>
 
 			<!-- 最新文章 -->
-			<view class="flex flex-between mt-24 mb-24 pl-24 pr-24">
-				<view class="page-item_title text-weight-b">最新列表</view>
-				<view class="show-more flex flex-center bg-white round-6" @click="fnToArticlesPage">
-					<text class="iconfont icon-angle-right text-size-s text-grey-darken-1"></text>
-				</view>
+			<view class="home-section-head flex flex-between">
+				<view class="page-item_title text-weight-b">最新文章</view>
+				<view class="show-more" @click="fnToArticlesPage"><text>全部</text><text class="iconfont icon-arrow-right"></text></view>
 				<view v-if="false" class="flex flex-center text-size-s text-grey-darken-1" @click="fnToArticlesPage">
 					<text class=" text-size-m ">查看更多</text>
 					<text class="iconfont icon-angle-right text-size-s "></text>
@@ -149,7 +143,7 @@
 				:hover-stay-time="60"
 				@click="fnToPublishArticle"
 			>
-				<tm-icons name="icon-plus" :size="24" color="#fff"></tm-icons>
+				<text class="home-fab_icon iconfont icon-plus"></text>
 				<text class="home-fab_label">写文章</text>
 			</view>
 			<view
@@ -159,7 +153,7 @@
 				:hover-stay-time="60"
 				@click="fnToTopPage(400)"
 			>
-				<tm-icons name="icon-angle-up" :size="24" color="#fff"></tm-icons>
+				<text class="home-fab_icon iconfont icon-angle-up"></text>
 			</view>
 		</view>
 
@@ -172,9 +166,10 @@
 </template>
 
 <script>
-	import tmMenubars from '@/tm-vuetify/components/tm-menubars/tm-menubars.vue';
+
+import UhIcon from '@/components/uh-icon/uh-icon.vue';
+import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
-	import tmIcons from '@/tm-vuetify/components/tm-icons/tm-icons.vue';
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmGrid from '@/tm-vuetify/components/tm-grid/tm-grid.vue';
 
@@ -202,9 +197,10 @@ const TOP_BUTTON_THRESHOLD = 300;
 export default {
 		mixins: [loadMoreMixin],
 		components: {
-			tmMenubars,
+
+		UhIcon,
+		UhPageHeader,
 			tmSkeleton,
-			tmIcons,
 			tmEmpty,
 			tmGrid,
 			eSwiper,
@@ -1196,7 +1192,7 @@ export default {
 
 		// box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
 		.name {
-			color: #1f1f1f;
+			color: #172c27;
 		}
 	}
 
@@ -1206,7 +1202,7 @@ export default {
 			padding-left: 24rpx;
 			font-size: 32rpx;
 			z-index: 1;
-			color: #1f1f1f;
+			color: #172c27;
 
 			&:before {
 				content: '';
@@ -1617,4 +1613,9 @@ export default {
 	.home-fab--publish + .home-fab--top {
 		margin-top: 16rpx;
 	}
+
+@import '@/common/styles/redesign/home.scss';
+
+
+@import '@/common/styles/redesign/pages-tabbar-home-home-themes.scss';
 </style>

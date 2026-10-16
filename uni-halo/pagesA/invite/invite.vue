@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-invite-invite app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后生成邀请码"></tm-empty>
@@ -1102,4 +1102,5 @@
 		font-size: 22rpx;
 		color: $uh-accent;
 	}
+@import '@/common/styles/redesign/pagesA-invite-invite-themes.scss';
 </style>

@@ -1,0 +1,89 @@
+// 紧凑的分类浏览：搜索、订阅状态、热门列表、分类磁贴。
+.app-page { background: $uh-bg; padding-bottom: 28rpx; }
+.search-bar { padding: 8rpx 32rpx 18rpx; background: $uh-bg; }
+.search-box { height: 76rpx; border: 1rpx solid $uh-line; border-radius: 20rpx; box-shadow: none; }
+.search-icon { font-size: 29rpx; }
+.search-input { min-width: 0; font-size: 25rpx; }
+.interest-bar { margin: 0 32rpx; padding: 14rpx 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; flex-wrap: wrap; gap: 8rpx; }
+.interest-bar-main { flex-wrap: wrap; }
+.interest-bar-icon { width: 28rpx; height: 28rpx; margin-right: 10rpx; font-size: 18rpx; }
+.interest-bar-title, .interest-bar-title.is-full { font-size: 22rpx; font-weight: 400; color: $uh-ink-2; white-space: normal; }
+.interest-bar-actions { flex-wrap: wrap; gap: 8rpx; }
+.interest-bar-btn { padding: 12rpx 6rpx; font-size: 21rpx; }
+.interest-bar-btn + .interest-bar-btn { margin-left: 0; }
+.interest-bar-btn.is-danger { border: 0; color: $uh-ink-3; background: transparent; }
+.section { margin-top: 28rpx; }
+.section-head { padding: 0 32rpx; }
+.section-title { font-size: 30rpx; font-weight: 700; }
+.section-sub { font-size: 21rpx; }
+.rank-list { margin: 18rpx 32rpx 0; border: 1rpx solid $uh-line; border-radius: 24rpx; background: $uh-card; box-shadow: none; }
+.rank-row { padding: 22rpx 20rpx; }
+.rank-row + .rank-row { border-top: 1rpx solid $uh-line; }
+.rank-no { width: 30rpx; font-size: 23rpx; font-weight: 500; }
+.rank-no-1 { font-size: 25rpx; color: $uh-accent; }
+.rank-main { margin-left: 12rpx; }
+.rank-icon { display: block; width: 74rpx; height: 74rpx; border: 0; border-radius: 18rpx; box-shadow: none; }
+.rank-text { margin-left: 18rpx; }
+.rank-name { font-size: 27rpx; font-weight: 600; }
+.rank-meta { font-size: 20rpx; margin-top: 7rpx; }
+.rank-row .cat-sub { padding: 14rpx 18rpx; border-radius: 30rpx; background: $uh-accent-weak; }
+.rank-row .cat-sub.is-on { background: $uh-fill; background-image: none; }
+.rank-row .cat-sub-text { color: $uh-accent; font-size: 21rpx; }
+.rank-row .cat-sub.is-on .cat-sub-text { color: $uh-ink-3; }
+.filter-group { background: $uh-fill; border-radius: 14rpx; padding: 4rpx; }
+.filter-chip { margin: 0; padding: 9rpx 18rpx; font-size: 21rpx; border-radius: 11rpx; background: transparent; }
+.filter-chip.is-on { background: $uh-card; color: $uh-accent; }
+.sort-bar { padding: 22rpx 32rpx 4rpx; }
+.sort-item { font-size: 22rpx; margin-right: 30rpx; padding-bottom: 10rpx; border-bottom: 3rpx solid transparent; }
+.sort-item.is-active { border-bottom-color: $uh-accent; }
+.cat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14rpx; padding: 18rpx 32rpx 0; }
+.cat-tile, .cat-tile.is-on { min-width: 0; padding: 24rpx 12rpx 78rpx; border: 1rpx solid $uh-line; border-radius: 22rpx; background: $uh-card; box-shadow: none; }
+.tile-main { align-items: center; width: 100%; }
+.tile-icon { width: 76rpx; height: 76rpx; border-radius: 20rpx; }
+.tile-name { font-size: 25rpx; margin-top: 16rpx; }
+.tile-meta { font-size: 18rpx; margin-top: 8rpx; }
+.tile-btn { top: auto; bottom: 16rpx; left: 20rpx; right: 20rpx; width: auto; height: 46rpx; border-radius: 12rpx; }
+.tile-btn.is-on { background: $uh-fill; background-image: none; }
+.tile-btn-text { font-size: 20rpx; }
+.tile-btn.is-on .tile-btn-text { color: $uh-ink-3; font-weight: 400; }
+.tile-wall-flag { left: auto; right: 8rpx; top: 10rpx; padding: 0; background: transparent; }
+.tile-wall-text { font-size: 16rpx; }
+.tile-paused-flag { top: 8rpx; left: 4rpx; padding: 3rpx 6rpx; }
+.rank-icon-fallback, .tile-icon-fallback { background: $uh-accent-weak; }
+.rank-icon-letter, .tile-icon-letter { color: $uh-accent; text-shadow: none; }
+.load-text { padding: 28rpx 0; font-size: 21rpx; }
+
+// 本页深色覆盖与页面一起编译，避免离线生成的 scope 过期。
+.app-page.discover-dark {
+  background: #081528 !important;
+  color: #eaf3ff;
+  .search-bar { background: #081528 !important; }
+  .search-box, .rank-list, .cat-tile, .cat-tile.is-on, .unlock-dialog {
+    background: #10213b !important;
+    background-image: none !important;
+    border-color: #254465 !important;
+    box-shadow: none !important;
+  }
+  .search-input, .section-title, .rank-name, .tile-name, .unlock-title, .unlock-option-title {
+    color: #eaf3ff !important;
+  }
+  .search-icon, .search-clear, .search-placeholder, .section-sub, .rank-meta,
+  .tile-meta, .sort-item, .load-text, .interest-bar-title,
+  .interest-bar-title.is-full, .interest-bar-btn.is-danger,
+  .unlock-status, .unlock-option-desc, .unlock-note { color: #9bafcc !important; }
+  .interest-bar { background: transparent !important; border-color: #254465 !important; }
+  .interest-bar-icon { background: #192d4a !important; color: #56e3ef !important; }
+  .rank-row + .rank-row { border-color: #254465 !important; }
+  .rank-no { color: #7187a4 !important; }
+  .rank-no-1, .sort-item.is-active { color: #56e3ef !important; }
+  .sort-item.is-active { border-bottom-color: #56e3ef !important; }
+  .filter-group, .filter-chip, .tile-wall-flag { background: #192d4a !important; color: #9bafcc !important; }
+  .filter-chip.is-on { background: #176783 !important; color: #eaf3ff !important; }
+  .rank-row .cat-sub, .tile-btn { background: #176783 !important; background-image: none !important; }
+  .rank-row .cat-sub-text, .tile-btn-text { color: #eaf3ff !important; }
+  .rank-row .cat-sub.is-on, .tile-btn.is-on { background: #192d4a !important; background-image: none !important; }
+  .rank-row .cat-sub.is-on .cat-sub-text, .tile-btn.is-on .tile-btn-text { color: #9bafcc !important; }
+  .rank-icon-fallback, .tile-icon-fallback, .unlock-option, .unlock-price { background: #192d4a !important; }
+  .rank-icon-letter, .tile-icon-letter, .unlock-price-num, .unlock-price-unit { color: #56e3ef !important; }
+  .unlock-option-icon { background: #10213b !important; }
+}

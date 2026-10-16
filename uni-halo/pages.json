@@ -25,6 +25,7 @@
 			"path": "pages/tabbar/discover/discover",
 			"style": {
 				"navigationBarTitleText": "发现",
+				"navigationStyle": "custom",
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
@@ -38,6 +39,7 @@
 			"path": "pages/tabbar/rank/rank",
 			"style": {
 				"navigationBarTitleText": "榜单",
+				"navigationStyle": "custom",
 				"enablePullDownRefresh": true,
 				"app-plus": {
 					"pullToRefresh": {
@@ -51,6 +53,7 @@
 			"path": "pages/tabbar/moments/moments",
 			"style": {
 				"navigationBarTitleText": "瞬间",
+				"navigationStyle": "custom",
 				"enablePullDownRefresh": true,
 				"mp-weixin": {
 					"componentPlaceholder": {
@@ -418,32 +421,32 @@
 		"color": "@tabColor",
 		"selectedColor": "@tabSelectedColor",
 		"list": [{
-				"iconPath": "static/tabbar/select_home.png",
-				"selectedIconPath": "static/tabbar/select_home_active.png",
+				"iconPath": "static/tabbar/paper_home.png",
+				"selectedIconPath": "static/tabbar/paper_home_active.png",
 				"pagePath": "pages/tabbar/home/home",
 				"text": "首页"
 			},
 			{
-				"iconPath": "static/tabbar/select_category.png",
-				"selectedIconPath": "static/tabbar/select_category_active.png",
+				"iconPath": "static/tabbar/paper_category.png",
+				"selectedIconPath": "static/tabbar/paper_category_active.png",
 				"pagePath": "pages/tabbar/discover/discover",
 				"text": "发现"
 			},
 			{
-				"iconPath": "static/tabbar/select_gallery.png",
-				"selectedIconPath": "static/tabbar/select_gallery_active.png",
+				"iconPath": "static/tabbar/paper_gallery.png",
+				"selectedIconPath": "static/tabbar/paper_gallery_active.png",
 				"pagePath": "pages/tabbar/moments/moments",
 				"text": "瞬间"
 			},
 			{
-				"iconPath": "static/tabbar/select_rank.png",
-				"selectedIconPath": "static/tabbar/select_rank_active.png",
+				"iconPath": "static/tabbar/paper_rank.png",
+				"selectedIconPath": "static/tabbar/paper_rank_active.png",
 				"pagePath": "pages/tabbar/rank/rank",
 				"text": "榜单"
 			},
 			{
-				"iconPath": "static/tabbar/select_mine.png",
-				"selectedIconPath": "static/tabbar/select_mine_active.png",
+				"iconPath": "static/tabbar/paper_mine.png",
+				"selectedIconPath": "static/tabbar/paper_mine_active.png",
 				"pagePath": "pages/tabbar/about/about",
 				"text": "我的"
 			}

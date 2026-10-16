@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-user-activities-user-activities app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -206,4 +206,5 @@
 	color: $uh-ink-3;
 	padding: 24rpx 0 48rpx;
 }
+@import '@/common/styles/redesign/pagesA-user-activities-user-activities-themes.scss';
 </style>

@@ -1,0 +1,47 @@
+// 首页：紧凑运营入口，阅读优先。
+.app-page { background-color: $uh-bg; }
+.home-search-row { display: flex; align-items: center; gap: 16rpx; margin: 0 40rpx 24rpx; }
+.home-search-row .search-input { flex: 1; min-width: 0; display: flex; height: 76rpx; padding: 0 24rpx; margin: 0; border: 1rpx solid $uh-line; border-radius: $uh-radius-pill; background: $uh-card; color: $uh-ink-3; }
+.search-input_icon { font-size: 32rpx; }
+.search-input_text { margin-left: 16rpx; font-size: 26rpx; }
+.app-page .logo { width: 72rpx; height: 72rpx; border-radius: 50%; }
+.banner { margin: 0 40rpx 24rpx; border-radius: $uh-radius-lg; box-shadow: none; }
+.promo-row { margin: 0 40rpx 32rpx; gap: 16rpx; }
+.promo-card { flex-direction: row; align-items: center; flex-wrap: wrap; padding: 24rpx; border: 1rpx solid $uh-line; border-radius: $uh-radius-lg; background: $uh-card; box-shadow: none; }
+.promo-card + .promo-card { margin-left: 0; }
+.promo-head { min-height: 0; flex-shrink: 0; }
+.promo-body { flex: 1; min-width: 0; margin: 0 0 0 16rpx; }
+.promo-title-row { flex-wrap: wrap; gap: 6rpx; }
+.promo-title { font-size: 26rpx; }
+.promo-desc { margin-top: 6rpx; color: $uh-ink-3; }
+.promo-action { width: 100%; padding-top: 12rpx; justify-content: flex-end; }
+.promo-card--wide .promo-action { width: auto; }
+.ai-card-icon, .channels-avatar, .channels-avatar_img, .channels-avatar_text { width: 60rpx; height: 60rpx; border-radius: 50%; }
+.ai-card-icon { background-image: none; background: $uh-accent-weak; }
+.ai-card-icon_text, .channels-avatar_text { color: $uh-accent; }
+.channels-card { background-image: none; }
+.channels-card:before { display: none; }
+.channels-avatar_text, .channels-badge { background: $uh-accent-weak; border: 0; }
+.channels-badge { color: $uh-accent; }
+.promo-title--channels { color: $uh-ink-1; }
+.promo-desc--channels { color: $uh-ink-3; }
+.promo-action_text--channels, .promo-action_arrow--channels { color: $uh-accent; }
+.home-section-head { margin: 8rpx 40rpx 24rpx; }
+.page-item_title { padding-left: 0; font-family: $uh-font-serif; font-size: 40rpx; color: $uh-ink-1; }
+.page-item_title:before { display: none; }
+.show-more { display: flex; align-items: center; gap: 10rpx; width: auto; height: 64rpx; background: transparent; box-shadow: none; color: $uh-accent; font-size: 26rpx; }
+.feed-hint { margin-right: 40rpx; margin-left: 40rpx; }
+.home-fab--publish { background: $uh-accent; background-image: none; box-shadow: $uh-shadow-sm; }
+
+.logo--guest .iconfont { font-size: 40rpx; color: $uh-ink-3; }
+.home-fabs { align-items: flex-end; }
+.home-fab--publish { flex-direction: row; gap: 12rpx; width: auto; min-height: 80rpx; padding: 16rpx 28rpx; border-radius: $uh-radius-pill; }
+.home-fab_label { margin: 0; font-size: 24rpx; }
+
+.home-fab_icon { color: #ffffff; font-size: 32rpx; line-height: 1; }
+
+.ai-card-icon { display: flex; align-items: center; justify-content: center; border-radius: 20rpx; }
+.promo-card { padding: 20rpx; }
+.promo-desc { -webkit-line-clamp: 1; }
+.promo-action { padding-top: 8rpx; }
+.channels-avatar_play { display: flex; align-items: center; justify-content: center; }

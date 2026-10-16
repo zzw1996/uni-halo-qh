@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="app-page points-history-theme">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -162,6 +162,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
+		padding-top: 1rpx;
 		background: $uh-fill;
 		padding-bottom: 40rpx;
 	}
@@ -287,4 +288,5 @@
 		font-size: 24rpx;
 		color: $uh-ink-3;
 	}
+@import '@/common/styles/redesign/points-history-themes.scss';
 </style>

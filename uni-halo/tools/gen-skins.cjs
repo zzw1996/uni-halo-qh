@@ -16,22 +16,34 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const DIST = path.join(ROOT, 'unpackage/dist/dev/mp-weixin');
+const DIST = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'unpackage/dist/dev/mp-weixin');
 const OUT = path.join(ROOT, 'common/styles/skins.generated.scss');
 
 /** 设计系统调色板（与 uni.scss 一致）——只认这些值，其余颜色（金色/彩虹/危险色等）一律不动 */
 const PALETTE = {
-	ink1: '#1f1f1f',
-	ink2: '#5c5c5c',
-	ink3: '#9a9a94',
-	ink4: '#c6c6c0',
-	bg: '#f2f2ec',
+    frameworkDark:'#121212',frameworkDark2:'#212121',frameworkDark3:'#424242',
+	ink1Legacy: '#1f1f1f',
+	ink2Legacy: '#5c5c5c',
+	ink3Legacy: '#9a9a94',
+	ink4Legacy: '#c6c6c0',
+	bgLegacy: '#f2f2ec',
+	fillLegacy: '#f0f0e9',
+	lineLegacy: '#e9e9e2',
+	accentLegacy: '#2f54eb',
+	accentAltLegacy: '#4c6ef5',
+	accentWeakLegacy: '#eef2fe',
+
+	ink1: '#172c27',
+	ink2: '#445c52',
+	ink3: '#65736d',
+	ink4: '#a4afa8',
+	bg: '#f6f7f2',
 	card: '#ffffff',
-	fill: '#f0f0e9',
-	line: '#e9e9e2',
-	accent: '#2f54eb',
-	accentAlt: '#4c6ef5',
-	accentWeak: '#eef2fe',
+	fill: '#edf1eb',
+	line: '#e3e8e2',
+	accent: '#176b5b',
+	accentAlt: '#247d6b',
+	accentWeak: '#e7f0e9',
 	// 设计系统里三类语义浅底（成功/警告/危险）。深色皮肤必须把它们也翻成暗色，
 	// 否则深色下的成功提示、告警标签会是一块刺眼的浅色（新加的底栏/徽标都用到它们）
 	successWeak: '#eaf4ec',
@@ -139,6 +151,9 @@ const SKINS = {
 			line: '#31313d',
 			accent: '#7d95ff',
 			accentAlt: '#9db0ff',
+			// 亮色用于链接/选中态；实心按钮用深蓝，保证白字对比度。
+			accentFill: '#4054aa',
+			accentAltFill: '#5267bf',
 			accentWeak: '#232a45',
 			// 语义浅底 → 暗色底：底色变深、文字仍用对应的亮色（success/warning/danger 未在 map 里，
 			// 所以文字色不受影响）
@@ -200,13 +215,27 @@ const SKINS = {
 	}
 };
 
+
+// Four UI themes, generated from the existing scoped token overrides.
+SKINS.sky = {...(SKINS.sky || {}),label:"晴空日记", map:{...(SKINS.sky?.map || {}),...{"bg": "#eef7ff", "card": "#ffffff", "ink1": "#20374e", "ink2": "#425f77", "ink3": "#647a91", "ink4": "#8596a8", "fill": "#e4f3ff", "line": "#d9eafa", "accent": "#0874d5", "accentAlt": "#168bfa", "accentWeak": "#e4f3ff"}}};
+SKINS.mint = {...(SKINS.mint || {}),label:"东方雅集", map:{...(SKINS.mint?.map || {}),...{"bg": "#f4f0e7", "card": "#fffdf7", "ink1": "#313d36", "ink2": "#556255", "ink3": "#7c8174", "ink4": "#999b90", "fill": "#efe9dc", "line": "#ded8c9", "accent": "#a83e32", "accentAlt": "#b95747", "accentWeak": "#f3e6df"}}};
+SKINS.sunrise = {...(SKINS.sunrise || {}),label:"时光手账", map:{...(SKINS.sunrise?.map || {}),...{"bg": "#f6ecdd", "card": "#fffaf0", "ink1": "#5c3c2c", "ink2": "#775441", "ink3": "#8f7864", "ink4": "#aa9580", "fill": "#f4e5d2", "line": "#ddc6a9", "accent": "#a34f31", "accentAlt": "#bc6745", "accentWeak": "#f4e5d2"}}};
+SKINS.ink = {...(SKINS.ink || {}),label:"极夜流光", map:{...(SKINS.ink?.map || {}),...{"bg": "#081528", "card": "#10213b", "ink1": "#eaf3ff", "ink2": "#c4d7ee", "ink3": "#9bafcc", "ink4": "#7187a4", "fill": "#192d4a", "line": "#254465", "accent": "#56e3ef", "accentAlt": "#b496ff", "accentWeak": "#192d4a", "accentFill": "#176783", "accentAltFill": "#6653a5"}}};
+Object.assign(SKINS.ink.map,{frameworkDark:'#10213b',frameworkDark2:'#10213b',frameworkDark3:'#192d4a'});
+SKINS.ink.whiteAlpha = 'rgba(16, 33, 59,';
 /** 影子色（$uh-shadow-* 里的 rgba(31, 31, 31, …)）整体替换，含不透明度 */
 const SHADOW_RE = /rgba\(\s*31\s*,\s*31\s*,\s*31\s*,\s*[\d.]+\s*\)/g;
 
 const hexOf = (token) => PALETTE[token];
 
 /** 收集编译产物里所有 wxss 文件的顶层规则 */
-function collectRules() {
+for (const skin of Object.values(SKINS)) {
+	for (const token of ['ink1', 'ink2', 'ink3', 'ink4', 'bg', 'fill', 'line', 'accent', 'accentAlt', 'accentWeak'] ) {
+		if (skin.map[token]) skin.map[token + 'Legacy'] = skin.map[token];
+	}
+}
+
+function collectRules(acceptFile) {
 	const rules = [];
 	const skipped = { atRule: 0, host: 0, page: 0, deadGradient: 0 };
 
@@ -215,6 +244,7 @@ function collectRules() {
 			const full = path.join(dir, entry.name);
 			if (entry.isDirectory()) { walk(full); continue; }
 			if (!entry.name.endsWith('.wxss')) continue;
+			if (acceptFile && !acceptFile(full)) continue;
 			// 必须先剥注释：编译产物保留了 SCSS 注释，而注释里含 { } 会破坏花括号配对，
 			// 也会被误当成选择器的一部分（实测生成出 `view.skin-x /* … */ .foo` 这种规则）
 			// @charset/@import 是「无块语句」，留着会把它后面第一条规则误判成 @ 规则而整条跳过
@@ -236,6 +266,8 @@ function collectRules() {
 				const body = css.slice(open + 1, j - 1);
 				i = j;
 				if (!selector) continue;
+				// 不从已生成的覆盖层再次生成；否则多轮编译会累积跨皮肤规则。
+				if (/\.skin-(?:ink|mint|sunrise|sky)\b|:root/.test(selector)) continue;
 				if (selector.startsWith('@')) { skipped.atRule++; continue; }
 				if (selector.includes(':host')) { skipped.host++; continue; }
 				if (/^page\b/.test(selector)) { skipped.page++; continue; }
@@ -247,7 +279,34 @@ function collectRules() {
 		}
 	}
 	walk(DIST);
-	return { rules, skipped };
+	return { rules: finalDeclarations(rules), skipped };
+}
+
+// 只转换同一文件/作用域下最终生效的声明。后面的 transparent/none 也要
+// 撤销旧声明，否则旧白底被转换成 !important 后会反压新布局。
+function finalDeclarations(rules) {
+	const seen = new Map();
+	return rules.slice().reverse().map((rule) => {
+		const key = rule.from + '|' + rule.selector;
+		const props = seen.get(key) || new Set();
+		seen.set(key, props);
+		const body = splitDecls(rule.body).reverse().filter((decl) => {
+			const prop = decl.slice(0, decl.indexOf(':')).trim().toLowerCase();
+			if (props.has(prop) || (prop.startsWith('background-') && props.has('background'))) return false;
+			props.add(prop);
+			return true;
+		}).reverse().join(';');
+		return { ...rule, body };
+	}).reverse();
+}
+
+function skinSelectors(selector, id) {
+	return selector.split(',').map((s) => s.trim()).filter(Boolean).flatMap((s) => {
+		const ancestor = `.skin-${id} ${s}`;
+		if (s.startsWith('.')) return [ancestor, `.skin-${id}${s}`];
+		if (/^view(?=[.#:\s]|$)/.test(s)) return [ancestor, s.replace(/^view/, `view.skin-${id}`)];
+		return [ancestor];
+	}).join(', ');
 }
 
 /** 把一条声明值里的调色板取值换成皮肤取值；无变化返回 null */
@@ -271,11 +330,13 @@ const TEXT_KEEP_TOKENS = new Set([
 ]);
 
 function retint(prop, value, map, shadow, whiteAlpha) {
-	let out = value;
+	// Sass/压缩器会把 #ffffff 写成 #fff；先规范化才能覆盖白卡片等短色值。
+	let out = value.replace(/#([0-9a-f]{3})(?![0-9a-f])/gi, (_, rgb) => '#' + rgb.split('').map((c) => c + c).join(''));
 	let changed = false;
 
 	for (const [token, hex] of Object.entries(PALETTE)) {
-		const to = map[token];
+		const baseToken = token.replace(/Legacy$/, '');
+		const to = /^background/.test(prop) && map[baseToken + 'Fill'] ? map[baseToken + 'Fill'] : map[token];
 		if (!to) continue;
 		// color: #ffffff 是「彩色底上的白字」，不能跟着卡片底色一起翻
 		if (prop === 'color' && token === 'card') continue;
@@ -345,13 +406,9 @@ function build() {
 			}
 			if (!decls.length) continue;
 
-			// 编译产物的选择器带作用域类（.data-v-xxx），去掉后由皮肤类前缀提供特异性
-			const selector = rule.selector
-				.split(',')
-				.map((s) => s.replace(/\.data-v-[0-9a-f]+/gi, '').trim())
-				.filter(Boolean)
-				.map((s) => `view.skin-${id} ${s}`)
-				.join(', ');
+			// 保留作用域，防止不同页面的 .head/.content 等同名类互相覆盖。
+			// 皮肤既可能在祖先上，也可能就在当前页面/组件根节点上。
+			const selector = skinSelectors(rule.selector, id);
 			if (!selector) continue;
 
 			const key = selector + '|' + decls.join('');
@@ -383,4 +440,5 @@ function build() {
 	console.log(`输出：${path.relative(ROOT, OUT)}  ${(fs.statSync(OUT).size / 1024).toFixed(1)}KB`);
 }
 
-build();
+if (require.main === module) build();
+module.exports = { retint, skinSelectors, finalDeclarations, collectRules, splitDecls, SKINS };

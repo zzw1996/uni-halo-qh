@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page">
+    <view :class="skinClass" class="theme-page-pagesC-website-website app-page">
         <web-view :src="webUrl"></web-view>
     </view>
 </template>
@@ -23,8 +23,9 @@ export default {
 };
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .app-page {
     width: 100vw;
 }
+@import '@/common/styles/redesign/pagesC-website-website-themes.scss';
 </style>

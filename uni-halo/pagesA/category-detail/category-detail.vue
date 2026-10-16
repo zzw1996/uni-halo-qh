@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page">
+    <view :class="skinClass" class="theme-page-pagesA-category-detail-category-detail app-page">
         <!--
             订阅墙引导条：未订阅的分类列表可以随便看，读全文需要订阅。
             服务端订阅墙开启时才出现——墙没开时喊「先订阅才能看」是在骗人。
@@ -370,4 +370,5 @@ export default {
     align-items: center;
     justify-content: center;
 }
+@import '@/common/styles/redesign/pagesA-category-detail-category-detail-themes.scss';
 </style>

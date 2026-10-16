@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page flex flex-center">
+	<view :class="skinClass" class="theme-page-pages-index-index app-page flex flex-center">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId" :error-text="uniHaloPluginAvailableError" :use-border="false" :use-decoration="false" />
 	</view>
 </template>
@@ -198,4 +198,5 @@ export default {
 	width: 100vw;
 	height: 100vh;
 }
+@import '@/common/styles/redesign/pages-index-index-themes.scss';
 </style>

@@ -4,7 +4,7 @@ import v2Api from '@/api/v2/all.api.js';
 import { syncPointsAfterLogin, resetPointsSession } from '@/utils/points.js';
 import { checkHasWxLogin } from '@/utils/auth.js';
 import { restoreThemeSkin } from '@/utils/themeSkin.js';
-import { restoreAppearance, watchSystemTheme, refreshSystemTheme } from '@/utils/skin.js';
+import { restoreUiTheme, restoreAppearance, watchSystemTheme, refreshSystemTheme } from '@/utils/skin.js';
 import { pullAppSettings } from '@/utils/appSettingsSync.js';
 import { refreshAppConfigs } from '@/utils/configRefresh.js';
 
@@ -31,6 +31,7 @@ export default {
 
         // 先用本地缓存恢复主题，避免首屏闪回默认配色；
         // 服务端 activeTheme 才是权威来源，进入「我的」/「身份中心」时会据此纠正。
+        restoreUiTheme();
         restoreThemeSkin();
 
         // 外观模式（跟随系统/始终浅色/始终深色）必须在首个页面渲染前恢复：
@@ -98,6 +99,7 @@ export default {
 /* #endif */
 
 /* 皮肤包（装扮商店可穿戴）：放在最后，其 !important 覆盖规则才能压过前面的基础样式 */
+@import './common/styles/redesign/controls.scss';
 @import './common/styles/skins.scss';
 
 /*

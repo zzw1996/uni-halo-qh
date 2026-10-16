@@ -1,0 +1,9 @@
+Use case: ui-mockup. Create one beautifully polished straight-on flat full-screen UI for a Chinese WeChat blog/community mini program, personal center page. Portrait aspect 390:844, high resolution. No phone frame, no outside margins, no collage, no external labels. Color palette warm ivory #F6F7F2, white cards, deep teal #176B5B, charcoal #172C27, sage accents; thin line icons, 16px card radii, quiet sophisticated editorial feel, crisp accurate Chinese sans typography. All layout fits one mobile viewport and has realistic generous spacing.
+
+Top iOS status row time 9:41, network and battery. Below native WeChat upper-right capsule with ellipsis and circle, reserved clear space. Page title 个人中心 aligned left and settings gear below capsule to right. Profile block: circular understated nature avatar, name 林间来信, small gray subtitle 记录生活，也收藏热爱, subtle 编辑资料 with chevron. Compact white two-entry card 我的身份 / 权益直购, distinct thin teal icons and chevrons.
+
+Main white points card title 我的积分 with 明细 > right. Balance 1,280 large dark elegant numerals and tiny 当前积分. Teal 今日签到 button with no claimed rewards. Smaller 每日任务 row and chevron. Seven evenly spaced circular day indicators labeled 1天 2天 3天 4天 5天 6天 7天; first three show checkmarks teal, later four light sage outlined.
+
+White 我的服务 card, 4-column by 2-row icon grid, exact labels 邀请好友 / 我的评论 / 我的浏览 / 我的点赞 / 我的投稿 / 我的订单 / 已解锁文章 / 应用配置. Very restrained soft sage icon badges, subtle differentiating colors.
+
+Bottom fixed white five-tab navigation: 首页 发现 瞬间 榜单 我的. Thin stroke icons home, compass, camera, ranking bars, person. 我的 active deep teal, others gray. Bottom black home gesture bar. No invented prices, no rewards, no ecommerce products, no large gradients, no blobs. Produce professional final visual mockup with correct Chinese text.

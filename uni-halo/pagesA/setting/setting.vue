@@ -1,6 +1,16 @@
 <template>
-	<view class="app-page" :class="[skinClass, { 'is-balck grey-darken-6': isBlackTheme }]">
+	<view class="theme-page-pagesA-setting-setting app-page" :class="[skinClass, { 'is-balck grey-darken-6': isBlackTheme }]">
 		<tm-form v-if="!loading" ref="formData">
+            <view class="theme-settings" :style="themeInlineStyle">
+                <text class="theme-settings-title">选择主题</text>
+                <text class="theme-settings-note">点击即刻应用，自动保存</text>
+                <view class="theme-options">
+                    <view v-for="item in themeOptions" :key="item.id" class="theme-option" :class="{'theme-selected':activeTheme.id===item.id}" :style="{background:item.bg,color:item.text,'border-color':activeTheme.id===item.id?item.accent:item.line}" @click="fnChooseTheme(item.id)">
+                        <view class="theme-preview" :style="{background:item.hero}"><view class="preview-card" :style="{background:item.card,'border-radius':item.radius}"><view class="preview-line" :style="{background:item.accent}"/><view class="preview-line short" :style="{background:item.warm}"/></view></view>
+                        <view class="theme-option-name">{{item.name}}<text v-if="activeTheme.id===item.id">✓</text></view><text class="theme-option-desc">{{item.description}}</text>
+                    </view>
+                </view>
+            </view>
 			<!--
 				⓪ 外观：明暗偏好。放在最前是因为它决定整页配色，
 				用户找「怎么变深色」时第一眼就能看到；皮肤（买的配色）在装扮商店里，两者分开。
@@ -167,7 +177,7 @@
 						@click="fnOnSaveDefault">恢复默认</tm-button>
 				</view>
 				<view class="action-item is-primary">
-					<tm-button size="m" theme="indigo" :shadow="0" block @click="fnOnSave">保存设置</tm-button>
+					<button class="theme-save" :style="{background:activeTheme.dark ? '#176783' : activeTheme.accent}" @click="fnOnSave">保存设置</button>
 				</view>
 			</view>
 		</view>
@@ -175,6 +185,8 @@
 </template>
 
 <script>
+import { THEMES } from '@/common/themes/index.js';
+import { chooseUiTheme, appearanceLabelOf as themeAppearanceLabel } from '@/utils/skin.js';
 	import {
 		_DefaultAppSettings
 	} from '@/utils/app.js';
@@ -217,6 +229,7 @@
 		data() {
 			return {
 				isBlackTheme: false,
+                themeOptions: THEMES,
 				loading: true,
 				appSettings: {},
 				isSaved: true,
@@ -361,6 +374,13 @@
 		},
 
 		methods: {
+            fnChooseTheme(id) {
+                chooseUiTheme(id);
+                const mode=appearanceState.mode;
+                this.appearance.selectDefault=[themeAppearanceLabel(mode)];
+                this.appearance.selectLabel=themeAppearanceLabel(mode);
+                this.appearance.selectValue=mode;
+            },
 			/**
 			 * 读取服务端的推送开关。
 			 *
@@ -526,6 +546,7 @@
 					.then(res => {
 						this.isSaved = true;
 						uni.$tm.vx.actions('setting/updateDefaultAppSettings');
+                        this.fnChooseTheme('sky');
 						uni.$tm.toast('系统设置已恢复为默认配置，部分设置在重启后生效！');
 					})
 					.catch(err => {});
@@ -691,4 +712,12 @@
 	.action-item.is-primary {
 		flex: 1.6;
 	}
+.theme-settings{margin:24rpx;padding:28rpx;background:var(--yf-card);border:1rpx solid var(--yf-line);border-radius:var(--yf-radius);}.theme-settings-title{display:block;font-size:32rpx;font-weight:700;color:var(--yf-text);}.theme-settings-note{display:block;margin-top:8rpx;font-size:23rpx;color:var(--yf-muted);}.theme-options{display:grid;grid-template-columns:1fr 1fr;gap:20rpx;margin-top:24rpx;}.theme-option{border:3rpx solid;border-radius:20rpx;overflow:hidden;padding:14rpx;box-sizing:border-box;}.theme-preview{height:120rpx;padding:18rpx;box-sizing:border-box;border-radius:12rpx;}.preview-card{padding:20rpx;}.preview-line{height:8rpx;border-radius:8rpx;margin-bottom:12rpx;width:80%;}.preview-line.short{width:45%;margin:0;}.theme-option-name{font-size:26rpx;font-weight:700;margin-top:15rpx;display:flex;justify-content:space-between;}.theme-check{font-weight:700;}.theme-option-desc{display:block;font-size:20rpx;line-height:1.6;opacity:.8;margin-top:6rpx;}.theme-selected{box-shadow:0 0 0 4rpx var(--yf-soft);}
+
+
+
+
+
+.theme-save{width:100%;padding:0;font-size:28rpx;line-height:78rpx;border-radius:12rpx;color:#fff!important;border:0;}.theme-save::after{border:0;}
+@import '@/common/styles/redesign/pagesA-setting-setting-themes.scss';
 </style>

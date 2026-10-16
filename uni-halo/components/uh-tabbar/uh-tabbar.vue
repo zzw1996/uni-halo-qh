@@ -1,37 +1,14 @@
 <template>
-	<!--
-		自绘底部导航。
-
-		为什么不是原生 tabBar：微信原生 `tabBar.list` 是编译期静态的（最多 5 项、运行期无法增删），
-		而站长要在 7 个候选里配置显示 3~5 项，只能隐藏原生栏自己画。
-		pages.json 里的 tabBar 声明保持不动，才能继续用 switchTab 保留页面状态。
-
-		两种模式：
-		- fixed（默认）：底栏悬浮在页面底部，并自带一个等高占位撑出空间
-		  （页面只要挂本组件，不用自己写 padding-bottom）；
-		- static：底栏占流内空间、不悬浮，给「微信小店」页用——官方要求 store-home
-		  组件完整展示，底栏不能压在它上面。
-
-	视觉是「液态玻璃」：悬浮胶囊 + 磨砂（backdrop-filter）+ 顶部高光边 +
-	跟着选中项滑动的液态高亮块。三处刻意的取舍：
-	- 玻璃底色用字面量（不是 $uh-* Token）：Token 是编译期常量，而皮肤是运行时的覆盖层，
-	  玻璃需要「半透明的卡片色」这种 Token 表达不了的值，改由 skins.scss 针对深色皮肤单独覆盖；
-	- 高亮块用「$uh-accent 实色 + opacity」而不是 rgba(accent)：前者是十六进制字面量，
-	  皮肤生成器能识别并换成各皮肤的主题色，后者不在生成器的调色板里、换肤后会失真；
-	- 图标仍是 PNG（选中态不会跟着皮肤变色，与改造前一致）。
-	-->
-	<view>
-		<view v-if="mode !== 'static'" class="uh-tabbar_holder"></view>
-		<view class="uh-tabbar" :class="mode === 'static' ? 'is-static' : 'is-fixed'">
+	<!-- 满宽纸面导航；后台与用户决定显示项，原生 tab 路由继续保留页面状态。 -->
+	<view :class="skinClass">
+		<view v-if="items.length && mode !== 'static'" class="uh-tabbar_holder"></view>
+		<view v-if="items.length" class="uh-tabbar" :class="mode === 'static' ? 'is-static' : 'is-fixed'">
 			<view class="uh-tabbar_inner">
-				<!-- 玻璃边缘的反光：一条顶亮边 + 一圈内描边，玻璃的「厚度」靠它表达 -->
-				<view class="uh-tabbar_rim"></view>
-				<!-- 液态高亮：跟着选中项滑动的那块药丸，切换时有一个短促的流动过程 -->
-				<view class="uh-tabbar_glider" :style="gliderStyle"></view>
 				<view v-for="item in items" :key="item.key" class="uh-tabbar_item"
 					:class="{ 'is-active': item.key === current }" @click="fnOnTap(item)">
-					<image class="uh-tabbar_icon" :src="item.key === current ? item.activeIcon : item.icon"
-						mode="aspectFit"></image>
+					<view class="uh-tabbar_icon-wrap"><uh-icon v-if="iconNames[item.key]" :name="iconNames[item.key]" :state="item.key === current ? 'active' : 'muted'" :size="42"></uh-icon>
+					<image v-else class="uh-tabbar_icon" :src="item.key === current ? item.activeIcon : item.icon"
+						mode="aspectFit"></image></view>
 					<text class="uh-tabbar_label">{{ item.label }}</text>
 				</view>
 			</view>
@@ -42,17 +19,20 @@
 </template>
 
 <script>
+import UhIcon from '@/components/uh-icon/uh-icon.vue';
 	import { getTabbarItems, hideNativeTabBar, requestTabbarView, setPendingTabbarMode } from '@/utils/tabbar.js';
 
 	export default {
+		components: { UhIcon },
 		name: 'uh-tabbar',
+		data() { return { iconNames: { home: 'house', category: 'compass', moments: 'images', rank: 'chart-no-axes-combined', about: 'user-round', gallery: 'images', store: 'shopping-bag' } }; },
 		props: {
 			/** 当前项 key（home / category / moments / rank / gallery / store / about） */
 			current: {
 				type: String,
 				default: ''
 			},
-			/** fixed=悬浮（默认）｜static=占流内空间（小店页用，避免遮挡 store-home） */
+			/** fixed=固定（默认）｜static=占流内空间（小店页用，避免遮挡 store-home） */
 			mode: {
 				type: String,
 				default: 'fixed'
@@ -72,20 +52,6 @@
 			items() {
 				return getTabbarItems(this.haloConfigs, this.globalAppSettings?.tabbar);
 			},
-			/**
-			 * 液态高亮块的位置：宽度 = 一格，位移 = 选中项序号 × 一格。
-			 *
-			 * 用 transform 位移而不是给每个 item 画自己的选中背景：前者在切换时是「流动」的，
-			 * 后者是「瞬间跳变」——iOS 的液态玻璃要的正是前者那种连续感。
-			 */
-			gliderStyle() {
-				const count = this.items.length || 1;
-				const index = Math.max(0, this.items.findIndex((item) => item.key === this.current));
-				return {
-					width: `calc(100% / ${ count })`,
-					transform: `translateX(${ index * 100 }%)`
-				};
-			}
 		},
 		watch: {
 			/**
@@ -147,4 +113,6 @@
 
 <style lang="scss" scoped>
 	@import './uh-tabbar.scss';
+
+@import '@/common/themes/navigation.scss';
 </style>

@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-article-detail-article-detail app-page">
 		<view v-if="loading === 'error'" class="load-error flex flex-center flex-col">
 			<tm-empty icon="icon-wind-cry" :label="loadErrorMsg || '文章加载失败'"></tm-empty>
 			<tm-button class="mt-24" size="m" theme="indigo" @click="fnGetData">重新加载</tm-button>
@@ -118,8 +118,9 @@
 				<view class="title">{{ result.spec.title }}</view>
 				<view class="detail">
 					<view class="author">
-						<text class="author-name">作者：{{ result.owner.displayName }}</text>
-						<text class="author-time">时间：{{ { d: result.spec.publishTime, f: 'yyyy年MM月dd日 星期w' } | formatTime }}</text>
+						<image v-if="result.owner.avatar" class="article-author-avatar" :src="calcUrl(result.owner.avatar)" mode="aspectFill"></image>
+						<view class="article-author-meta"><text class="author-name">{{ result.owner.displayName }}</text>
+						<text class="author-time">{{ { d: result.spec.publishTime, f: 'yyyy年MM月dd日' } | formatTime }}</text></view>
 					</view>
 
 					<view class="cover" v-if="result.spec.cover">
@@ -213,7 +214,7 @@
 							:lines="3"
 							:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
 							:button-text="`${getRestrictReadTypeName(result)}`"
-							button-color="#2F54EB"
+							button-color="#176B5B"
 							animation-duration="2"
 							@refresh="readMore"
 						/>
@@ -227,7 +228,7 @@
 							:scroll-table="true"
 							:selectable="true"
 							:tag-style="markdownConfig.tagStyle"
-							:container-style="markdownConfig.containStyle"
+							:container-style="markdownConfig.containStyle + ';padding:0;background-color:transparent;'"
 							:content="result.content.raw"
 							:markdown="true"
 							:showLineNumber="true"
@@ -353,18 +354,13 @@
 					</view>
 				</view>
 			</view>
-			<!-- 返回顶部 -->
-			<tm-flotbutton :width="90" :offset="[16, 80]" icon="icon-angle-up" color="bg-gradient-indigo-accent" @click="fnToTopPage()"></tm-flotbutton>
-			<tm-flotbutton
-				:key="'flot-actions-' + (isUpvoted ? 1 : 0)"
-				:width="90"
-				:actions="flotButtonActions"
-				:click-actions-hiden="false"
-				actions-pos="left"
-				:show-text="true"
-				color="bg-gradient-orange-accent"
-				@change="fnOnFlotButtonChange"
-			></tm-flotbutton>
+			<tm-flotbutton :width="80" :offset="[16, 110]" icon="icon-angle-up" color="bg-gradient-indigo-accent" @click="fnToTopPage()"></tm-flotbutton>
+			<view class="article-action-bar">
+				<view v-if="calcIsShowComment" class="article-action-input" @click="fnToComment"><text class="iconfont icon-edit"></text><text>{{ result.spec.allowComment ? '写下你的想法' : '评论已关闭' }}</text></view>
+				<view v-if="calcIsShowComment" class="article-action" @click="fnToComment"><text class="iconfont icon-comment-dots"></text><text>{{ result.stats.comment }}</text></view>
+				<view class="article-action" :class="{ 'is-active': isUpvoted }" @click="fnTryDoLikes"><text class="iconfont" :class="isUpvoted ? 'icon-heart-fill' : 'icon-like'"></text><text>{{ result.stats.upvote }}</text></view>
+				<view class="article-action" @click="fnShowShare"><text class="iconfont icon-share1"></text></view>
+			</view>
 		</block>
 
 		<!-- 评论详情 -->
@@ -2789,4 +2785,7 @@ export default {
 		color: $uh-ink-2;
 	}
 
+
+@import '@/common/styles/redesign/article.scss';
+@import '@/common/styles/redesign/pagesA-article-detail-article-detail-themes.scss';
 </style>

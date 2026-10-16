@@ -1,0 +1,33 @@
+/* Explicit root theme classes work inside isolated WeChat cards. */
+.article-card{position:relative;transition:background-color .18s,border-color .18s;}
+.article-card .title-text{line-height:1.55!important;letter-spacing:.3rpx;}
+.article-card .content{line-height:1.7!important;}
+.article-card .foot{padding-top:18rpx!important;margin-top:16rpx!important;border-top:1rpx solid;}
+.article-card.skin-sky{background:#fff!important;border:1rpx solid #dceeff!important;border-radius:30rpx!important;box-shadow:0 8rpx 28rpx rgba(30,115,190,.06)!important;}
+.article-card.skin-sky .title-text{font-family:sans-serif!important;color:#20374e!important;}
+.article-card.skin-sky .foot{border-color:#e5f1fc;color:#647a91!important;}
+.article-card.skin-sky .is-top{background:#e4f3ff!important;color:#0874d5!important;border-radius:8rpx!important;}
+.article-card.skin-sky .article-category{color:#0874d5!important;letter-spacing:2rpx;}
+.article-card.skin-mint{background:#fffdf7!important;border:1rpx solid #ded8c9!important;border-left:5rpx solid #a83e32!important;border-radius:8rpx!important;box-shadow:0 4rpx 16rpx rgba(73,57,29,.04)!important;}
+.article-card.skin-mint .title-text{font-family:serif!important;font-weight:600!important;letter-spacing:1rpx;}
+.article-card.skin-mint .foot{border-color:#e9e1d3;color:#7c8174!important;}
+.article-card.skin-mint .is-top{border:1rpx solid #a83e32;color:#a83e32!important;background:transparent!important;border-radius:2rpx!important;}
+.article-card.skin-mint .article-category{letter-spacing:4rpx;color:#a83e32!important;}
+.article-card.skin-ink{background:linear-gradient(125deg,#122740,#10213b)!important;border:1rpx solid #284666!important;border-radius:24rpx!important;box-shadow:0 10rpx 30rpx rgba(0,0,0,.15)!important;}
+.article-card.skin-ink .title-text{font-family:sans-serif!important;color:#eaf3ff!important;}
+.article-card.skin-ink .content{color:#a9bcd3!important;}
+.article-card.skin-ink .foot{border-color:#28415e;color:#9bafcc!important;}
+.article-card.skin-ink .is-top{background:#173e52!important;color:#56e3ef!important;border:1rpx solid #256379;border-radius:6rpx!important;}
+.article-card.skin-ink .article-category{color:#56e3ef!important;letter-spacing:2rpx;}
+.article-card.skin-sunrise{background:#fffaf0!important;border:1rpx solid #dfcbb1!important;border-radius:14rpx!important;box-shadow:4rpx 6rpx 0 #eadac4!important;}
+.article-card.skin-sunrise .title-text{font-family:serif!important;font-weight:600!important;color:#5c3c2c!important;}
+.article-card.skin-sunrise .foot{border-color:#e5d6c2;border-top-style:dashed;color:#8f7864!important;}
+.article-card.skin-sunrise .create-time{padding:4rpx 10rpx;background:#f4e5d2;border-radius:4rpx;}
+.article-card.skin-sunrise .is-top{background:#f4e5d2!important;color:#a34f31!important;border-radius:4rpx!important;}
+.article-card.skin-sunrise .article-category{color:#a34f31!important;letter-spacing:2rpx;}
+
+/* Keep badges legible against the generated legacy palette overrides. */
+.article-card.skin-sky .right .title .is-top{background-image:none!important;background:#e4f3ff!important;color:#0874d5!important;}
+.article-card.skin-mint .right .title .is-top{background-image:none!important;background:transparent!important;color:#a83e32!important;}
+.article-card.skin-ink .right .title .is-top{background-image:none!important;background:#173e52!important;color:#56e3ef!important;}
+.article-card.skin-sunrise .right .title .is-top{background-image:none!important;background:#f4e5d2!important;color:#a34f31!important;}

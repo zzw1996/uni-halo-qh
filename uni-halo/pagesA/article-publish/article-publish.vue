@@ -1,5 +1,5 @@
 <template>
-	<view :class="[skinClass, 'publish-page', zenMode ? 'publish-page--zen' : '']">
+	<view class="theme-page-pagesA-article-publish-article-publish" :class="[skinClass, 'publish-page', zenMode ? 'publish-page--zen' : '']">
 		<view v-if="!statusChecked" class="loading-wrap flex flex-center">
 			<tm-loadding color="indigo" :size="48"></tm-loadding>
 		</view>
@@ -2439,4 +2439,5 @@
 			min-height: 70vh;
 		}
 	}
+@import '@/common/styles/redesign/pagesA-article-publish-article-publish-themes.scss';
 </style>

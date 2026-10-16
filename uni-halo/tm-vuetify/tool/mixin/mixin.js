@@ -1,5 +1,5 @@
 import sharebywx from "../function/wxshare.js"
-module.exports = {
+export default {
 	...sharebywx.sharebywx,
 	data() {
 		return {

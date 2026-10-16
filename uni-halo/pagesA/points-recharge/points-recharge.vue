@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-points-recharge-points-recharge app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -1898,4 +1898,5 @@
 		line-height: 1.7;
 		color: #a1a6b8;
 	}
+@import '@/common/styles/redesign/pagesA-points-recharge-points-recharge-themes.scss';
 </style>

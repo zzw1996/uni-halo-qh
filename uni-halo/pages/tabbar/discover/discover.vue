@@ -1,9 +1,9 @@
 <template>
-	<view :class="skinClass" class="app-page">
-		<!-- 搜索：分类会越来越多，靠搜索+排序来收，而不是靠一直往下翻 -->
+	<view :class="[skinClass, { 'discover-dark': activeTheme.dark }]" class="theme-page-pages-tabbar-discover-discover app-page">
+		<uh-page-header title="发现"></uh-page-header>
 		<view class="search-bar">
 			<view class="search-box">
-				<text class="search-icon">🔍</text>
+				<text class="search-icon iconfont icon-search"></text>
 				<input class="search-input" v-model="keyword" type="text" placeholder="搜索分类"
 					placeholder-class="search-placeholder" confirm-type="search" />
 				<text v-if="keyword" class="search-clear" @click="fnClearKeyword">✕</text>
@@ -28,26 +28,26 @@
 				又是个没有边界的裸文字按钮；状态与动作分开两处，用户还得自己找关联。
 			-->
 			<view v-if="subscribedCount > 0 || inheritedCount > 0 || calcPushEntryVisible"
-				class="sub-bar">
-				<view class="sub-bar-main">
-					<text class="sub-bar-icon"
+				class="interest-bar">
+				<view class="interest-bar-main">
+					<text class="interest-bar-icon"
 						:class="{ 'is-full': isAtLimit && pausedCount === 0, 'is-member': subIsMember }">
 						{{ subIsMember ? '★' : (subscribedCount > 0 ? '✓' : '☆') }}
 					</text>
-					<text class="sub-bar-title" :class="{ 'is-full': isAtLimit }">
+					<text class="interest-bar-title" :class="{ 'is-full': isAtLimit }">
 						{{ subBarTitle }}
 					</text>
-					<text v-if="pausedCount > 0" class="sub-bar-flag is-paused">
+					<text v-if="pausedCount > 0" class="interest-bar-flag is-paused">
 						{{ pausedCount }} 个已暂停
 					</text>
-					<text v-else-if="isAtLimit" class="sub-bar-flag">已达上限</text>
+					<text v-else-if="isAtLimit" class="interest-bar-flag">已达上限</text>
 				</view>
-				<view class="sub-bar-actions">
-					<text v-if="calcPushEntryVisible" class="sub-bar-btn is-push"
+				<view class="interest-bar-actions">
+					<text v-if="calcPushEntryVisible" class="interest-bar-btn is-push"
 						@click="fnOnPushRemind">🔔 {{ pushLabel }}</text>
-					<text v-if="subCanUnlock && !subUnlimited" class="sub-bar-btn is-unlock"
+					<text v-if="subCanUnlock && !subUnlimited" class="interest-bar-btn is-unlock"
 						@click="fnOpenUnlockSheet">解锁更多</text>
-					<text v-if="subscribedCount > 0" class="sub-bar-btn is-danger"
+					<text v-if="subscribedCount > 0" class="interest-bar-btn is-danger"
 						@click="fnClearSubscribe">清空订阅</text>
 				</view>
 			</view>
@@ -58,11 +58,12 @@
 
 			<block v-else>
 				<!-- 热门榜：不需要运营干预的排序依据，回答「大多数人订了什么」 -->
-				<view v-if="hotList.length" class="section">
+				<view v-if="hotList.length && !keyword && scope === 'all'" class="section hot-section">
 					<view class="section-head">
-						<text class="section-title">🔥 热门订阅</text>
+						<text class="section-title">热门订阅</text>
 						<text class="section-sub">按订阅人数</text>
 					</view>
+					<view class="hot-scroll">
 					<view class="rank-list">
 						<view v-for="(item, index) in hotList" :key="item.metadata.name" class="rank-row">
 							<text class="rank-no" :class="'rank-no-' + (index + 1)">{{ index + 1 }}</text>
@@ -71,7 +72,7 @@
 									<image v-if="fnCatCover(item)" class="rank-icon" :src="fnCatCover(item)"
 										mode="aspectFill" lazy-load></image>
 									<view v-else class="rank-icon rank-icon-fallback"
-										:style="{ backgroundImage: fnCatGlow(item.glowIndex) }">
+										>
 										<text class="rank-icon-letter">{{ fnCatInitial(item) }}</text>
 									</view>
 								</view>
@@ -86,6 +87,7 @@
 								<text class="cat-sub-text">{{ item.subscribed ? '✓ 已订阅' : '＋ 订阅' }}</text>
 							</view>
 						</view>
+					</view>
 					</view>
 				</view>
 
@@ -118,7 +120,7 @@
 							<view v-if="!calcAuditModeEnabled" class="tile-btn"
 								:class="{ 'is-on': item.subscribed }"
 								@click.stop="fnOnSubscribeChange(item)">
-								<text class="tile-btn-text">{{ item.subscribed ? '✓' : '＋' }}</text>
+								<text class="tile-btn-text">{{ item.subscribed ? '✓ 已订阅' : '＋ 订阅' }}</text>
 							</view>
 							<!-- 额度之外被暂停的分类：点一下去解锁；记录与顺序都在，解锁后自动恢复 -->
 						<view v-if="fnIsPaused(item)" class="tile-paused-flag"
@@ -133,7 +135,7 @@
 								<image v-if="fnCatCover(item)" class="tile-icon" :src="fnCatCover(item)"
 									mode="aspectFill" lazy-load></image>
 								<view v-else class="tile-icon tile-icon-fallback"
-									:style="{ backgroundImage: fnCatGlow(item.glowIndex) }">
+									>
 									<text class="tile-icon-letter">{{ fnCatInitial(item) }}</text>
 								</view>
 								<text class="tile-name">{{ item.spec.displayName }}</text>
@@ -155,7 +157,7 @@
 		<view v-if="unlockSheetShow" class="unlock-mask" @click="unlockSheetShow = false">
 			<view class="unlock-dialog" @click.stop="">
 				<view class="unlock-close" @click="unlockSheetShow = false">
-					<tm-icons name="icon-times" :size="28" color="#9a9a94"></tm-icons>
+					<tm-icons name="icon-times" :size="28" color="#65736d"></tm-icons>
 				</view>
 
 				<text class="unlock-title">解锁更多订阅额度</text>
@@ -189,7 +191,7 @@
 						<text class="unlock-option-desc">会员期内订阅上限自动提升，还能免券读付费文章</text>
 					</view>
 					<view class="unlock-arrow">
-						<tm-icons name="icon-angle-right" :size="24" color="#9a9a94"></tm-icons>
+						<tm-icons name="icon-angle-right" :size="24" color="#65736d"></tm-icons>
 					</view>
 				</view>
 
@@ -218,6 +220,7 @@
 </template>
 
 <script>
+import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
@@ -237,14 +240,15 @@ import { isUnlimitedQuota } from '@/utils/categorySubscription.js';
 const CATEGORY_PAGE_SIZE = 100;
 /** 兜底上限：分类多到要翻 3 页时，与其继续拉不如让站长先整理分类 */
 const MAX_CATEGORY_PAGES = 3;
-/** 热门榜取前几名：再多就不是「榜」了，而是一份没排完的列表 */
-const HOT_LIMIT = 10;
+/** 热门只显示前三名，首屏留出分类浏览入口。 */
+const HOT_LIMIT = 3;
 /** 卡片墙一屏先渲染多少个：分类上百个时一次性 setData 会明显卡顿，滚动再追加 */
 const RENDER_STEP = 24;
 
 export default {
 	mixins: [loadMoreMixin],
 	components: {
+		UhPageHeader,
 		tmSkeleton,
 		tmButton,
 		tmEmpty,
@@ -325,7 +329,7 @@ export default {
 			if (this.keyword) {
 				return '搜索结果';
 			}
-			return this.scope === 'subscribed' ? '我的订阅' : '按分类浏览';
+			return this.scope === 'subscribed' ? '我的订阅' : '全部分类';
 		},
 
 		haloConfigs() {
@@ -1334,7 +1338,7 @@ export default {
 
 /* 订阅额度是硬上限（服务端也只收 5 个），订满时把它标出来 */
 /* ===== 订阅概览条：状态在左、动作在右，一条解决「订了几个/怎么管理」 ===== */
-.sub-bar {
+.interest-bar {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -1345,7 +1349,7 @@ export default {
 	box-shadow: $uh-shadow-sm;
 }
 
-.sub-bar-main {
+.interest-bar-main {
 	display: flex;
 	align-items: center;
 	flex: 1;
@@ -1353,7 +1357,7 @@ export default {
 }
 
 /* 状态图标比文字稍重，扫一眼就知道这条讲什么 */
-.sub-bar-icon {
+.interest-bar-icon {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -1367,12 +1371,12 @@ export default {
 }
 
 /* 未订阅时用中性色：此时它不是「成就」，只是提示这里的状态 */
-.sub-bar-icon.is-full {
+.interest-bar-icon.is-full {
 	background: $uh-warning-weak;
 	color: $uh-warning;
 }
 
-.sub-bar-title {
+.interest-bar-title {
 	font-size: 24rpx;
 	color: $uh-ink-2;
 	overflow: hidden;
@@ -1381,12 +1385,12 @@ export default {
 }
 
 /* 订满是一个真实约束（第 6 个订不上），要说得比普通状态重一点 */
-.sub-bar-title.is-full {
+.interest-bar-title.is-full {
 	color: $uh-ink-1;
 	font-weight: 600;
 }
 
-.sub-bar-flag {
+.interest-bar-flag {
 	margin-left: 12rpx;
 	padding: 2rpx 12rpx;
 	border-radius: $uh-radius-pill;
@@ -1395,44 +1399,44 @@ export default {
 	font-size: 20rpx;
 }
 
-.sub-bar-actions {
+.interest-bar-actions {
 	display: flex;
 	align-items: center;
 	flex-shrink: 0;
 }
 
-.sub-bar-btn {
+.interest-bar-btn {
 	padding: 10rpx 22rpx;
 	border-radius: $uh-radius-pill;
 	font-size: 22rpx;
 	line-height: 1.4;
 }
 
-.sub-bar-btn + .sub-bar-btn {
+.interest-bar-btn + .interest-bar-btn {
 	margin-left: 12rpx;
 }
 
 /* 更新提醒是主动作（用户能因此收到推送），保持实心；清空订阅是破坏性次要动作 */
-.sub-bar-btn.is-push {
+.interest-bar-btn.is-push {
 	background-image: $uh-grad-accent;
 	color: #ffffff;
 }
 
 /* 解锁是「想要更多」的动作，用品牌色描边，与「清空订阅」（破坏性）区分开 */
-.sub-bar-btn.is-unlock {
+.interest-bar-btn.is-unlock {
 	border: 1rpx solid $uh-accent;
 	color: $uh-accent;
 	background: $uh-accent-weak;
 }
 
-.sub-bar-btn.is-danger {
+.interest-bar-btn.is-danger {
 	border: 1rpx solid $uh-danger;
 	color: $uh-danger;
 	background: transparent;
 }
 
 /* 会员期内用星形图标：与普通已订阅区分开，用户能看出上限为什么这么宽 */
-.sub-bar-icon.is-member {
+.interest-bar-icon.is-member {
 	background: $uh-warning-weak;
 	color: $uh-warning;
 }
@@ -1901,4 +1905,7 @@ export default {
 
 /* 「回到顶部」改用 tm-flotbutton：定位与安全区由组件统一处理（与首页/瞬间页一致），
    这里不再自定义悬浮层——原来写死 bottom 会与自绘底栏的高度失配。 */
+
+@import '@/common/styles/redesign/discover.scss';
+@import '@/common/styles/redesign/pages-tabbar-discover-discover-themes.scss';
 </style>

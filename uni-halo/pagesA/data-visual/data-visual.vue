@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="theme-page-pagesA-data-visual-data-visual app-page">
 		<!-- 高级版卡片 -->
 		<view class="advanced-card">
 			<view class="advanced-head">
@@ -387,4 +387,5 @@
 			margin-top: 8rpx;
 		}
 	}
+@import '@/common/styles/redesign/pagesA-data-visual-data-visual-themes.scss';
 </style>

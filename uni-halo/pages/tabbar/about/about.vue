@@ -1,23 +1,17 @@
 <template>
-	<view :class="skinClass" class="profile-page">
+	<view :class="skinClass" class="theme-page-pages-tabbar-about-about profile-page">
 		<!-- ========== 1. 渐变头部 ========== -->
 		<view class="profile-header">
 			<view class="header-bg"></view>
 			<view class="header-inner">
-				<view class="status-bar" :style="{ height: statusBarHeight + 'px' }"></view>
-				<view class="nav-bar flex-between flex-center">
-					<view class="nav-side"></view>
-					<text class="nav-title">个人中心</text>
-					<view class="nav-side flex flex-center-end" @click="fnToSettings">
-						<tm-icons name="haloicon-shezhi" :size="36" color="#fff"></tm-icons>
-					</view>
-				</view>
+				<uh-page-header title="个人中心"></uh-page-header>
+				<view class="profile-settings" @click="fnToSettings"><uh-icon name="settings-2" :size="30"></uh-icon><text>设置</text></view>
 
 				<!-- 用户卡片 -->
 				<view class="user-card" @click="fnHandleUserCard">
 					<view class="uc-avatar" :class="[{ online: isLoggedIn }, calcAvatarFrameClass]">
 						<image v-if="isLoggedIn && calcUserAvatar" :src="calcUserAvatar" mode="aspectFill"></image>
-						<tm-icons v-else name="icon-user" :size="52" color="#c6c6c0"></tm-icons>
+						<tm-icons v-else name="icon-user" :size="52" color="#a4afa8"></tm-icons>
 						<view v-if="isLoggedIn" class="online-dot"></view>
 					</view>
 					<view class="uc-info">
@@ -25,13 +19,13 @@
 						<text v-if="isLoggedIn && calcLevelText" class="uc-level">{{ calcLevelText }}</text>
 						<text class="uc-desc">{{ isLoggedIn ? '点击编辑资料' : '登录后享受更多功能' }}</text>
 					</view>
-					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#c6c6c0"></tm-icons>
+					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#a4afa8"></tm-icons>
 				</view>
 
 				<!-- 快捷入口 -->
 				<view class="quick-links">
 					<view class="quick-link" @click="fnToIdentityCenter">
-						<view class="ql-icon ql-icon--crown">👑</view>
+						<view class="ql-icon ql-icon--crown"><uh-icon name="crown" :size="42"></uh-icon></view>
 						<view class="ql-main">
 							<text class="ql-title">我的身份</text>
 							<text class="ql-sub">等级 · 称号</text>
@@ -39,7 +33,7 @@
 						<text class="ql-arrow">›</text>
 					</view>
 					<view v-if="calcPayEnabled" class="quick-link" @click="fnToPointsRecharge">
-						<view class="ql-icon ql-icon--gift">🛍️</view>
+						<view class="ql-icon ql-icon--gift"><uh-icon name="gift" :size="42"></uh-icon></view>
 						<view class="ql-main">
 							<text class="ql-title">权益直购</text>
 							<text class="ql-sub">现金购买道具权益</text>
@@ -58,36 +52,32 @@
 						<text class="points-card-balance">{{ calcPointsBalance }}</text>
 					</view>
 					<view class="points-card-links">
-						<!-- 权益直购入口已提到头部胶囊，此处只保留积分明细 -->
+						<!-- 权益直购入口已提到头部胶囊，此处显示积分明细与签到状态 -->
 						<view class="points-card-link" @click="fnToPointsHistory">
 							<text>明细</text>
-							<tm-icons name="icon-angle-right" :size="20" color="#9a9a94"></tm-icons>
+							<tm-icons name="icon-angle-right" :size="20" color="#65736d"></tm-icons>
 						</view>
+						<view class="checkin-action" :class="{ 'is-done': calcSignedToday }" @click="fnHandleSignIn">{{ calcSignInButtonText }}</view>
+					<text class="profile-sign-caption">{{ calcSignedToday ? '已连续 ' + calcConsecutiveDays + ' 天' : '每天签到领积分' }}</text>
 					</view>
 				</view>
 				<view class="points-actions-grid">
-					<view class="pa-card pa-card--sign" :class="{ 'is-done': calcSignedToday }" @click="fnHandleSignIn">
-						<text class="pa-icon">📅</text>
-						<text class="pa-title">今日签到</text>
-						<text class="pa-tip">{{ calcSignedToday ? '已连续 ' + calcConsecutiveDays + ' 天' : '每天签到领积分' }}</text>
-						<text class="pa-btn" :class="{ 'is-done': calcSignedToday }">{{ calcSignInButtonText }}</text>
-					</view>
 					<view class="pa-card pa-card--task" @click="fnToTaskCenter">
-						<text class="pa-icon">✅</text>
+						<uh-icon name="circle-check" :size="34"></uh-icon>
 						<text class="pa-title">每日任务</text>
 						<text class="pa-tip">完成任务领积分</text>
 						<text class="pa-btn">去完成</text>
 					</view>
 				</view>
-			<view v-if="calcWeekRecords.length" class="points-week-row">
+			<view v-if="calcWeekRecords.length" class="checkin-week-row">
 				<view
 					v-for="(signed, idx) in calcWeekRecords"
 					:key="'week-' + idx"
-					class="points-week-item"
+					class="checkin-week-item"
 					:class="{ 'is-signed': signed, 'is-today': idx === calcWeekTodayIndex }"
 				>
-					<text class="points-week-dot"></text>
-					<text class="points-week-label">{{ idx + 1 }}天</text>
+					<view class="checkin-week-dot"><text v-if="signed" class="checkin-mark">✓</text><text v-else class="checkin-day">{{ idx + 1 }}</text></view>
+					<text class="checkin-week-label">{{ idx === calcWeekTodayIndex ? '今日' : (signed ? '已签到' : '待签到') }}</text>
 				</view>
 			</view>
 		</view>
@@ -102,8 +92,9 @@
 					class="service-item"
 					@click="fnOnServiceClick(item)"
 				>
-				<view class="service-icon" :class="'service-icon--' + (item.color || 'blue')">
-					<text :class="[fnIconFontClass(item.icon), item.icon]"></text>
+				<view class="service-icon" :class="'service-icon--' + (item.uiTone || item.color || 'blue')">
+					<uh-icon v-if="item.uiIcon" :name="item.uiIcon" :size="42"></uh-icon>
+					<text v-else :class="[fnIconFontClass(item.icon), item.icon]"></text>
 				</view>
 					<text class="service-label">{{ item.text }}</text>
 				</view>
@@ -135,7 +126,7 @@
 				<view class="profile-page-header">
 					<text class="profile-page-title">编辑资料</text>
 					<view class="profile-page-close" @click="fnCloseProfileDialog">
-						<tm-icons name="icon-times" :size="28" color="#9a9a94"></tm-icons>
+						<tm-icons name="icon-times" :size="28" color="#65736d"></tm-icons>
 					</view>
 				</view>
 
@@ -240,6 +231,9 @@
 </template>
 
 <script>
+import UhIcon from '@/components/uh-icon/uh-icon.vue';
+import { withServiceIcon } from '@/common/icons/ui-icons.js';
+import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import {
 		checkHasAdminLogin,
@@ -278,6 +272,8 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 
 	export default {
 		components: {
+		UhIcon,
+		UhPageHeader,
 			tmButton,
 			tmIcons,
 			tmInput,
@@ -499,7 +495,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 			},
 			// 我的服务 + 站点功能合并为一个区域
 			mergedServiceList() {
-				return [...this.serviceList, ...this.siteFunctionList];
+				return [...this.serviceList, ...this.siteFunctionList].map(withServiceIcon);
 			},
 			serviceList() {
 				const list = [];
@@ -1186,7 +1182,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#2F54EB'
+							confirmColor: '#176B5B'
 						})
 						.then(() => {
 							// 小程序端没有独立的超管登录页（pagesB 分包不存在，跳过去是静默失败）：
@@ -1218,7 +1214,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#2F54EB'
+							confirmColor: '#176B5B'
 						}).then(() => {
 							// 只清易失缓存：原来的一把清空会连登录态与设置一起清掉，
 							// 用户以为在「清缓存」，实际被登出、设置也回到默认（见 utils/update.js 的说明）
@@ -1688,7 +1684,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	/* 周签到点阵：7 个点横排一行。
 	   注意：这条规则曾在上一次调整样式时被误删（删块时多切了一条），
 	   丢掉 display:flex 后 7 个点会竖向堆叠、把卡片撑得很高。 */
-	.points-week-row {
+	.checkin-week-row {
 		display: flex;
 		justify-content: space-between;
 		margin-top: 14rpx;
@@ -1696,34 +1692,34 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 		border-top: 1rpx dashed $uh-line;
 	}
 
-	.points-week-item {
+	.checkin-week-item {
 		flex: 1;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 8rpx;
 
-		.points-week-dot {
+		.checkin-week-dot {
 			width: 18rpx;
 			height: 18rpx;
 			border-radius: 50%;
 			background: #e0e0e0;
 		}
 
-		.points-week-label {
+		.checkin-week-label {
 			font-size: 20rpx;
 			color: $uh-ink-4;
 		}
 
-		&.is-signed .points-week-dot {
+		&.is-signed .checkin-week-dot {
 			background: #ffb300;
 		}
 
-		&.is-signed .points-week-label {
+		&.is-signed .checkin-week-label {
 			color: $uh-warning;
 		}
 
-		&.is-today .points-week-dot {
+		&.is-today .checkin-week-dot {
 			box-shadow: 0 0 0 4rpx rgba(255, 179, 0, 0.25);
 		}
 	}
@@ -2101,4 +2097,10 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 	}
 
 	/* ===== 版权 ===== */
+
+@import '@/common/styles/redesign/about.scss';
+@import '@/common/themes/checkin.scss';
+
+
+@import '@/common/styles/redesign/pages-tabbar-about-about-themes.scss';
 </style>

@@ -1,5 +1,6 @@
 <template>
-	<view class="app-page" :class="[skinClass, uniHaloPluginPageClass, { 'is-host-fixed': viewMode === 'store' }]">
+	<view class="theme-page-pages-tabbar-moments-moments app-page" :class="[skinClass, uniHaloPluginPageClass, { 'is-host-fixed': viewMode === 'store' }]">
+		<uh-page-header :title="viewMode === 'gallery' ? '图库' : viewMode === 'store' ? '小店' : '瞬间'"></uh-page-header>
 		<!--
 			瞬间本体：作为宿主页的第一个视图。切到图库/小店时用 v-show 隐藏而不是卸载，
 			切回来能保留列表与滚动位置（这正是原生 tab 的行为）。
@@ -194,6 +195,7 @@
 </template>
 
 <script>
+import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 	import tmSkeleton from '@/tm-vuetify/components/tm-skeleton/tm-skeleton.vue';
 	import uhTabbar from '@/components/uh-tabbar/uh-tabbar.vue';
 	import galleryView from '@/components/gallery-view/gallery-view.vue';
@@ -232,6 +234,7 @@
 	export default {
 		mixins: [pluginAvailableMixin, loadMoreMixin],
 		components: {
+		UhPageHeader,
 			tmSkeleton,
 			tmFlotbutton,
 			tmEmpty,
@@ -1082,4 +1085,7 @@
 		width: 100%;
 		border-radius: 12rpx;
 	}
+
+@import '@/common/styles/redesign/moments.scss';
+@import '@/common/styles/redesign/pages-tabbar-moments-moments-themes.scss';
 </style>

@@ -1,0 +1,31 @@
+// 榜单：页签与排序分级，榜首使用更大的封面。
+.app-page { padding: 0; background-color: $uh-bg; }
+.board-tabs { margin: 0 40rpx 28rpx; padding: 0; gap: 0; border-bottom: 1rpx solid $uh-line; }
+.board-tab { flex: 1; text-align: center; padding: 20rpx 8rpx; border-radius: 0; background: transparent; font-size: 30rpx; border-bottom: 4rpx solid transparent; }
+.board-tab.is-active { background: transparent; color: $uh-accent; border-bottom-color: $uh-accent; }
+.rank-head { padding: 0 40rpx 24rpx; flex-direction: column-reverse; align-items: stretch; gap: 24rpx; }
+.rank-head-tip { font-size: 24rpx; letter-spacing: 3rpx; }
+.rank-head .sort-switch { display: flex; padding: 6rpx; background: $uh-fill; border-radius: $uh-radius-pill; gap: 0; }
+.rank-head .sort-item { flex: 1; padding: 18rpx 8rpx; text-align: center; background: transparent; font-size: 28rpx; }
+.rank-head .sort-item.is-active { background: $uh-card; color: $uh-accent; }
+.rank-list { margin: 0 40rpx 24rpx; border: 1rpx solid $uh-line; border-radius: $uh-radius-lg; box-shadow: none; }
+.rank-item { padding: 28rpx 24rpx; border-top-color: $uh-line; flex-wrap: wrap; }
+.rank-no { width: 44rpx; font-size: 34rpx; font-family: $uh-font-serif; color: $uh-ink-3; }
+.rank-no.is-top { color: $uh-accent; }
+.rank-cover { width: 104rpx; height: 120rpx; border-radius: 16rpx; background: $uh-fill; margin: 0 20rpx 0 12rpx; }
+.rank-title { font-size: 28rpx; font-weight: 600; line-height: 1.6; }
+.rank-value { font-size: 22rpx; max-width: 120rpx; overflow-wrap: break-word; }
+.rank-item.is-first { min-height: 220rpx; }
+.rank-item.is-first .rank-cover { width: 148rpx; height: 180rpx; }
+.rank-item.is-first .rank-title { font-size: 32rpx; }
+.sort-switch--board { padding-left: 40rpx; padding-right: 40rpx; flex-wrap: wrap; }
+.rule-card { margin-left: 40rpx; margin-right: 40rpx; }
+@media (max-width: 350px) { .rank-cover { width: 84rpx; height: 100rpx; } .rank-value { margin-left: 10rpx; max-width: 100rpx; } }
+
+.rank-feature { display: flex; align-items: center; gap: 24rpx; padding: 32rpx 24rpx; }
+.rank-feature__body { flex: 1; min-width: 0; }
+.rank-feature__badge { display: flex; align-items: center; gap: 12rpx; color: $uh-accent; font-size: 22rpx; }
+.rank-feature__number { padding: 8rpx 14rpx; border-radius: 12rpx; color: #ffffff; background: $uh-accent; font-family: $uh-font-serif; font-size: 30rpx; }
+.rank-feature__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 36rpx; font-weight: 700; color: $uh-ink-1; line-height: 1.55; margin: 20rpx 0; }
+.rank-feature__metric { font-size: 24rpx; color: $uh-ink-3; }
+.rank-feature__cover { flex-shrink: 0; width: 220rpx; height: 280rpx; border-radius: 24rpx; }

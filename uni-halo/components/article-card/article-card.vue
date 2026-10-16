@@ -1,16 +1,17 @@
 <template>
-	<view class="article-card " :class="cardType" @click="fnClickEvent('card')">
+	<view class="article-card " :class="[skinClass, cardType]" @click="fnClickEvent('card')">
 		<view class="left" v-if="calcShowArticleCover">
-			<cache-image class="thumbnail" radius="6rpx" :url="$utils.checkThumbnailUrl(article.spec.cover, false, 400)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
+			<cache-image class="thumbnail" radius="24rpx" :url="$utils.checkThumbnailUrl(article.spec.cover, false, 400)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
 			<!-- <image class="thumbnail" lazy-load :src="$utils.checkThumbnailUrl(article.spec.cover)" mode="aspectFill"></image> -->
 			<!-- 分类标识：浮在封面左上角，绝对定位，不占卡片任何布局空间 -->
-			<text class="cat-badge" v-if="calcShowCategoryBadge">{{ categoryLabel }}</text>
+
 		</view>
 		<view class="right">
+			<text class="article-category" v-if="showCategory && categoryLabel">{{ categoryLabel }}</text>
 			<view class="title">
 				<text class="is-top" v-if="article.spec.pinned">置顶</text>
 				<!-- 没有封面（或卡片是纯文字）时退回标题行：高度压在标题行高之内，同样不撑高卡片 -->
-				<text class="cat-badge-inline" v-if="calcShowCategoryInline">{{ categoryLabel }}</text>
+
 				<text class="title-text text-overflow">{{ article.spec.title }}</text>
 			</view>
 			<view class="content text-overflow-2">{{ article.status.excerpt }}</view>
@@ -436,4 +437,19 @@
 			}
 		}
 	}
+
+.article-card { margin-left: 40rpx; margin-right: 40rpx; border: 1rpx solid $uh-line; box-shadow: none; padding: 24rpx; }
+.article-category { margin-bottom: 12rpx; color: $uh-accent; font-size: 22rpx; line-height: 1.4; }
+.article-card .right { min-width: 0; }
+.article-card .right .title { align-items: flex-start; font-size: 30rpx; line-height: 1.6; }
+.article-card .title-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; }
+.article-card .right .content { height: auto; max-height: 76rpx; font-size: 24rpx; line-height: 38rpx; color: $uh-ink-3; }
+.article-card .right .foot { flex-wrap: wrap; gap: 8rpx; margin-top: 16rpx; }
+.article-card .right .foot .create-time, .article-card .right .foot .visits .number { font-size: 22rpx; }
+.article-card.lr_text_image .left { width: 190rpx; height: 210rpx; margin-left: 24rpx; padding-left: 0; flex-shrink: 0; }
+.article-card.home.h_row_col2 { margin: 8rpx; }
+
+
+
+@import '@/common/themes/cards.scss';
 </style>

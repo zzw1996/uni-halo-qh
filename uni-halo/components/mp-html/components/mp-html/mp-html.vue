@@ -131,6 +131,10 @@ export default {
   },
   // #endif
   watch: {
+    tagStyle () {
+      // 外观切换后重新解析标签的内联色；已打开文章也立即跟随。
+      if (this.content) this.setContent(this.content)
+    },
     editable(val) {
       this.setContent(val ? this.content : this.getContent())
       if (!val)

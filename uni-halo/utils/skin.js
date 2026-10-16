@@ -21,24 +21,27 @@
  * 切回浅色就回来（皮肤偏好本身没被改写）。
  */
 import Vue from 'vue';
+import { THEMES } from '@/common/themes/index.js';
 
 /** 皮肤注册表。accent 供原生栏位（导航栏 / tabBar）取色用，与生成的 CSS 保持一致。 */
 export const SKINS = {
 	/** 默认：完全不覆盖，保持设计系统的原色 */
 	paper: {
 		label: '宣纸白',
-		desc: '默认配色，暖纸底 + 白卡片 + 靛青强调',
+		desc: '默认配色，暖白纸面 + 白卡片 + 深青绿强调',
 		dark: false,
 		// 页面/窗口底色：page 元素不设静态底之后，下拉回弹与切页留白都靠它
-		bgColor: '#f2f2ec',
+		bgColor: '#f6f7f2',
+		tabSelectedColor: '#176b5b',
 		tmColor: '',
-		swatch: '#2f54eb'
+		swatch: '#176b5b'
 	},
 	mint: {
 		label: '青瓷',
 		desc: '冷调页面底 + 青绿强调色，分割线更淡',
 		dark: false,
 		bgColor: '#eef3f1',
+		tabSelectedColor: '#0e8a72',
 		tmColor: 'teal',
 		swatch: 'linear-gradient(135deg, #0e8a72 0%, #2bb39a 100%)'
 	},
@@ -47,6 +50,7 @@ export const SKINS = {
 		desc: '暖调页面底 + 琥珀强调色，卡片更柔和',
 		dark: false,
 		bgColor: '#f8f1e7',
+		tabSelectedColor: '#c25a06',
 		tmColor: 'amber',
 		swatch: 'linear-gradient(135deg, #c25a06 0%, #e08a1e 100%)'
 	},
@@ -63,6 +67,24 @@ export const SKINS = {
 		tmColor: 'indigo',
 		swatch: 'linear-gradient(135deg, #1e1e26 0%, #7d95ff 100%)'
 	}
+};
+
+// 四套 UI 主题沿用既有皮肤 id，保留服务端装扮兼容。
+THEMES.forEach(t => {
+ SKINS[t.id] = {label:t.name,desc:t.description,dark:t.dark,bgColor:t.bg,navBg:t.bg,navFront:t.dark?'#ffffff':'#000000',tabBg:t.card,tabColor:t.muted,tabSelectedColor:t.accentText,tmColor:t.dark?'cyan':'',swatch:t.hero};
+});
+const UI_THEME_KEY = 'unihalo_ui_theme';
+export const uiThemeState = Vue.observable({id:''});
+export const chooseUiTheme = (id) => {
+ const t=THEMES.find(t=>t.id===id) || THEMES[0];
+ uiThemeState.id=t.id;
+ try { uni.setStorageSync(UI_THEME_KEY,t.id); } catch(e) {}
+ applyAppearanceMode(t.dark?'dark':'light');
+ return t.id;
+};
+export const restoreUiTheme = () => {
+ let id=''; try { id=uni.getStorageSync(UI_THEME_KEY); } catch(e) {}
+ uiThemeState.id=THEMES.some(t=>t.id===id)?id:'';
 };
 
 /** 深色配色（外观模式为深色时使用）：复用已登记的墨韵皮肤，不另维护一套暗色变量 */
@@ -127,12 +149,13 @@ export const skinState = Vue.observable({ id: 'paper' });
  * 纯函数：不读存储、不看全局状态，因此可以在页面里就地推算，也便于以后加单测。
  */
 export const resolveSkinId = (skinId, mode, systemDark) => {
-	const base = isSkinId(skinId) ? String(skinId).trim() : 'paper';
+	const raw = isSkinId(skinId) ? String(skinId).trim() : 'sky';
+	const base = raw === 'paper' ? 'sky' : raw;
 	const resolved = normalizeAppearanceMode(mode);
 	if (resolved === 'dark') {
 		return DARK_SKIN_ID;
 	}
-	const lightBase = base === DARK_SKIN_ID ? 'paper' : base;
+	const lightBase = base === DARK_SKIN_ID ? 'sky' : base;
 	if (resolved === 'light') {
 		return lightBase;
 	}
@@ -141,7 +164,7 @@ export const resolveSkinId = (skinId, mode, systemDark) => {
 
 /** 当前生效皮肤 id（页面根类名、原生栏同步都用它） */
 export const effectiveSkinId = () =>
-	resolveSkinId(skinState.id, appearanceState.mode, appearanceState.systemDark);
+	resolveSkinId(uiThemeState.id || skinState.id, appearanceState.mode, appearanceState.systemDark);
 
 /**
  * 设置外观模式并立即生效。
@@ -170,7 +193,7 @@ export const applyAppearanceMode = (mode) => {
 export const restoreAppearance = () => {
 	let stored = '';
 	try {
-		stored = uni.getStorageSync(APPEARANCE_KEY) || '';
+		stored = uni.getStorageSync(APPEARANCE_KEY) || 'light';
 	} catch (err) {
 		stored = '';
 	}
@@ -314,8 +337,20 @@ export const restoreSkin = () => {
  * 导航栏颜色是「按页面」生效的，设置后只影响当前页——所以全局混入会在
  * 每个页面 onShow 时重新调用一次（见 common/mixins/index.js）。
  */
+let nativeIconDark = null;
 export const applyNativeChrome = (id) => {
 	const skin = SKINS[id] || SKINS.paper;
+	if (nativeIconDark !== id && typeof uni.setTabBarItem === 'function') {
+		['home', 'category', 'gallery', 'rank', 'mine'].forEach((name, index) => {
+            const names={home:'house',category:'compass',gallery:'images',rank:'chart-no-axes-combined',mine:'user-round'};
+            if (['sky','mint','ink','sunrise'].includes(id)) {
+                uni.setTabBarItem({index,iconPath:`static/ui-icons/${names[name]}--${id}--muted.png`,selectedIconPath:`static/ui-icons/${names[name]}--${id}--active.png`});
+            } else {
+                uni.setTabBarItem({index,iconPath:`static/tabbar/paper_${name}.png`,selectedIconPath:`static/tabbar/paper_${name}_active.png`});
+            }
+		});
+		nativeIconDark = id;
+	}
 	try {
 		if (skin.dark) {
 			uni.setNavigationBarColor({
@@ -335,20 +370,21 @@ export const applyNativeChrome = (id) => {
 			});
 		} else {
 			uni.setNavigationBarColor({
-				backgroundColor: '#ffffff',
+				backgroundColor: skin.bgColor || '#f6f7f2',
 				frontColor: '#000000'
 			});
 			// 浅色皮肤各自的页面底色（青瓷/晨光与宣纸白不同）：窗口留白不再固定用宣纸白，
 			// 否则换皮肤后下拉回弹会露出一条不搭的底色
 			uni.setBackgroundColor({
-				backgroundColor: skin.bgColor || '#f2f2ec',
-				backgroundColorTop: skin.bgColor || '#f2f2ec',
-				backgroundColorBottom: skin.bgColor || '#f2f2ec'
+				backgroundColor: skin.bgColor || '#f6f7f2',
+				backgroundColorTop: skin.bgColor || '#f6f7f2',
+				backgroundColorBottom: skin.bgColor || '#f6f7f2'
 			});
 			// 浅色皮肤下 tabBar 恢复默认（选中色仍由主题色接管，见 themeSkin.js）
 			uni.setTabBarStyle({
-				backgroundColor: '#ffffff',
-				color: '#9A9A94',
+				backgroundColor: skin.tabBg || '#ffffff',
+				color: skin.tabColor || '#65736D',
+				selectedColor: skin.tabSelectedColor || '#176b5b',
 				borderStyle: 'white'
 			});
 		}
@@ -389,17 +425,15 @@ export const syncTmDark = (skin) => {
 /**
  * 按「生效皮肤」同步外观相关的所有外部状态：tm 组件的深色开关 + 原生栏位。
  *
- * 默认皮肤（paper）时不改导航栏颜色（避免覆盖页面自己设置的样式，与改造前一致），
- * 但 tm 的深色开关仍要同步——从深色切回浅色时必须把它关掉。
+ * 默认皮肤也同步纸面导航与窗口底色，从深色切回浅色时恢复整套栏位。
  */
 export const syncNativeChrome = () => {
 	const effective = effectiveSkinId();
 	const skin = SKINS[effective] || SKINS.paper;
 	// 先设框架深色开关：它内部也会动 tabBar 样式，随后 applyNativeChrome 再按皮肤覆盖一次
+	const wasDark = !!uni?.$tm?.vx?.state?.()?.tmVuetify?.black;
 	syncTmDark(skin);
-	if (effective !== 'paper') {
-		applyNativeChrome(effective);
-	}
+	applyNativeChrome(effective);
 	return effective;
 };
 

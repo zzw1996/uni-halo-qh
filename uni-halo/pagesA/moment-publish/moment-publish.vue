@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="publish-page">
+	<view :class="skinClass" class="theme-page-pagesA-moment-publish-moment-publish publish-page">
 		<view v-if="!permissionChecked" class="loading-wrap flex flex-center">
 			<tm-loadding color="indigo" :size="48"></tm-loadding>
 		</view>
@@ -412,4 +412,5 @@
 	.publish-actions {
 		margin-top: 32rpx;
 	}
+@import '@/common/styles/redesign/pagesA-moment-publish-moment-publish-themes.scss';
 </style>

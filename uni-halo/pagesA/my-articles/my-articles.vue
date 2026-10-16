@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="my-articles-page">
+	<view :class="skinClass" class="theme-page-pagesA-my-articles-my-articles my-articles-page">
 		<view v-if="loading === 'loading' && !list.length" class="loading-wrap flex flex-center">
 			<tm-loadding color="indigo" :size="48"></tm-loadding>
 		</view>
@@ -45,7 +45,7 @@
 				<text class="empty-tip">换个状态筛选，或清空搜索词试试</text>
 			</view>
 
-			<view v-for="item in filteredList" :key="item.name" class="article-card">
+			<view v-for="item in renderedList" :key="item.name" class="article-card">
 				<view class="card-body">
 					<image v-if="item.cover" class="card-cover" :src="item.cover" mode="aspectFill"
 						lazy-load @click="fnPreviewCover(item)"></image>
@@ -88,7 +88,8 @@
 				</view>
 			</view>
 
-			<text v-if="list.length" class="foot-tip">删除会进 Halo 回收站，站长仍可恢复；物理删除请在后台操作</text>
+			<text v-if="renderedList.length < filteredList.length" class="foot-tip">上拉查看更多投稿</text>
+			<text v-else-if="list.length" class="foot-tip">删除会进 Halo 回收站，站长仍可恢复；物理删除请在后台操作</text>
 		</view>
 	</view>
 </template>
@@ -97,13 +98,16 @@
 	import tmEmpty from '@/tm-vuetify/components/tm-empty/tm-empty.vue';
 	import tmButton from '@/tm-vuetify/components/tm-button/tm-button.vue';
 	import tmLoadding from '@/tm-vuetify/components/tm-loadding/tm-loadding.vue';
-	import { checkHasWxLogin } from '@/utils/auth.js';
+	import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
 	import { formatTimeSafe } from '@/utils/time.js';
 	import {
 		fetchUserPublishStatus,
 		publishUserArticleNow,
 		withdrawUserArticle
 	} from '@/utils/userPublish.js';
+
+	// 只保留当前账号的短时内存快照，不持久化私人投稿。
+	let articleSnapshot = null;
 
 	export default {
 		components: {
@@ -114,6 +118,7 @@
 		data() {
 			return {
 				loading: 'loading',
+				renderLimit: 20,
 				errorTip: '',
 				/** 服务端返回的我的文章（含待审） */
 				list: [],
@@ -131,7 +136,12 @@
 				loadedOnce: false
 			};
 		},
+		watch: {
+			keyword() { this.renderLimit = 20; },
+			stateFilter() { this.renderLimit = 20; }
+		},
 		computed: {
+			renderedList() { return this.filteredList.slice(0, this.renderLimit); },
 			publishedCount() {
 				return this.list.filter((item) => item.state === 'published').length;
 			},
@@ -170,42 +180,64 @@
 		},
 		onLoad() {
 			this.fnSetPageTitle('我的投稿');
+			const owner = getOpenid();
+			if (owner && articleSnapshot?.owner === owner && Date.now() - articleSnapshot.at < 60000) {
+				this.list = articleSnapshot.list;
+				this.categoryLabels = articleSnapshot.labels;
+				this.loading = 'success';
+				this.loadedOnce = true;
+			}
 			this.fnLoad();
 			this.fnLoadStatus();
 		},
 		onShow() {
 			// 从编辑页回来时列表必须变样（标题/状态/修改待生效）；首屏由 onLoad 负责
-			if (this.loadedOnce) {
+			if (this._shownOnce) {
 				this.fnLoad();
 			}
+			this._shownOnce = true;
 		},
+		onReachBottom() { this.renderLimit += 20; },
 		onPullDownRefresh() {
 			this.fnLoad().finally(() => uni.stopPullDownRefresh());
 		},
 		methods: {
-			async fnLoad() {
+			fnLoad() {
+				if (this._loadPromise) return this._loadPromise;
+				this._loadPromise = this.fnFetchArticles().finally(() => { this._loadPromise = null; });
+				return this._loadPromise;
+			},
+			async fnFetchArticles() {
+				const owner = getOpenid();
 				if (!checkHasWxLogin()) {
+					this.list = [];
 					this.loading = 'error';
 					this.errorTip = '请先登录后再查看投稿';
 					return;
 				}
-				if (!this.list.length) {
-					this.loading = 'loading';
-				}
+				if (!this.list.length) this.loading = 'loading';
+				// 分类名是辅助信息，不能阻塞文章首屏；失败时仍能浏览投稿。
+				this.fnLoadCategoryLabels().then(labels => {
+					if (getOpenid() !== owner) return;
+					this.categoryLabels = labels;
+					this.list = this.list.map(item => ({ ...item,
+						categoryLabels: item.categories.map(name => labels[name] || name) }));
+					if (articleSnapshot?.owner === owner) {
+						articleSnapshot = { ...articleSnapshot, list: this.list, labels };
+					}
+				});
 				try {
-					const [articles, categories] = await Promise.all([
-						this.$httpApi.v2.getMyArticles(),
-						// 分类表只为了把 category-xxxxx 换成「手册」这类显示名；拉不到就退回原名
-						this.fnLoadCategoryLabels()
-					]);
+					const articles = await this.$httpApi.v2.getMyArticles();
+					if (getOpenid() !== owner) return;
 					const body = articles?.data || articles || {};
+					if (body.error) throw body;
 					const items = Array.isArray(body.items) ? body.items : [];
-					this.categoryLabels = categories;
-					this.list = items.map((item) => this.fnMapItem(item));
+					this.list = items.map(item => this.fnMapItem(item));
 					this.loading = 'success';
 					this.loadedOnce = true;
+					articleSnapshot = { owner, at: Date.now(), list: this.list, labels: this.categoryLabels };
 				} catch (err) {
-					// 有旧数据就留着用（下拉刷新失败不该把页面清空），没有才整页报错
+					if (getOpenid() !== owner) return;
 					this.errorTip = err?.error || err?.detail || err?.message || '加载失败，请稍后重试';
 					this.loading = this.list.length ? 'success' : 'error';
 				}
@@ -245,6 +277,7 @@
 					// 封面是相对路径（/upload/xxx.png）：不补域名渲染层会直接报加载失败
 					cover: item?.cover ? this.$utils.checkThumbnailUrl(item.cover, true) : '',
 					tags: Array.isArray(item?.tags) ? item.tags : [],
+					categories,
 					categoryLabels: categories.map((name) => this.categoryLabels[name] || name),
 					// 已发布但改了没生效：站点上还是旧内容，列表要标出来
 					hasPendingChanges: item?.hasPendingChanges === true,
@@ -332,6 +365,7 @@
 					}
 					uni.showToast({ icon: 'success', title: result.data?.statusText || '已发布' });
 					// 发布后状态、数据、按钮都会变：整页重拉比原地改字段更不容易漏
+					articleSnapshot = null;
 					await this.fnLoad();
 				} catch (err) {
 					uni.showToast({
@@ -373,6 +407,7 @@
 						throw { error: result.reason };
 					}
 					uni.showToast({ icon: 'success', title: '已撤回，文章回到草稿' });
+					articleSnapshot = null;
 					await this.fnLoad();
 				} catch (err) {
 					uni.showToast({
@@ -421,6 +456,7 @@
 					}
 					// 原地移除：不重拉列表、不滚回顶部，删完停留在当前位置
 					this.list = this.list.filter((entry) => entry.name !== name);
+					articleSnapshot = null;
 					uni.showToast({ icon: 'success', title: '已删除' });
 				} catch (err) {
 					uni.hideLoading();
@@ -684,4 +720,5 @@
 		color: $uh-ink-4;
 		text-align: center;
 	}
+@import '@/common/styles/redesign/pagesA-my-articles-my-articles-themes.scss';
 </style>

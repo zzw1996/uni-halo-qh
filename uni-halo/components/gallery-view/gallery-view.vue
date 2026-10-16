@@ -7,12 +7,12 @@
 				顶部分类切换：只有一个分类（通常只有「全部」）时不显示——
 				一条只有单项的分类栏既没用又占掉首屏一条空间。
 			-->
-			<view class="cate-bar e-fixed" v-if="calcShowCategoryBar">
+			<view class="cate-bar" v-if="calcShowCategoryBar">
 				<tm-tabs color="indigo" :shadow="0" v-model="category.activeIndex" range-key="displayName"
 					:list="category.list" align="left" @change="fnOnCategoryChange($event, false)"></tm-tabs>
 			</view>
 			<!-- 占位区域：避免固定分类栏盖住第一行图片 -->
-			<view v-if="calcShowCategoryBar" class="cate-bar-holder"></view>
+
 			<!--
 				加载骨架：按瀑布流的双列排，和最终布局一致，切换时不跳动。
 			-->
@@ -455,4 +455,6 @@
 		gap: 6rpx;
 		z-index: 999;
 	}
+
+.cate-bar { position: sticky; top: 0; z-index: 6; }
 </style>

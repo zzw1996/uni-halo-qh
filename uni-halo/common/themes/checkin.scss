@@ -1,0 +1,27 @@
+// Independent state colors prevent legacy icon/skin overrides from reducing contrast.
+.checkin-action {display:flex;align-items:center;justify-content:center;min-height:76rpx;padding:0 30rpx;border-radius:999rpx;font-size:26rpx;font-weight:600;}
+.checkin-week-row {display:flex;justify-content:space-between;margin-top:24rpx;padding-top:24rpx;border-top:1rpx dashed;}
+.checkin-week-item {flex:1;display:flex;flex-direction:column;align-items:center;gap:12rpx;min-width:0;}
+.checkin-week-item .checkin-week-dot {display:flex;align-items:center;justify-content:center;width:48rpx;height:48rpx;box-sizing:border-box;border:1rpx solid;border-radius:50%;box-shadow:none;}
+.checkin-week-label {font-size:19rpx;line-height:1.5;white-space:nowrap;}
+.checkin-mark {font-size:30rpx;line-height:1;font-family:sans-serif;font-weight:700;color:inherit;}
+.checkin-day {font-size:22rpx;line-height:1;color:inherit;}
+$checkin-themes: (
+ sky: (#0874d5,#ffffff,#f0f6fc,#d4e5f5,#647a91,#e4f3ff),
+ mint: (#a83e32,#fffdf7,#f4f0e7,#ded8c9,#74796d,#f3e6df),
+ ink: (#31dbed,#081528,#192d4a,#35516f,#a8bbd4,#173e52),
+ sunrise: (#a34f31,#fffaf0,#f4e5d2,#ddc6a9,#89705c,#f4e5d2)
+);
+@each $id,$colors in $checkin-themes {
+ .profile-page.skin-#{$id} {
+  .checkin-action {background:nth($colors,1);color:nth($colors,2);}
+  .checkin-action.is-done {background:nth($colors,6);color:nth($colors,1);}
+  .checkin-week-row {border-color:nth($colors,4);}
+  .checkin-week-item .checkin-week-dot {background:nth($colors,3);border-color:nth($colors,4);color:nth($colors,5);}
+  .checkin-week-item .checkin-week-label {color:nth($colors,5);}
+  .checkin-week-item.is-signed .checkin-week-dot {background:nth($colors,1);border-color:nth($colors,1);color:nth($colors,2);}
+  .checkin-week-item.is-signed .checkin-week-label {color:nth($colors,1);}
+  .checkin-week-item.is-today .checkin-week-dot {box-shadow:none;outline:3rpx solid nth($colors,1);outline-offset:5rpx;}
+  .checkin-week-item.is-today .checkin-week-label {color:nth($colors,1);font-weight:700;}
+ }
+}

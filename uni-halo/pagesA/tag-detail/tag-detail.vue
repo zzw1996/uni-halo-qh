@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page">
+    <view :class="skinClass" class="theme-page-pagesA-tag-detail-tag-detail app-page">
         <view v-if="loading != 'success'" class="loading-wrap">
             <tm-skeleton model="listAvatr"></tm-skeleton>
             <tm-skeleton model="listAvatr"></tm-skeleton>
@@ -151,4 +151,5 @@ export default {
     align-items: center;
     justify-content: center;
 }
+@import '@/common/styles/redesign/pagesA-tag-detail-tag-detail-themes.scss';
 </style>

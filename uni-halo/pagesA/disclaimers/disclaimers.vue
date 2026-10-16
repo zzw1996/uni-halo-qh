@@ -1,5 +1,5 @@
 <template>
-    <view :class="skinClass" class="app-page ma-24 bg-white round-6 pa-46 card-shadow">
+    <view :class="skinClass" class="theme-page-pagesA-disclaimers-disclaimers app-page ma-24 bg-white round-6 pa-46 card-shadow">
         <!-- 通过配置 -->
         <view v-if="disclaimersContent" style="min-height: 100%;" v-html="disclaimersContent"></view>
 
@@ -45,4 +45,5 @@ export default {
     font-size: 30rpx;
     color: #1f1f1f;
 }
+@import '@/common/styles/redesign/pagesA-disclaimers-disclaimers-themes.scss';
 </style>

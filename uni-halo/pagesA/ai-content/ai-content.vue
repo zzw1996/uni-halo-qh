@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page">
+	<view :class="skinClass" class="app-page ai-content-theme">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -1576,6 +1576,7 @@
 <style scoped lang="scss">
 	.app-page {
 		min-height: 100vh;
+		padding-top: 1rpx;
 		background: $uh-fill;
 		padding-bottom: 40rpx;
 	}
@@ -2594,4 +2595,5 @@
 		line-height: 1.7;
 		color: #a1a6b8;
 	}
+@import '@/common/styles/redesign/ai-content-themes.scss';
 </style>

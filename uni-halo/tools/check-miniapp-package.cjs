@@ -20,7 +20,8 @@ const path = require('path')
 
 const ROOT = path.resolve(__dirname, '..')
 const which = (process.argv[2] || 'dev') === 'build' ? 'build' : 'dev'
-const OUT = path.join(ROOT, 'unpackage', 'dist', which, 'mp-weixin')
+// 可指定独立的构建目录，默认仍检查项目内的产物。
+const OUT = process.argv[3] ? path.resolve(process.argv[3]) : path.join(ROOT, 'unpackage', 'dist', which, 'mp-weixin')
 
 /** 微信限制：单个包（主包/分包）2048KB */
 const PACKAGE_LIMIT_KB = 2048

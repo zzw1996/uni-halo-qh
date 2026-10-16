@@ -1,0 +1,29 @@
+// 文章详情：标题、正文直接落在纸面上，底部保持互动入口。
+.app-page { padding-bottom: calc(132rpx + env(safe-area-inset-bottom)); }
+.head { margin: 16rpx 40rpx 24rpx; padding: 20rpx 0 0; background: transparent; box-shadow: none; border-radius: 0; }
+.head .title { font-size: 48rpx; line-height: 1.5; }
+.head .detail .author { display: flex; flex-wrap: wrap; align-items: center; gap: 16rpx; }
+.head .detail .author-time { margin-left: 0; line-height: 1.6; }
+.article-author-avatar { width: 72rpx; height: 72rpx; border-radius: 50%; }
+.article-author-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.head .detail .author-name { font-size: 28rpx; color: $uh-ink-1; }
+.head .detail .cover { height: 400rpx; margin-top: 28rpx; }
+.head .detail .cover-img { border-radius: $uh-radius-lg; }
+.head .detail .count { padding-top: 12rpx; margin-top: 20rpx; }
+.head .detail .count-item { align-items: center; flex-wrap: wrap; }
+.head .detail .count-item .value { font-size: 26rpx; }
+.head .detail .count-item .label { font-size: 22rpx; }
+.category { margin-left: 40rpx; margin-right: 40rpx; background: transparent; padding: 0; box-shadow: none; }
+.category-tag { display: inline-flex; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; background: $uh-accent-weak; color: $uh-accent; border-radius: $uh-radius-pill; }
+.content { margin-left: 40rpx; margin-right: 40rpx; }
+.markdown-wrap { border-radius: 0; }
+.article-action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 990; display: flex; align-items: center; justify-content: flex-end; gap: 16rpx; padding: 16rpx 32rpx; padding-bottom: calc(16rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid $uh-line; background: $uh-card; }
+.article-action-input { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12rpx; min-height: 72rpx; padding: 0 24rpx; border-radius: $uh-radius-pill; background: $uh-fill; color: $uh-ink-3; font-size: 24rpx; }
+.article-action { display: flex; align-items: center; justify-content: center; min-width: 64rpx; min-height: 72rpx; gap: 6rpx; color: $uh-ink-2; font-size: 22rpx; }
+.article-action .iconfont { font-size: 38rpx; }
+.article-action.is-active { color: $uh-danger; }
+
+.category-tag.is-empty { background: $uh-fill; color: $uh-ink-3; }
+
+// 后台标签色会成为内联样式，深色阅读页用统一可读的底色覆盖。
+.app-page.skin-ink .category-tag { background: #232a45 !important; color: #b9b9c5 !important; }

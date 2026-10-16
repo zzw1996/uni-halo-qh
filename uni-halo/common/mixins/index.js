@@ -10,6 +10,7 @@
  *  修改时间：
  */
 
+import { resolveTheme, themeVariables } from '@/common/themes/index.js';
 import { getDefaultAppSettings } from '@/utils/app.js'
 import { SKINS, skinState, skinClassOf, effectiveSkinId, syncNativeChrome } from '@/utils/skin.js'
 import { hideNativeTabBar } from '@/utils/tabbar.js'
@@ -23,6 +24,9 @@ export default {
                 };
             },
             computed: {
+                activeTheme() { return resolveTheme(effectiveSkinId()); },
+                themeClass() { return `yf-themed yf-theme-${this.activeTheme.styleId}`; },
+                themeInlineStyle() { return themeVariables(this.activeTheme); },
                 haloConfig() {
                     return this.$tm.vx.getters().getConfigs;
                 },

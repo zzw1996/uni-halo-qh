@@ -1,0 +1,88 @@
+// 个人中心：纸面资料区，积分和服务卡片减少视觉噪音。
+.header-bg { background-image: none; background: $uh-bg; border-radius: 0; }
+.header-bg:after { display: none; }
+.profile-header { padding-bottom: 12rpx; }
+.profile-settings { display: flex; align-items: center; justify-content: flex-end; gap: 8rpx; margin: 0 40rpx; min-height: 60rpx; color: $uh-accent; font-size: 24rpx; }
+.user-card { margin: 0 40rpx 28rpx; padding: 8rpx 0; background: transparent; box-shadow: none; }
+.uc-avatar { width: 132rpx; height: 132rpx; background: $uh-fill; border-color: $uh-line; }
+.uc-name { font-size: 38rpx; }
+.uc-desc { margin-top: 10rpx; font-size: 26rpx; }
+.uc-level { background: $uh-accent-weak; }
+.quick-links { margin: 0 40rpx 20rpx; gap: 0; background: $uh-card; border: 1rpx solid $uh-line; border-radius: $uh-radius-lg; overflow: hidden; }
+.quick-link { padding: 26rpx 18rpx; border-radius: 0; box-shadow: none; background: transparent; gap: 12rpx; }
+.quick-link + .quick-link { border-left: 1rpx solid $uh-line; }
+.ql-icon { width: 56rpx; height: 56rpx; background: transparent; }
+.ql-icon--crown, .ql-icon--gift { background: transparent; }
+.ql-title { font-size: 26rpx; }
+.section-card { margin: 20rpx 40rpx; border: 1rpx solid $uh-line; box-shadow: none; }
+.sc-title { font-size: 32rpx; padding: 28rpx 28rpx 0; }
+.points-card { padding: 28rpx; }
+.points-card-title-wrap { flex-direction: column; align-items: flex-start; gap: 12rpx; }
+.points-card-title { font-size: 30rpx; }
+.points-card-balance { font-family: $uh-font-serif; font-size: 64rpx; line-height: 1.2; color: $uh-ink-1; }
+.points-actions-grid { gap: 16rpx; }
+.pa-card, .pa-card.pa-card--sign, .pa-card.pa-card--task, .pa-card.pa-card--sign.is-done { background: $uh-fill; border-color: $uh-line; text-align: left; align-items: flex-start; padding: 22rpx; border-radius: 20rpx; }
+.pa-icon { color: $uh-accent; }
+.pa-title { font-size: 26rpx; margin-top: 12rpx; }
+.pa-tip { white-space: normal; line-height: 1.5; font-size: 22rpx; min-height: 64rpx; }
+.pa-btn { background-image: none; background: $uh-accent; padding: 14rpx 20rpx; line-height: 1.3; }
+.pa-btn.is-done { background: $uh-accent-weak; color: $uh-accent; }
+.points-week-row { margin-top: 24rpx; padding-top: 24rpx; border-top-style: solid; }
+.points-week-item .points-week-dot { display: flex; align-items: center; justify-content: center; width: 44rpx; height: 44rpx; background: $uh-fill; border: 1rpx solid $uh-line; font-size: 24rpx; color: $uh-ink-3; }
+.points-week-item.is-signed .points-week-dot { background: $uh-accent; color: $uh-card; border-color: $uh-accent; }
+.points-week-item.is-signed .points-week-label { color: $uh-accent; }
+.points-week-item.is-today .points-week-dot { box-shadow: 0 0 0 4rpx $uh-accent-weak; }
+.service-grid { display: flex; flex-wrap: wrap; gap: 0; padding: 16rpx 12rpx 28rpx; }
+.service-item { box-sizing: border-box; width: 25%; padding: 20rpx 4rpx; }
+.service-item .service-icon { width: 80rpx; height: 80rpx; border-radius: 26rpx; background: $uh-accent-weak; color: $uh-accent; font-size: 38rpx; }
+.service-label { font-size: 22rpx; color: $uh-ink-2; }
+
+.points-card-links { flex-direction: column; align-items: flex-end; gap: 12rpx; }
+.profile-sign-button { display: flex; align-items: center; justify-content: center; min-height: 76rpx; padding: 0 32rpx; border-radius: $uh-radius-pill; background: $uh-accent; color: #ffffff; font-size: 26rpx; font-weight: 600; }
+.profile-sign-button.is-done { background: $uh-accent-weak; color: $uh-accent; }
+.profile-sign-caption { font-size: 20rpx; color: $uh-ink-3; }
+.points-actions-grid { display: block; margin-top: 24rpx; border-top: 1rpx solid $uh-line; }
+.pa-card.pa-card--task { display: flex; flex-direction: row; align-items: center; gap: 16rpx; background: transparent; border: 0; padding: 24rpx 0 8rpx; flex-wrap: wrap; }
+.pa-card--task .pa-title { margin: 0; flex: 1; }
+.pa-card--task .pa-tip { display: none; }
+.pa-card--task .pa-btn { margin: 0; background: $uh-accent-weak; color: $uh-accent; }
+
+.ql-icon, .profile-settings .haloicon { color: $uh-accent; font-size: 36rpx; }
+
+.points-card-title-wrap { flex: 1; min-width: 0; }
+.points-card-balance { font-size: 76rpx; max-width: 100%; overflow-wrap: anywhere; }
+
+// 服务入口以统一线性图标搭配柔和的语义色，保持轻量。
+.service-item { padding: 18rpx 4rpx; }
+.service-item .service-icon { width: 88rpx; height: 88rpx; border-radius: 28rpx; border: 1rpx solid rgba(23, 44, 39, .035); }
+.service-item .service-icon--green { background: #e9f3ee; }
+.service-item .service-icon--blue { background: #edf2fa; }
+.service-item .service-icon--amber { background: #f8f0e3; }
+.service-item .service-icon--coral { background: #f8eae7; }
+.service-label { margin-top: 16rpx; font-size: 23rpx; }
+.profile-page.skin-ink .service-icon--green { background: #223830 !important; }
+.profile-page.skin-ink .service-icon--blue { background: #263345 !important; }
+.profile-page.skin-ink .service-icon--amber { background: #3b3022 !important; }
+.profile-page.skin-ink .service-icon--coral { background: #402c2d !important; }
+.quick-link .ql-icon { display: flex; align-items: center; justify-content: center; width: 64rpx; height: 64rpx; border-radius: 20rpx; }
+.ql-icon--crown { background: #f8f0e3; }
+.ql-icon--gift { background: #f8eae7; }
+.profile-page.skin-ink .ql-icon--crown { background: #3b3022 !important; }
+.profile-page.skin-ink .ql-icon--gift { background: #402c2d !important; }
+.profile-settings { min-height: 44rpx; font-size: 22rpx; margin-bottom: 8rpx; }
+
+// 页面内声明随当前编译作用域一起生成，避免依赖离线主题包中的旧 scope。
+.profile-page.skin-ink {
+  background: #081528 !important;
+  color: #eaf3ff;
+  .header-bg { background: #081528 !important; background-image: none !important; }
+  .quick-links, .section-card, .profile-dialog { background: #10213b !important; border-color: #254465 !important; }
+  .quick-link, .user-card { background: transparent !important; }
+  .quick-link + .quick-link, .points-actions-grid { border-color: #254465 !important; }
+  .uc-name, .ql-title, .sc-title, .points-card-title, .points-card-balance, .pa-title { color: #eaf3ff !important; }
+  .uc-desc, .ql-sub, .service-label, .points-card-link, .profile-sign-caption, .ql-arrow { color: #9bafcc !important; }
+  .uc-level, .pa-card, .pa-card.pa-card--task { background: #192d4a !important; color: #56e3ef !important; }
+  .uc-avatar { border-color: #254465 !important; background: #192d4a !important; }
+  .profile-settings, .uc-level, .pa-btn { color: #56e3ef !important; }
+  .pa-card--task .pa-btn { background: #192d4a !important; }
+}

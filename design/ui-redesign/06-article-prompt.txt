@@ -1,0 +1,9 @@
+Use case: ui-mockup. Create one polished straight-on flat full mobile viewport Chinese WeChat blog mini program article detail UI. Portrait aspect 390:844, high resolution. Single screen no phone frame no collage no external labels no outside margins. Warm ivory #F6F7F2, white paper surfaces, deep teal #176B5B brand, charcoal #172C27, muted sage, fine lines, 16px corners. Quiet refined editorial design, realistic mobile readable text sizes, generous spacing. Consistent premium lifestyle publication visual language.
+
+iOS status time 9:41 at top with network battery, native WeChat ellipsis/circle capsule at upper right. Back chevron on upper left and small centered heading 文章. Below small muted green label 生活随笔. Large beautiful Chinese serif title exactly 把日常写成值得收藏的故事, wrapped into two lines. Author row small circular nature avatar 林间来信 and small 10月12日 · 阅读约 3 分钟. Full width tasteful rounded nature cover photograph of a sunlit quiet wooded footpath in mossy forest, no people, natural pale sage greens, occupying about 185 logical pixels. Beneath image a subtle line of outline icons and exact metadata 1,286 阅读 / 86 点赞 / 12 评论. Compact chip tags 生活记录 / 日常 / 灵感.
+
+Readable opening Chinese paragraphs on warm paper:
+有些日子很普通，却总有一个瞬间，让我们愿意停下来。
+清晨穿过窗边的光，路上偶然遇见的风，还有那些没有说出口的心情，都值得被认真记录。
+Small restrained serif subheading 从一个小小的瞬间开始.
+Following line 把生活写下来，让平凡的日常慢慢有了温度。 begins near fold, no cramped long fake text. Fixed bottom white interaction bar: pill input 写下你的想法 on left, then thin outline comment bubble with 12, heart with 86, share icon on right. Bottom home gesture bar. NO five-tab bottom navigation on article detail. Precise crisp Chinese, harmonious comfortable real app UI, no ecommerce prices or rewards.

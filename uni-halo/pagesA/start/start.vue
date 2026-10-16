@@ -1,5 +1,5 @@
 <template>
-	<view class="app-page bg-gradient-blue-lighten-b" :class="[skinClass, calcPageClass]" :style="[calcPageStyle]">
+	<view class="theme-page-pagesA-start-start app-page bg-gradient-blue-lighten-b" :class="[skinClass, calcPageClass]" :style="[calcPageStyle]">
 		<view v-if="calcBackgroundType!=='video'" class="tn-satr">
 			<view class="sky"></view>
 			<view class="stars">
@@ -598,4 +598,5 @@
 			left: -100%;
 		}
 	}
+@import '@/common/styles/redesign/pagesA-start-start-themes.scss';
 </style>
