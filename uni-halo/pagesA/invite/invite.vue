@@ -1102,5 +1102,6 @@
 		font-size: 22rpx;
 		color: $uh-accent;
 	}
+@import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-invite-invite-themes.scss';
 </style>

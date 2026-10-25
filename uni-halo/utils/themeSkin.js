@@ -29,7 +29,7 @@ export const THEME_SKINS = {
  * 未穿戴任何主题时的 tabBar 选中色。
  * 取自 pages.json 的 tabBar.selectedColor（品牌靛青），保持升级前后视觉一致。
  */
-const DEFAULT_TABBAR_SELECTED_COLOR = '#176b5b';
+const DEFAULT_TABBAR_SELECTED_COLOR = '#C2410C';
 
 /**
  * 旧格式 style（CSS 渐变值）→ 新格式主题名的映射。

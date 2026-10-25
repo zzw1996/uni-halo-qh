@@ -7,7 +7,7 @@ out=root/'static/ui-icons'; out.mkdir(parents=True,exist_ok=True)
 codes=json.loads((source/'font/codepoints.json').read_text())
 font=ImageFont.truetype(str(source/'font/lucide.ttf'),80)
 icons={'sparkles':'green','play':'blue','crown':'amber','gift':'coral','user-round-plus':'green','message-circle':'blue','history':'amber','heart':'coral','file-pen-line':'green','receipt-text':'blue','book-open-check':'green','settings-2':'blue','chart-no-axes-combined':'blue','archive':'amber','link':'green','shield-check':'blue','headset':'green','message-square-text':'blue','info':'blue','house':'green','compass':'green','images':'green','user-round':'green','shopping-bag':'green','circle-check':'green'}
-light={'green':'#176b5b','blue':'#3874a3','amber':'#a76d24','coral':'#b65b58','muted':'#65736d','active':'#176b5b'}
+light={'green':'#C2410C','blue':'#2453C9','amber':'#8A5A00','coral':'#C2410C','muted':'#706C76','active':'#C2410C'}
 dark={'green':'#91cdb8','blue':'#9ec2ed','amber':'#e2bd81','coral':'#eaa3a0','muted':'#9caaa4','active':'#9db0ff'}
 def draw(name,color,path):
     im=Image.new('RGBA',(96,96)); d=ImageDraw.Draw(im); c=chr(codes[name]); box=d.textbbox((0,0),c,font=font)

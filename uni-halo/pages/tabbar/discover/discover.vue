@@ -157,7 +157,7 @@
 		<view v-if="unlockSheetShow" class="unlock-mask" @click="unlockSheetShow = false">
 			<view class="unlock-dialog" @click.stop="">
 				<view class="unlock-close" @click="unlockSheetShow = false">
-					<tm-icons name="icon-times" :size="28" color="#65736d"></tm-icons>
+					<tm-icons name="icon-times" :size="28" color="#6A6672"></tm-icons>
 				</view>
 
 				<text class="unlock-title">解锁更多订阅额度</text>
@@ -191,7 +191,7 @@
 						<text class="unlock-option-desc">会员期内订阅上限自动提升，还能免券读付费文章</text>
 					</view>
 					<view class="unlock-arrow">
-						<tm-icons name="icon-angle-right" :size="24" color="#65736d"></tm-icons>
+						<tm-icons name="icon-angle-right" :size="24" color="#6A6672"></tm-icons>
 					</view>
 				</view>
 

@@ -12,6 +12,17 @@
 				<view v-else class="logo logo--guest flex flex-center"><text class="iconfont icon-user-circle"></text></view>
 			</view>
 		</view>
+		<!-- 枫光改版：问候 + 签到入口（签到本身在「我的」页，这里只做引导，不重复请求积分接口） -->
+		<view class="home-greet">
+			<view class="home-greet_text">
+				<text class="home-greet_hello">{{ calcGreeting }}</text>
+				<text class="home-greet_title">今天想读点什么？</text>
+			</view>
+			<view class="home-greet_chip" hover-class="home-greet_chip--pressed" :hover-stay-time="60" @click="fnToCheckin">
+				<text class="home-greet_chip-dot"></text>
+				<text class="home-greet_chip-text">签到领积分</text>
+			</view>
+		</view>
 		<view v-if="loading !== 'success' && articleList.length===0" class="loading-wrap">
 			<tm-skeleton model="card"></tm-skeleton>
 			<tm-skeleton model="cardActions"></tm-skeleton>
@@ -34,6 +45,28 @@
 				只有一张可见时 flex:1 自然占满整行。
 				视觉分工：AI 卡浅底描边（轻），视频号卡品牌渐变（重），一深一浅有层次。
 			-->
+			<!-- 枫光改版：金刚区。AI / 视频号跟随原有开关，任务与邀请是常驻玩法入口 -->
+			<view class="home-quick">
+				<view v-if="aiCardVisible" class="home-quick_item" @click="fnOpenAiContent">
+					<view class="home-quick_icon home-quick_icon--night"><uh-icon name="sparkles" :size="44"></uh-icon></view>
+					<text class="home-quick_label">AI 日报</text>
+				</view>
+				<view v-if="channelsConfig" class="home-quick_item" @click="fnOpenChannels">
+					<view class="home-quick_icon home-quick_icon--accent"><uh-icon name="play" :size="44"></uh-icon></view>
+					<text class="home-quick_label">视频号</text>
+				</view>
+				<view class="home-quick_item" @click="fnToTaskCenter">
+					<view class="home-quick_icon home-quick_icon--reward">
+						<uh-icon name="circle-check" :size="44"></uh-icon>
+						<text class="home-quick_badge">赚积分</text>
+					</view>
+					<text class="home-quick_label">每日任务</text>
+				</view>
+				<view class="home-quick_item" @click="fnToInvite">
+					<view class="home-quick_icon home-quick_icon--blue"><uh-icon name="gift" :size="44"></uh-icon></view>
+					<text class="home-quick_label">邀请有礼</text>
+				</view>
+			</view>
 			<view class="promo-row ml-24 mr-24 mt-16 mb-16" v-if="aiCardVisible || channelsConfig">
 				<!-- AI 定制内容：已开通显示徽章；未开通点进去是购买与积分兑换的引导页 -->
 				<view v-if="aiCardVisible" class="promo-card ai-card card-shadow"
@@ -254,6 +287,13 @@ export default {
 			};
 		},
 		computed: {
+			/** 按本地时间问候；带上昵称更像「对你说话」 */
+			calcGreeting() {
+				const h = new Date().getHours();
+				const part = h < 5 ? '夜深了' : h < 11 ? '早上好' : h < 13 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+				const name = this.wxUserInfo && (this.wxUserInfo.nickName || this.wxUserInfo.nickname);
+				return name ? `${part}，${name}` : part;
+			},
 			feedFallbackText() {
 				return '你订阅的分类暂时没有内容，已为你展示全站最新';
 			},
@@ -1117,6 +1157,22 @@ export default {
 					url: '/pagesA/articles/articles'
 				});
 			},
+			/** 签到在「我的」页完成（那边有连签进度与奖励），首页只负责带过去 */
+			fnToCheckin() {
+				uni.switchTab({
+					url: '/pages/tabbar/about/about'
+				});
+			},
+			fnToTaskCenter() {
+				uni.navigateTo({
+					url: '/pagesA/task-center/task-center'
+				});
+			},
+			fnToInvite() {
+				uni.navigateTo({
+					url: '/pagesA/invite/invite'
+				});
+			},
 			fnOnLogoToPage() {
 				uni.switchTab({
 					url: '/pages/tabbar/about/about'
@@ -1192,7 +1248,7 @@ export default {
 
 		// box-shadow: 0rpx 2rpx 24rpx rgba(0, 0, 0, 0.03);
 		.name {
-			color: #172c27;
+			color: #1A1A1F;
 		}
 	}
 
@@ -1202,7 +1258,7 @@ export default {
 			padding-left: 24rpx;
 			font-size: 32rpx;
 			z-index: 1;
-			color: #172c27;
+			color: #1A1A1F;
 
 			&:before {
 				content: '';

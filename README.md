@@ -389,6 +389,17 @@ P0 体积 / P1 运行时性能 / P2 图片与网络 / P3 架构（事件总线�
   - `update.js` 的 `clearStorageSync()` 已改保留清单式 `clearVolatileStorage()`（保登录态/设置/外观/`invite.*`/启动页标记）——用保留清单而不是丢弃清单，防新增缓存键漏补。**加 scheme 必须同步改 `UniHaloPluginTest` 里硬编码的类型数**（15 → 16，漏改导致索引建不起来）；Mockito 桩返回的 Flux 在重试时须重订阅，要包 `Flux.defer`。
 - **状态与版本**：已实施并全量测试通过（服务端 904 测试，含新增 19 个），插件 1.0.170 → 1.0.171。本期不做跨设备推送实时化，也不同步 `ad`/`barrage` 等无入口的键。
 
+#### 「枫光」默认主题改版（2026-10）
+
+- **结论**：默认外观从「深青绿」换成「枫光」：纸色底 `#F6F3EE`、枫红强调 `#C2410C`（文字/实底）+ `#E2502A`（大色块）、夜墨特色卡 `#1E1B2E`、日光黄奖励 `#FFC53D`。设计稿在 Claude 画布「宥枫璟小程序 UI 改版」（主页面 6 张 + 二级页面 24 张 + 规范 1 张）。
+- **默认皮肤**：`resolveSkinId` 的兜底从 `sky` 改为 `paper`（不挂皮肤类 = 基础样式本身 = 枫光）；`THEMES[0]` 新增 `paper/枫光`，其余四套（晴空/东方/极夜/手账）保留为可选主题。
+- **改色只改 `uni.scss`**，并同步 `tools/gen-skins.cjs` 的 `PALETTE`（旧青绿值以 `*Prev` 留作映射）。新增 token：`$uh-accent-bright / $uh-reward* / $uh-night* / $uh-blue* / $uh-green* / $uh-radius-xl / $uh-font-num / $uh-shadow-accent`。
+- **结构改动**：首页（问候 + 签到入口、四宫格、AI 夜墨卡）、我的（积分签到夜墨卡）、榜单（用户榜前三领奖台）、发现（分类照片墙）、二级页共用 `redesign/maple-sub.scss`（资产/身份/汇总卡夜墨化）。
+- **坑**：夜墨卡在其他四套主题下要手动还原卡片底色（各文件末尾的 `.skin-*` 段），否则会出现浅色主题里的深卡；新加元素在重新编译 + 重跑 `gen-skins.cjs` / `gen-page-themes.cjs` 之前，只有手写的 `.skin-ink` 兜底。
+- **图库重写**（`components/gallery-view`）：去掉 tm-tabs / tm-flowLayout-custom / k-touch-listen，改为「最新上传 + 相册横滑 + 分组筛选 + 瀑布/按月切换」，相册详情是组件内子视图（宿主页的下拉/触底转发照旧）；点图进自绘大图查看（标题/描述/相册/日期/保存/分享），点大图再交给原生预览缩放。相册封面与张数靠每组一次 `size=1` 请求补齐（最多 12 组），布局偏好存 `uhalo_gallery_layout`。
+- **文章分享海报重做**：弃用 `liu-poster`（它 `Promise.all` 并行绘制，图片下载快慢决定叠放顺序，分层效果画不稳），新写 `utils/posterRenderer.js`（先预取全部图片，再按顺序画在同一 context、一次 `draw()`）+ `components/uh-poster-sheet`（三套模板：夜墨封面 / 枫光纸笺 / 金句卡，左右滑切换、按需生成并缓存、记住上次选择；保存相册 + `wx.showShareImageMenu` 发好友）。逻辑尺寸 375×680，导出 ×pixelRatio（≤3）。金句取摘要第一句；**不要用正则后行断言**，iOS 16.4 以下 JSCore 会整模块解析失败。
+- **图标**：`static/tabbar/paper_*` 与 `static/ui-icons/*.png`（无后缀版）按 alpha 重新着色为枫红，未动矢量源；以后用 `generate-ui-icons.py` 重生成时要把 `light` 色表改成枫光取值。
+
 ### 4.6 架构演进
 
 #### uni-halonew 重建方案

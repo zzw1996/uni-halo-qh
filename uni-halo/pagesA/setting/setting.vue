@@ -546,7 +546,7 @@ import { chooseUiTheme, appearanceLabelOf as themeAppearanceLabel } from '@/util
 					.then(res => {
 						this.isSaved = true;
 						uni.$tm.vx.actions('setting/updateDefaultAppSettings');
-                        this.fnChooseTheme('sky');
+                        this.fnChooseTheme('paper');
 						uni.$tm.toast('系统设置已恢复为默认配置，部分设置在重启后生效！');
 					})
 					.catch(err => {});

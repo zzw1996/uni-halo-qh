@@ -45,3 +45,47 @@
 .promo-desc { -webkit-line-clamp: 1; }
 .promo-action { padding-top: 8rpx; }
 .channels-avatar_play { display: flex; align-items: center; justify-content: center; }
+
+/* ===================== 枫光改版（2026-10） ===================== */
+.home-greet { display: flex; align-items: flex-end; justify-content: space-between; gap: 16rpx; margin: 4rpx 40rpx 24rpx; }
+.home-greet_text { display: flex; flex-direction: column; min-width: 0; }
+.home-greet_hello { font-size: 26rpx; color: $uh-ink-3; }
+.home-greet_title { margin-top: 4rpx; font-size: 46rpx; font-weight: 700; line-height: 1.3; color: $uh-ink-1; }
+.home-greet_chip { flex-shrink: 0; display: flex; align-items: center; gap: 10rpx; height: 72rpx; padding: 0 28rpx 0 22rpx; border-radius: $uh-radius-pill; background: $uh-reward-weak; }
+.home-greet_chip--pressed { opacity: .85; }
+.home-greet_chip-dot { width: 16rpx; height: 16rpx; border-radius: 50%; background: $uh-accent-bright; }
+.home-greet_chip-text { font-size: 26rpx; font-weight: 700; color: $uh-ink-1; }
+
+.home-search-row .search-input { height: 88rpx; border: 0; }
+.banner { border-radius: $uh-radius-xl; }
+
+.home-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16rpx; margin: 8rpx 40rpx 32rpx; }
+.home-quick_item { display: flex; flex-direction: column; align-items: center; gap: 12rpx; }
+.home-quick_icon { position: relative; display: flex; align-items: center; justify-content: center; width: 104rpx; height: 104rpx; border-radius: 36rpx; }
+.home-quick_icon--night { background: $uh-night; }
+.home-quick_icon--accent { background: $uh-accent-weak; }
+.home-quick_icon--reward { background: $uh-reward-weak; }
+.home-quick_icon--blue { background: $uh-blue-weak; }
+.home-quick_badge { position: absolute; top: -10rpx; right: -18rpx; padding: 2rpx 10rpx; border-radius: $uh-radius-pill; background: $uh-accent-bright; color: #ffffff; font-size: 18rpx; font-weight: 700; }
+.home-quick_label { font-size: 24rpx; font-weight: 500; color: $uh-ink-1; }
+
+/* AI 卡升级为夜墨特色卡：首页最醒目的一块运营位 */
+.ai-card { background: $uh-night; border: 0; }
+.ai-card .ai-card-icon { background: rgba(255, 197, 61, 0.16); }
+.ai-card .promo-title--ai { color: #ffffff; }
+.ai-card .promo-desc--ai { color: $uh-night-text-2; }
+.ai-card .promo-action_text--ai, .ai-card .promo-action_arrow--ai { color: $uh-reward; }
+.ai-card .ai-card-badge { background: rgba(255, 197, 61, 0.16); color: $uh-reward; }
+
+.promo-card { border: 0; }
+.page-item_title { font-family: inherit; font-weight: 900; font-size: 38rpx; }
+.home-fab--publish { box-shadow: $uh-shadow-accent; min-height: 96rpx; padding: 0 36rpx 0 28rpx; }
+.home-fab_label { font-size: 28rpx; font-weight: 700; }
+
+/* 深色（极夜）皮肤：新增元素在重跑皮肤生成器之前，这里手写兜底 */
+.skin-ink .home-greet_title, .skin-ink .home-quick_label { color: #eaf3ff; }
+.skin-ink .home-greet_hello { color: #9bafcc; }
+.skin-ink .home-greet_chip { background: #192d4a; }
+.skin-ink .home-greet_chip-text { color: #eaf3ff; }
+.skin-ink .home-quick_icon--accent, .skin-ink .home-quick_icon--reward, .skin-ink .home-quick_icon--blue { background: #192d4a; }
+.skin-ink .ai-card { background: #10213b; border: 1rpx solid #254465; }

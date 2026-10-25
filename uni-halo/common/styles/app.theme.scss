@@ -7,13 +7,13 @@
 // 而选择器列表里有一个非法选择器会整条规则被丢弃；两个选择器分开写，page 段才能生效。
 // 旧值：--theme #f79ea3（樱花粉）→ 品牌靛青；--main* → 墨色文字
 page {
-	--theme: #176b5b;
-	--main: #172c27;
-	--main-text-color: #172c27;
+	--theme: #C2410C;
+	--main: #1A1A1F;
+	--main-text-color: #1A1A1F;
 }
 
 :root {
-	--theme: #176b5b;
-	--main: #172c27;
-	--main-text-color: #172c27;
+	--theme: #C2410C;
+	--main: #1A1A1F;
+	--main-text-color: #1A1A1F;
 }

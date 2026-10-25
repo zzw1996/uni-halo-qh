@@ -87,3 +87,23 @@
   .rank-icon-letter, .tile-icon-letter, .unlock-price-num, .unlock-price-unit { color: #56e3ef !important; }
   .unlock-option-icon { background: #10213b !important; }
 }
+
+/* ===================== 枫光改版（2026-10）：分类照片墙 =====================
+   封面铺满磁贴、名字压在底部渐暗上；比图标格子更想点进去。
+   选择器刻意写长：要压过各主题文件里同名类的 !important 颜色。 */
+.app-page .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20rpx; padding: 20rpx 32rpx 0; }
+.app-page .cat-grid .cat-tile, .app-page .cat-grid .cat-tile.is-on { height: 300rpx; padding: 0; border: 0; border-radius: $uh-radius-lg; background: $uh-ink-1; box-shadow: none; }
+.app-page .cat-grid .cat-tile .tile-main { position: absolute; left: 0; top: 0; right: 0; bottom: 0; align-items: flex-start; justify-content: flex-end; padding: 24rpx; box-sizing: border-box; }
+.app-page .cat-grid .cat-tile .tile-main .tile-icon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 0; z-index: 0; }
+.app-page .cat-grid .cat-tile .tile-main .tile-icon-fallback { background: $uh-accent !important; }
+.app-page .cat-grid .cat-tile .tile-main .tile-icon-letter { font-size: 96rpx; opacity: .35; }
+.app-page .cat-grid .cat-tile .tile-main:after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 180rpx; background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .62)); z-index: 1; }
+.app-page .cat-grid .cat-tile .tile-main .tile-name { position: relative; z-index: 2; margin-top: 0; font-size: 32rpx; font-weight: 900; color: #ffffff !important; }
+.app-page .cat-grid .cat-tile .tile-main .tile-meta { position: relative; z-index: 2; margin-top: 4rpx; font-size: 22rpx; color: rgba(255, 255, 255, .88) !important; }
+.app-page .cat-grid .cat-tile .tile-btn { left: auto; right: 16rpx; top: 16rpx; bottom: auto; width: auto; height: 52rpx; padding: 0 20rpx; border-radius: $uh-radius-pill; background: rgba(255, 255, 255, .92) !important; z-index: 3; }
+.app-page .cat-grid .cat-tile .tile-btn .tile-btn-text { color: $uh-accent !important; font-size: 22rpx; font-weight: 700; }
+.app-page .cat-grid .cat-tile .tile-btn.is-on { background: $uh-accent !important; }
+.app-page .cat-grid .cat-tile .tile-btn.is-on .tile-btn-text { color: #ffffff !important; }
+.app-page .cat-grid .cat-tile .tile-paused-flag, .app-page .cat-grid .cat-tile .tile-wall-flag { z-index: 3; }
+.app-page .rank-list .rank-no-1 { color: $uh-accent-bright; }
+.app-page .section-title { font-weight: 900; }

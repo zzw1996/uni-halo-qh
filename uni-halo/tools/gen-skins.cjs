@@ -33,22 +33,35 @@ const PALETTE = {
 	accentAltLegacy: '#4c6ef5',
 	accentWeakLegacy: '#eef2fe',
 
-	ink1: '#172c27',
-	ink2: '#445c52',
-	ink3: '#65736d',
-	ink4: '#a4afa8',
-	bg: '#f6f7f2',
+	// 「枫光」改版（2026-10）前的深青绿取值：旧编译产物/旧硬编码里仍可能出现，按同名 token 映射
+	ink1Prev: '#172c27',
+	ink2Prev: '#445c52',
+	ink3Prev: '#65736d',
+	ink4Prev: '#a4afa8',
+	bgPrev: '#f6f7f2',
+	fillPrev: '#edf1eb',
+	linePrev: '#e3e8e2',
+	accentPrev: '#176b5b',
+	accentAltPrev: '#247d6b',
+	accentWeakPrev: '#e7f0e9',
+
+	// 当前设计系统取值（与 uni.scss 的 $uh-* 一致）
+	ink1: '#1a1a1f',
+	ink2: '#45424b',
+	ink3: '#6a6672',
+	ink4: '#a8a3ad',
+	bg: '#f6f3ee',
 	card: '#ffffff',
-	fill: '#edf1eb',
-	line: '#e3e8e2',
-	accent: '#176b5b',
-	accentAlt: '#247d6b',
-	accentWeak: '#e7f0e9',
+	fill: '#f1ece4',
+	line: '#ece6dd',
+	accent: '#c2410c',
+	accentAlt: '#e2502a',
+	accentWeak: '#fdebe3',
 	// 设计系统里三类语义浅底（成功/警告/危险）。深色皮肤必须把它们也翻成暗色，
 	// 否则深色下的成功提示、告警标签会是一块刺眼的浅色（新加的底栏/徽标都用到它们）
-	successWeak: '#eaf4ec',
-	warningWeak: '#faf0dd',
-	dangerWeak: '#faecea',
+	successWeak: '#e3f3ea',
+	warningWeak: '#fff4d6',
+	dangerWeak: '#fbe1d8',
 	/* ── 以下是各页面历史上直接写死的浅色（不在设计 Token 里）──
 	   深色模式下它们会留成白块（实测：我的页的快捷入口/签到卡/抽奖卡、文章页正文卡等）。
 	   登记进调色板后，只有下面的 ink 皮肤给它们映射，浅色皮肤（青瓷/晨光）完全不受影响。 */
@@ -232,6 +245,7 @@ const hexOf = (token) => PALETTE[token];
 for (const skin of Object.values(SKINS)) {
 	for (const token of ['ink1', 'ink2', 'ink3', 'ink4', 'bg', 'fill', 'line', 'accent', 'accentAlt', 'accentWeak'] ) {
 		if (skin.map[token]) skin.map[token + 'Legacy'] = skin.map[token];
+		if (skin.map[token]) skin.map[token + 'Prev'] = skin.map[token];
 	}
 }
 
@@ -335,7 +349,7 @@ function retint(prop, value, map, shadow, whiteAlpha) {
 	let changed = false;
 
 	for (const [token, hex] of Object.entries(PALETTE)) {
-		const baseToken = token.replace(/Legacy$/, '');
+		const baseToken = token.replace(/(Legacy|Prev)$/, '');
 		const to = /^background/.test(prop) && map[baseToken + 'Fill'] ? map[baseToken + 'Fill'] : map[token];
 		if (!to) continue;
 		// color: #ffffff 是「彩色底上的白字」，不能跟着卡片底色一起翻

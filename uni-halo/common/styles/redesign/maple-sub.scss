@@ -1,0 +1,32 @@
+// 枫光改版（2026-10）· 二级页面共用：顶部「资产 / 身份 / 汇总」卡统一成夜墨特色卡，
+// 列表卡去描边加大圆角。只在页面自己的 scoped 样式里 @import，类名不会跨页串。
+// 其他四套主题在文末把特色卡还原成各自的卡片色（文字色由各页主题文件覆盖）。
+
+.app-page {
+ .asset-card, .identity-card, .summary-card { background: $uh-night !important; background-image: none !important; border: 0 !important; border-radius: $uh-radius-xl !important; box-shadow: none !important; }
+ .asset-label, .summary-label, .summary-label-secondary, .asset-note, .identity-progress-label { color: $uh-night-text-2 !important; }
+ .asset-value, .summary-value, .identity-nickname, .identity-level { color: #ffffff !important; font-family: $uh-font-num; font-weight: 800; }
+ .summary-unit, .identity-progress-percent { color: $uh-night-text-2 !important; }
+ .asset-chip { background: $uh-night-fill !important; border: 0 !important; }
+ .asset-chip-label { color: $uh-night-text-2 !important; }
+ .asset-chip-value, .summary-balance { color: $uh-reward !important; font-family: $uh-font-num; font-weight: 800; }
+ .level-track { background: $uh-night-fill !important; }
+ .level-fill { background: $uh-reward !important; background-image: none !important; }
+ .section-card, .goods-card, .task-card, .order-item, .article-item, .poster-card { border: 0 !important; border-radius: $uh-radius-lg !important; box-shadow: none !important; }
+ .goods-card--spotlight { box-shadow: 0 0 0 4rpx $uh-accent-bright !important; }
+ .invite-card { background: $uh-accent !important; background-image: none !important; border: 0 !important; border-radius: $uh-radius-xl !important; }
+ .invite-card .invite-title, .invite-card .invite-sub, .invite-card .invite-stat-label { color: rgba(255, 255, 255, .9) !important; }
+ .invite-card .invite-stat-value { color: $uh-reward !important; font-family: $uh-font-num; font-weight: 800; }
+ .invite-card .invite-code-box { background: #ffffff !important; }
+ .invite-card .invite-code-value { color: $uh-ink-1 !important; font-family: $uh-font-num; font-weight: 800; letter-spacing: 6rpx; }
+ .reward-text { color: $uh-accent !important; font-family: $uh-font-num; font-weight: 800; }
+ .progress-fill { background: $uh-accent-bright !important; background-image: none !important; }
+ .order-status--done { color: $uh-green !important; background: $uh-green-weak !important; }
+ .order-status--pending { color: $uh-accent !important; background: $uh-accent-weak !important; }
+}
+
+/* 其他主题：特色卡还原成各自的卡片色 */
+.app-page.skin-sky { .asset-card, .identity-card, .summary-card { background: #ffffff !important; } .invite-card { background: #0874d5 !important; } }
+.app-page.skin-mint { .asset-card, .identity-card, .summary-card { background: #fffdf7 !important; } .invite-card { background: #a83e32 !important; } }
+.app-page.skin-sunrise { .asset-card, .identity-card, .summary-card { background: #fffaf0 !important; } .invite-card { background: #a34f31 !important; } }
+.app-page.skin-ink { .asset-card, .identity-card, .summary-card { background: #10213b !important; } .invite-card { background: #176783 !important; } }

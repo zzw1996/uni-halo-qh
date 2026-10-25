@@ -1898,5 +1898,6 @@
 		line-height: 1.7;
 		color: #a1a6b8;
 	}
+@import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-points-recharge-points-recharge-themes.scss';
 </style>

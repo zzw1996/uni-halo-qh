@@ -76,60 +76,83 @@ $uni-color-paragraph: #3F536E; // 文章段落颜色
 $uni-font-size-paragraph:15px;
 
 /* ============================================================
- * 设计 Token ——「暖白纸面 · 深青绿」
+ * 设计 Token ——「枫光」（2026-10 改版：纸色底 · 枫红强调 · 夜墨特色卡 · 日光黄奖励）
  *
  * 本文件由 uni-app 自动注入每个 <style lang="scss"> 块，因此全项目
- * 直接使用 $uh-* 即可，无需 import。
+ * 直接使用 $uh-* 即可，无需 import。设计稿见 Claude 画布「宥枫璟小程序 UI 改版」。
  *
  * 为什么是 SCSS 变量而不是 CSS 自定义属性：小程序端 WXSS 对
  * `page, :root { --x: y }` 这类规则的解析不可靠（:root 非 WXSS 选择器，
  * 整条规则会被丢弃），一旦变量没定义，所有 var(--x) 都会失效，
  * 表现为背景变透明、整页塌成白色。SCSS 变量在编译期就替换成字面值，
  * 不依赖运行时能力，三端一致。
+ *
+ * 改了这里的取值，tools/gen-skins.cjs 的 PALETTE 要同步（皮肤是按取值反查替换的）。
  * ============================================================ */
 
-/* ===== 品牌强调色 · 深青绿 ===== */
-$uh-accent: #176b5b;
-$uh-accent-strong: #105345;
+/* ===== 品牌强调色 · 枫红 ===== */
+/* 文字、按钮实底一律用 $uh-accent（与白底对比 5.2:1）；$uh-accent-bright 只做大色块/徽标/进度条 */
+$uh-accent: #C2410C;
+$uh-accent-strong: #9A3412;
+$uh-accent-bright: #E2502A;
 /* 强调色淡底：胶囊按钮、提示条、选中态背景 */
-$uh-accent-weak: #e7f0e9;
-/* 主渐变：替代旧 #667eea → #764ba2 蓝紫渐变 */
-$uh-grad-accent: linear-gradient(135deg, #176b5b 0%, #247d6b 100%);
+$uh-accent-weak: #FDEBE3;
+$uh-grad-accent: linear-gradient(135deg, #C2410C 0%, #E2502A 100%);
+
+/* ===== 奖励色 · 日光黄（积分、签到、徽章；其上文字用 $uh-ink-1） ===== */
+$uh-reward: #FFC53D;
+$uh-reward-weak: #FFF4D6;
+$uh-reward-ink: #8A5A00;
+
+/* ===== 夜墨 · 特色卡（AI 日报、会员卡、榜单头） ===== */
+$uh-night: #1E1B2E;
+$uh-night-line: rgba(255, 255, 255, 0.14);
+$uh-night-fill: rgba(255, 255, 255, 0.12);
+$uh-night-text-2: rgba(255, 255, 255, 0.75);
+
+/* ===== 辅助浅底（只做图标底） ===== */
+$uh-blue: #2453C9;
+$uh-blue-weak: #E6EEFE;
+$uh-green: #1D7A4C;
+$uh-green-weak: #E3F3EA;
 
 /* ===== 墨色文字四级 ===== */
-$uh-ink-1: #172c27;
-$uh-ink-2: #445c52;
-$uh-ink-3: #65736d;
+$uh-ink-1: #1A1A1F;
+$uh-ink-2: #45424B;
+$uh-ink-3: #6A6672;
 /* 占位 / 禁用 */
-$uh-ink-4: #a4afa8;
+$uh-ink-4: #A8A3AD;
 
 /* ===== 纸面层次 ===== */
-/* 页面底：暖纸灰。与纯白卡片要保持肉眼可辨的明度差，太浅会退化成"整页全白" */
-$uh-bg: #f6f7f2;
+$uh-bg: #F6F3EE;
 $uh-card: #ffffff;
 /* 输入框、次级按钮等浅底（白卡片内部用） */
-$uh-fill: #edf1eb;
+$uh-fill: #F1ECE4;
 /* 分割线 / 描边 */
-$uh-line: #e3e8e2;
+$uh-line: #ECE6DD;
 
 /* ===== 功能色（仅状态语义，不做装饰） ===== */
-$uh-success: #46a35b;
-$uh-success-weak: #eaf4ec;
-$uh-warning: #e8930c;
-$uh-warning-weak: #faf0dd;
-$uh-danger: #d9483b;
-$uh-danger-weak: #faecea;
+$uh-success: #1D7A4C;
+$uh-success-weak: #E3F3EA;
+$uh-warning: #B26A00;
+$uh-warning-weak: #FFF4D6;
+$uh-danger: #C62F1F;
+$uh-danger-weak: #FBE1D8;
 
 /* ===== 圆角 ===== */
 $uh-radius-sm: 16rpx;
-$uh-radius-md: 24rpx;
-$uh-radius-lg: 32rpx;
+$uh-radius-md: 28rpx;
+$uh-radius-lg: 40rpx;
+$uh-radius-xl: 48rpx;
 $uh-radius-pill: 999rpx;
 
-/* ===== 阴影（双层柔和，替代单层重阴影） ===== */
+/* ===== 阴影：只给悬浮按钮与浮层卡 ===== */
 $uh-shadow-sm: 0 2rpx 8rpx rgba(31, 31, 31, 0.04);
 $uh-shadow-md: 0 2rpx 8rpx rgba(31, 31, 31, 0.04), 0 12rpx 32rpx rgba(31, 31, 31, 0.06);
+$uh-shadow-accent: 0 16rpx 40rpx rgba(194, 65, 12, 0.32);
 
 /* ===== 字体 ===== */
 /* 衬线标题（文章详情），移动端按平台回落到系统宋体 */
 $uh-font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+/* 数字：积分、排名、日期。小程序无 Outfit 时回落到系统等宽数字 */
+$uh-font-num: 'DIN Alternate', 'Outfit', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;

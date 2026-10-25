@@ -625,5 +625,6 @@
 		color: #b3800a;
 	}
 
+@import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-identity-identity-themes.scss';
 </style>

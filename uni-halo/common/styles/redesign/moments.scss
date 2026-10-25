@@ -11,3 +11,16 @@
 .images { padding: 0 22rpx 20rpx; }
 .images .image-item { overflow: hidden; }
 .images-1 > .image-item { height: 400rpx; }
+
+/* ===================== 枫光改版（2026-10） ===================== */
+.feed-tabs { gap: 12rpx; }
+.feed-tab { padding: 14rpx 32rpx; border-radius: $uh-radius-pill; background: $uh-card; border-bottom: 0; font-size: 28rpx; }
+.feed-tab.is-active { background: $uh-ink-1; color: #ffffff; font-weight: 700; }
+.moment-card { border: 0; border-radius: $uh-radius-lg; overflow: hidden; }
+.moment-card__avatar { padding: 4rpx; border-radius: 50%; background: linear-gradient(135deg, $uh-accent-bright, $uh-reward); }
+.moment-card__avatar-img { border: 4rpx solid $uh-card; box-sizing: border-box; }
+.moment-card__name { font-weight: 700; }
+.images { padding: 0 28rpx 24rpx; }
+.images .image-item { border-radius: 20rpx; }
+.skin-ink .feed-tab { background: #10213b; color: #9bafcc; }
+.skin-ink .feed-tab.is-active { background: #56e3ef; color: #081528; }

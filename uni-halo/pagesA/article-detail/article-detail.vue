@@ -214,7 +214,7 @@
 							:lines="3"
 							:tip-text="`此处内容已隐藏，「${getRestrictReadTypeName(result)}可见」`"
 							:button-text="`${getRestrictReadTypeName(result)}`"
-							button-color="#176B5B"
+							button-color="#C2410C"
 							animation-duration="2"
 							@refresh="readMore"
 						/>
@@ -405,29 +405,8 @@
 			</view>
 		</tm-poup>
  
-		<tm-poup v-model="poster.show" width="90vw" height="auto" :round="6" :over-close="true" position="center">
-			<view class="poster-content pt-12 bg-white">
-				<liu-poster ref="liuPoster" :width="674" :height="940" @change="handleOnPosterChange"></liu-poster>
-				<view v-if="poster.loading" class="poster-loading flex flex-center text-grey-darken-1">
-					<text class="e-loading-icon iconfont icon-loading"></text>
-					<text class="ml-6">海报正在生成...</text>
-				</view>
-				<block v-if="!poster.loading">
-					<image
-						:style="{
-							width: '100%',
-							height: '940rpx'
-						}"
-						:src="poster.url"
-					></image>
-					<view class="poster-save ma-24 mt-0 pt-20 flex flex-center">
-						<tm-button theme="bg-gradient-indigo-accent" size="m" @click="fnSavePoster()">保存到相册</tm-button>
-						<tm-button v-if="false" theme="bg-gradient-orange-accent" size="m" @click="fnShareTo()">分享给好友</tm-button>
-						<tm-button theme="bg-gradient-blue-grey-accent" size="m" @click="fnOnPosterClose()">关 闭</tm-button>
-					</view>
-				</block>
-			</view>
-		</tm-poup>
+		<!-- 分享海报：三套模板（夜墨封面 / 枫光纸笺 / 金句卡），绘制见 utils/posterRenderer.js -->
+		<uh-poster-sheet :show.sync="poster.show" :data="poster.data" @close="fnOnPosterClose"></uh-poster-sheet>
 
 		<!-- 评论弹窗 -->
 		<block v-if="calcIsShowComment">
@@ -490,10 +469,12 @@ import { checkPostRestrictRead, copyToClipboard, getRestrictReadTypeName } from 
 import HaloTokenConfig from '@/config/uhalo.config';
 import RestrictReadSkeleton from '@/pagesA/components/restrict-read-skeleton/restrict-read-skeleton.vue';
 import pluginAvailableMixin from '@/common/mixins/pluginAvailable.js';
+import UhPosterSheet from '@/components/uh-poster-sheet/uh-poster-sheet.vue';
 
 export default {
 	mixins: [pluginAvailableMixin],
 	components: {
+		UhPosterSheet,
 		RestrictReadSkeleton,
 		tmSkeleton,
 		tmPoup,
@@ -559,11 +540,8 @@ export default {
 			},
 			poster: {
 				show: false,
-				showCanvas: false,
-				loading: true,
-				res: null,
-				url: '',
-				configs: []
+				/** 交给 uh-poster-sheet 的原始数据（见 posterRenderer.normalizePosterData） */
+				data: null
 			},
 
 			metas: [], // 自定义元数据
@@ -782,6 +760,8 @@ export default {
 		this.fnGetData();
 	},
 	onShow() {
+		// 右上角「复制链接」带上文章标题（必须在下面的提前 return 之前注册）
+		this.fnBindCopyUrl();
 		// 从积分充值页获取阅读券后返回：重新拉取锁定态，
 		// 否则卡片仍显示旧的「0 张」，用户以为没到账。只复查一次。
 		if (this._needRecheckLock && this.loading === 'locked') {
@@ -796,8 +776,23 @@ export default {
 	onPullDownRefresh() {
 		this.fnGetData();
 	},
+	onHide() {
+		// wx.onCopyUrl 是全局监听，离开本页必须摘掉，否则别的页面复制链接会带上这篇文章
+		this.fnUnbindCopyUrl();
+	},
 	onUnload() {
 		this.fnClearBrowsePointsTimer();
+		this.fnUnbindCopyUrl();
+	},
+	// 右上角菜单「收藏」：存进用户的微信收藏，日后从收藏点开即回流。
+	// 官方注明 Beta、暂仅安卓支持；iOS 上菜单里没有该项，不影响其他功能。
+	onAddToFavorites() {
+		const meta = this.fnGetShareMeta();
+		return {
+			title: meta.title,
+			imageUrl: meta.cover,
+			query: 'name=' + encodeURIComponent(meta.name)
+		};
 	},
 	onShareAppMessage() {
 		// 付费锁定态下 result 为 null（正文被后端拦截），
@@ -843,6 +838,49 @@ export default {
 	},
 	methods: {
 		getRestrictReadTypeName,
+		/** 分享/收藏/复制链接共用的标题、封面、文章名；付费锁定态下 result 为 null，用锁定信息兜底 */
+		fnGetShareMeta() {
+			if (!this.result) {
+				const lock = this.contentLock;
+				return {
+					name: this.queryParams.name || '',
+					title: lock?.title || '付费内容',
+					cover: lock?.cover ? this.calcUrl(lock.cover) : ''
+				};
+			}
+			return {
+				name: this.result.metadata.name,
+				title: this.result.spec.title,
+				cover: this.result.spec.cover ? this.calcUrl(this.result.spec.cover) : ''
+			};
+		},
+		/** 复制链接回调：query 决定短链打开的文章；title 为基础库 3.15.1 起支持的自定义标题，低版本会忽略 */
+		fnOnCopyUrl() {
+			const meta = this.fnGetShareMeta();
+			let query = 'name=' + encodeURIComponent(meta.name);
+			const inviteCode = uni.getStorageSync('invite.code') || '';
+			if (inviteCode) {
+				query += '&inviteCode=' + encodeURIComponent(inviteCode);
+			}
+			return { query, title: meta.title };
+		},
+		fnBindCopyUrl() {
+			// #ifdef MP-WEIXIN
+			if (this._copyUrlBound || typeof wx === 'undefined' || typeof wx.onCopyUrl !== 'function') return;
+			// 传方法引用（Vue 已绑定 this，引用稳定），offCopyUrl 才能精确摘除
+			wx.onCopyUrl(this.fnOnCopyUrl);
+			this._copyUrlBound = true;
+			// #endif
+		},
+		fnUnbindCopyUrl() {
+			// #ifdef MP-WEIXIN
+			if (!this._copyUrlBound) return;
+			if (typeof wx !== 'undefined' && typeof wx.offCopyUrl === 'function') {
+				wx.offCopyUrl(this.fnOnCopyUrl);
+			}
+			this._copyUrlBound = false;
+			// #endif
+		},
 		checkPostRestrictRead,
 		/**
 		 * 详情页底部的两块内容：上一篇/下一篇、猜你喜欢。
@@ -1465,38 +1503,33 @@ export default {
 			this.fnGeneratePoster();
 		},
 		async fnGeneratePoster() {
-			this.poster.show = true;
-			this.poster.loading = true;
-			if (this._posterTimer) {
-				clearTimeout(this._posterTimer);
-			}
-			this._posterTimer = setTimeout(() => {
-				if (this.poster.loading) {
-					uni.hideLoading();
-					this.poster.loading = false;
-					this.poster.show = false;
-					uni.$tm.toast('海报生成超时，请检查图片配置');
-				}
-			}, 20000);
+			if (!this.result) return;
+			uni.showLoading({ title: '准备海报…', mask: true });
 			try {
-				await this.handleCreatePoster();
-				setTimeout(() => {
-					this.poster.showCanvas = true;
-					this.$nextTick(() => {
-						if (this.$refs.liuPoster) {
-							this.$refs.liuPoster.init(this.poster.configs);
-						}
-					});
-				}, 500);
+				const posterUser = this.getPosterUserInfo();
+				const qr = await this.qrCodeImageUrl();
+				const spec = this.result.spec || {};
+				const cats = (this.result.categories || []).map(c => c && c.spec && c.spec.displayName).filter(Boolean);
+				const appInfo = this.haloConfigs?.appConfig?.appInfo || {};
+				this.poster.data = {
+					title: spec.title,
+					excerpt: this.result?.status?.excerpt || '',
+					cover: spec.cover ? this.getPosterImageUrl(this.$utils.checkThumbnailUrl(spec.cover, true)) : '',
+					category: cats[0] || '',
+					publishTime: spec.publishTime,
+					visit: this.result?.stats?.visit,
+					upvote: this.result?.stats?.upvote,
+					siteName: appInfo.name || '',
+					sharer: posterUser.nickname,
+					avatar: posterUser.avatar,
+					qr: this.getPosterImageUrl(this.$utils.checkImageUrl(qr))
+				};
+				this.poster.show = true;
 			} catch (err) {
-				if (this._posterTimer) {
-					clearTimeout(this._posterTimer);
-					this._posterTimer = null;
-				}
-				console.error('[article-detail] 海报生成失败', err);
-				this.poster.loading = false;
-				this.poster.show = false;
-				uni.$tm.toast(err?.detail || err?.message || err?.error || '海报生成失败，请稍后重试');
+				console.error('[article-detail] 海报数据准备失败', err);
+				uni.$tm.toast(err?.detail || err?.message || '海报生成失败，请稍后重试');
+			} finally {
+				uni.hideLoading();
 			}
 		},
 		handleOnPosterChange(url) {
@@ -1682,8 +1715,6 @@ export default {
 		}, 
 		fnOnPosterClose() {
 			this.poster.show = false;
-			this.poster.showCanvas = false;
-			this.poster.loading = true;
 		},
 		fnGetAlbumAuthorize() {
 			return new Promise((resolve) => {

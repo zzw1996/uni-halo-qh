@@ -6,6 +6,18 @@
 .checkin-week-label {font-size:19rpx;line-height:1.5;white-space:nowrap;}
 .checkin-mark {font-size:30rpx;line-height:1;font-family:sans-serif;font-weight:700;color:inherit;}
 .checkin-day {font-size:22rpx;line-height:1;color:inherit;}
+/* 默认「枫光」（不挂皮肤类）：签到条在夜墨积分卡里。放在各皮肤规则之前，皮肤选择器更具体会自然覆盖 */
+.profile-page {
+ .checkin-action {background:#FFC53D;color:#1A1A1F;}
+ .checkin-action.is-done {background:rgba(255,255,255,.12);color:#FFC53D;}
+ .checkin-week-row {border-color:rgba(255,255,255,.14);}
+ .checkin-week-item .checkin-week-dot {background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.75);}
+ .checkin-week-item .checkin-week-label {color:rgba(255,255,255,.7);}
+ .checkin-week-item.is-signed .checkin-week-dot {background:#E2502A;border-color:#E2502A;color:#ffffff;}
+ .checkin-week-item.is-signed .checkin-week-label {color:#ffffff;}
+ .checkin-week-item.is-today .checkin-week-dot {box-shadow:none;outline:3rpx solid #FFC53D;outline-offset:5rpx;}
+ .checkin-week-item.is-today .checkin-week-label {color:#FFC53D;font-weight:700;}
+}
 $checkin-themes: (
  sky: (#0874d5,#ffffff,#f0f6fc,#d4e5f5,#647a91,#e4f3ff),
  mint: (#a83e32,#fffdf7,#f4f0e7,#ded8c9,#74796d,#f3e6df),

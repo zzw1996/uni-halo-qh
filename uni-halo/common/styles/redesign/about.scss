@@ -86,3 +86,33 @@
   .profile-settings, .uc-level, .pa-btn { color: #56e3ef !important; }
   .pa-card--task .pa-btn { background: #192d4a !important; }
 }
+
+/* ===================== 枫光改版（2026-10） =====================
+   积分 + 签到合成一张夜墨主卡：页面上最想让人点的就是它。
+   其他四套主题在文末把卡片底色还原（文字色由各自的主题文件覆盖）。 */
+.profile-page .user-card { margin-bottom: 20rpx; }
+.profile-page .uc-avatar { border: 6rpx solid $uh-accent-bright; }
+.profile-page .uc-name { font-weight: 900; font-size: 42rpx; }
+.profile-page .uc-level { background: $uh-ink-1; color: $uh-reward; font-weight: 700; }
+.profile-page .quick-links { border: 0; }
+.profile-page .section-card { border: 0; border-radius: $uh-radius-xl; }
+.profile-page .points-card { background: $uh-night; padding: 36rpx 32rpx; }
+.profile-page .points-card .points-card-title { color: $uh-night-text-2; font-size: 26rpx; font-weight: 500; }
+.profile-page .points-card .points-card-balance { font-family: $uh-font-num; font-weight: 800; font-size: 84rpx; color: #ffffff; }
+.profile-page .points-card .points-card-link { color: $uh-reward; }
+.profile-page .points-card .profile-sign-caption { color: $uh-night-text-2; }
+.profile-page .points-card .checkin-action { font-weight: 700; }
+.profile-page .points-card .points-actions-grid { border-top-color: $uh-night-line; }
+.profile-page .points-card .pa-title { color: #ffffff; }
+.profile-page .points-card .pa-card--task .pa-btn { background: $uh-reward; color: $uh-ink-1; font-weight: 700; }
+.profile-page .service-item .service-icon { border: 0; }
+.profile-page .service-item .service-icon--green { background: $uh-accent-weak; }
+.profile-page .service-item .service-icon--blue { background: $uh-blue-weak; }
+.profile-page .service-item .service-icon--amber { background: $uh-reward-weak; }
+.profile-page .service-label { color: $uh-ink-1; }
+/* 其他主题：积分卡回到各自的卡片色 */
+.profile-page.skin-sky .points-card { background: #ffffff; }
+.profile-page.skin-mint .points-card { background: #fffdf7; }
+.profile-page.skin-sunrise .points-card { background: #fffaf0; }
+.profile-page.skin-ink .points-card { background: #10213b; }
+.profile-page.skin-sky .uc-avatar, .profile-page.skin-mint .uc-avatar, .profile-page.skin-sunrise .uc-avatar, .profile-page.skin-ink .uc-avatar { border-width: 1rpx; border-color: transparent; }

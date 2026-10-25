@@ -27,3 +27,18 @@
 
 // 后台标签色会成为内联样式，深色阅读页用统一可读的底色覆盖。
 .app-page.skin-ink .category-tag { background: #232a45 !important; color: #b9b9c5 !important; }
+
+/* ===================== 枫光改版（2026-10） ===================== */
+.head .title { font-family: inherit; font-weight: 900; font-size: 50rpx; line-height: 1.4; color: $uh-ink-1; }
+.head .detail .cover { height: 440rpx; }
+.head .detail .cover-img { border-radius: $uh-radius-xl; }
+.article-author-avatar { border: 4rpx solid $uh-accent-weak; }
+.category-tag { font-weight: 700; }
+.article-action-bar { gap: 8rpx; }
+.article-action.is-active { color: $uh-accent-bright; }
+/* 锁定态：夜墨解锁卡（和设计稿「付费文章 · 锁定态」一致） */
+.content-locked { background: $uh-night !important; border-radius: $uh-radius-xl !important; }
+.content-locked .locked-title { color: #ffffff; font-weight: 900; font-size: 40rpx; }
+.content-locked .locked-excerpt, .content-locked .locked-balance { color: $uh-night-text-2; }
+.content-locked .locked-tip { color: $uh-reward; font-weight: 700; }
+.content-locked .locked-cover { border-radius: $uh-radius-lg; }

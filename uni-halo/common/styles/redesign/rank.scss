@@ -29,3 +29,32 @@
 .rank-feature__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 36rpx; font-weight: 700; color: $uh-ink-1; line-height: 1.55; margin: 20rpx 0; }
 .rank-feature__metric { font-size: 24rpx; color: $uh-ink-3; }
 .rank-feature__cover { flex-shrink: 0; width: 220rpx; height: 280rpx; border-radius: 24rpx; }
+
+/* ===================== 枫光改版（2026-10） ===================== */
+.board-tabs { border-bottom: 0; gap: 12rpx; }
+.board-tab { flex: none; padding: 16rpx 32rpx; border-radius: $uh-radius-pill; background: $uh-card; border-bottom: 0; font-size: 28rpx; }
+.board-tab.is-active { background: $uh-ink-1; color: #ffffff; font-weight: 700; }
+.rank-list { border: 0; border-radius: $uh-radius-lg; }
+.rank-no { font-family: $uh-font-num; font-weight: 800; }
+.rank-no.is-top { color: $uh-accent-bright; }
+.rank-feature__number { font-family: $uh-font-num; background: $uh-accent-bright; }
+
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 20rpx; margin: 0 40rpx 24rpx; padding: 40rpx 24rpx 0; border-radius: $uh-radius-xl; background: $uh-night; overflow: hidden; }
+.podium-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.podium-avatar { width: 112rpx; height: 112rpx; border-radius: 50%; border: 6rpx solid #C9CFDA; box-sizing: border-box; }
+.podium-col--1 .podium-avatar { width: 136rpx; height: 136rpx; border-color: $uh-reward; }
+.podium-col--3 .podium-avatar { border-color: #D9A06B; }
+.podium-name { margin-top: 12rpx; max-width: 100%; font-size: 26rpx; font-weight: 700; color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.podium-score { font-family: $uh-font-num; font-size: 24rpx; color: $uh-night-text-2; }
+.podium-col--1 .podium-score { color: $uh-reward; font-weight: 700; }
+.podium-block { width: 100%; height: 120rpx; margin-top: 16rpx; border-radius: 32rpx 32rpx 0 0; background: $uh-night-fill; display: flex; justify-content: center; padding-top: 12rpx; box-sizing: border-box; }
+.podium-col--1 .podium-block { height: 200rpx; background: $uh-accent-bright; }
+.podium-col--3 .podium-block { height: 90rpx; }
+.podium-no { font-family: $uh-font-num; font-size: 52rpx; font-weight: 800; color: #ffffff; }
+
+.my-rank { margin: 0 40rpx 24rpx; padding: 28rpx 32rpx; border-radius: $uh-radius-lg; background: $uh-accent; box-shadow: $uh-shadow-accent; }
+.my-rank-text, .my-rank-arrow { color: #ffffff; font-weight: 700; }
+
+.skin-ink .board-tab { background: #10213b; color: #9bafcc; }
+.skin-ink .board-tab.is-active { background: #56e3ef; color: #081528; }
+.skin-ink .podium { background: #10213b; border: 1rpx solid #254465; }

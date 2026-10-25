@@ -111,9 +111,19 @@
 				</tm-button>
 			</view>
 			<template v-else-if="userRankReady">
+				<!-- 枫光改版：前三名领奖台（夜墨卡）。不足三人时不画领奖台，全部走下面的列表 -->
+				<view v-if="calcPodium.length === 3" class="podium">
+					<view v-for="p in calcPodium" :key="'podium-' + p.item.rank" class="podium-col" :class="'podium-col--' + p.place">
+						<image class="podium-avatar" :class="fnAvatarFrameClass(p.item)" :src="fnItemAvatar(p.item)" mode="aspectFill" />
+						<text class="podium-name">{{ fnNickName(p.item) }}</text>
+						<text v-if="calcShowScore" class="podium-score">{{ fnUserValueText(p.item) }}</text>
+						<view class="podium-block"><text class="podium-no">{{ p.place }}</text></view>
+					</view>
+				</view>
 				<view class="rank-list">
 					<view
 						v-for="(item, index) in userRank.items"
+						v-if="calcPodium.length !== 3 || index >= 3"
 						:key="item.rank"
 						class="ani-fade-up"
 						:style="'animation-delay:' + (index * 50 + 50) + 'ms'"
@@ -276,6 +286,12 @@ import UhPageHeader from '@/components/uh-page-header/uh-page-header.vue';
 			};
 		},
 		computed: {
+			/** 领奖台顺序：2 · 1 · 3（冠军居中更高） */
+			calcPodium() {
+				const items = (this.userRank && this.userRank.items) || [];
+				if (items.length < 3) return [];
+				return [{ item: items[1], place: 2 }, { item: items[0], place: 1 }, { item: items[2], place: 3 }];
+			},
 			haloConfigs() {
 				return this.$tm.vx.getters().getConfigs;
 			},

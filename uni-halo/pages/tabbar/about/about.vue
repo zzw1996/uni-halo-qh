@@ -11,7 +11,7 @@
 				<view class="user-card" @click="fnHandleUserCard">
 					<view class="uc-avatar" :class="[{ online: isLoggedIn }, calcAvatarFrameClass]">
 						<image v-if="isLoggedIn && calcUserAvatar" :src="calcUserAvatar" mode="aspectFill"></image>
-						<tm-icons v-else name="icon-user" :size="52" color="#a4afa8"></tm-icons>
+						<tm-icons v-else name="icon-user" :size="52" color="#A8A3AD"></tm-icons>
 						<view v-if="isLoggedIn" class="online-dot"></view>
 					</view>
 					<view class="uc-info">
@@ -19,7 +19,7 @@
 						<text v-if="isLoggedIn && calcLevelText" class="uc-level">{{ calcLevelText }}</text>
 						<text class="uc-desc">{{ isLoggedIn ? '点击编辑资料' : '登录后享受更多功能' }}</text>
 					</view>
-					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#a4afa8"></tm-icons>
+					<tm-icons v-if="!isLoggedIn" name="icon-angle-right" :size="22" color="#A8A3AD"></tm-icons>
 				</view>
 
 				<!-- 快捷入口 -->
@@ -55,7 +55,7 @@
 						<!-- 权益直购入口已提到头部胶囊，此处显示积分明细与签到状态 -->
 						<view class="points-card-link" @click="fnToPointsHistory">
 							<text>明细</text>
-							<tm-icons name="icon-angle-right" :size="20" color="#65736d"></tm-icons>
+							<tm-icons name="icon-angle-right" :size="20" color="#6A6672"></tm-icons>
 						</view>
 						<view class="checkin-action" :class="{ 'is-done': calcSignedToday }" @click="fnHandleSignIn">{{ calcSignInButtonText }}</view>
 					<text class="profile-sign-caption">{{ calcSignedToday ? '已连续 ' + calcConsecutiveDays + ' 天' : '每天签到领积分' }}</text>
@@ -126,7 +126,7 @@
 				<view class="profile-page-header">
 					<text class="profile-page-title">编辑资料</text>
 					<view class="profile-page-close" @click="fnCloseProfileDialog">
-						<tm-icons name="icon-times" :size="28" color="#65736d"></tm-icons>
+						<tm-icons name="icon-times" :size="28" color="#6A6672"></tm-icons>
 					</view>
 				</view>
 
@@ -1182,7 +1182,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#176B5B'
+							confirmColor: '#C2410C'
 						})
 						.then(() => {
 							// 小程序端没有独立的超管登录页（pagesB 分包不存在，跳过去是静默失败）：
@@ -1214,7 +1214,7 @@ import { cacheOwnOutfit, clearOwnOutfit } from '@/utils/ownOutfit.js';
 							cancelText: '否',
 							cancelColor: '#999999',
 							confirmText: '是',
-							confirmColor: '#176B5B'
+							confirmColor: '#C2410C'
 						}).then(() => {
 							// 只清易失缓存：原来的一把清空会连登录态与设置一起清掉，
 							// 用户以为在「清缓存」，实际被登出、设置也回到默认（见 utils/update.js 的说明）

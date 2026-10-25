@@ -403,5 +403,6 @@
 			margin-top: 8rpx;
 		}
 	}
+@import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-task-center-task-center-themes.scss';
 </style>

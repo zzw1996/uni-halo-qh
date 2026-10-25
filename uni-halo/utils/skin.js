@@ -27,14 +27,14 @@ import { THEMES } from '@/common/themes/index.js';
 export const SKINS = {
 	/** 默认：完全不覆盖，保持设计系统的原色 */
 	paper: {
-		label: '宣纸白',
-		desc: '默认配色，暖白纸面 + 白卡片 + 深青绿强调',
+		label: '枫光',
+		desc: '默认配色，纸色底 + 白卡片 + 枫红强调',
 		dark: false,
 		// 页面/窗口底色：page 元素不设静态底之后，下拉回弹与切页留白都靠它
-		bgColor: '#f6f7f2',
-		tabSelectedColor: '#176b5b',
+		bgColor: '#F6F3EE',
+		tabSelectedColor: '#C2410C',
 		tmColor: '',
-		swatch: '#176b5b'
+		swatch: '#C2410C'
 	},
 	mint: {
 		label: '青瓷',
@@ -149,13 +149,13 @@ export const skinState = Vue.observable({ id: 'paper' });
  * 纯函数：不读存储、不看全局状态，因此可以在页面里就地推算，也便于以后加单测。
  */
 export const resolveSkinId = (skinId, mode, systemDark) => {
-	const raw = isSkinId(skinId) ? String(skinId).trim() : 'sky';
-	const base = raw === 'paper' ? 'sky' : raw;
+	// 「枫光」改版后默认皮肤就是基础样式本身（paper，不挂皮肤类）；其余四套为可选主题
+	const base = isSkinId(skinId) ? String(skinId).trim() : 'paper';
 	const resolved = normalizeAppearanceMode(mode);
 	if (resolved === 'dark') {
 		return DARK_SKIN_ID;
 	}
-	const lightBase = base === DARK_SKIN_ID ? 'sky' : base;
+	const lightBase = base === DARK_SKIN_ID ? 'paper' : base;
 	if (resolved === 'light') {
 		return lightBase;
 	}
@@ -370,21 +370,21 @@ export const applyNativeChrome = (id) => {
 			});
 		} else {
 			uni.setNavigationBarColor({
-				backgroundColor: skin.bgColor || '#f6f7f2',
+				backgroundColor: skin.bgColor || '#F6F3EE',
 				frontColor: '#000000'
 			});
 			// 浅色皮肤各自的页面底色（青瓷/晨光与宣纸白不同）：窗口留白不再固定用宣纸白，
 			// 否则换皮肤后下拉回弹会露出一条不搭的底色
 			uni.setBackgroundColor({
-				backgroundColor: skin.bgColor || '#f6f7f2',
-				backgroundColorTop: skin.bgColor || '#f6f7f2',
-				backgroundColorBottom: skin.bgColor || '#f6f7f2'
+				backgroundColor: skin.bgColor || '#F6F3EE',
+				backgroundColorTop: skin.bgColor || '#F6F3EE',
+				backgroundColorBottom: skin.bgColor || '#F6F3EE'
 			});
 			// 浅色皮肤下 tabBar 恢复默认（选中色仍由主题色接管，见 themeSkin.js）
 			uni.setTabBarStyle({
 				backgroundColor: skin.tabBg || '#ffffff',
-				color: skin.tabColor || '#65736D',
-				selectedColor: skin.tabSelectedColor || '#176b5b',
+				color: skin.tabColor || '#6A6672',
+				selectedColor: skin.tabSelectedColor || '#C2410C',
 				borderStyle: 'white'
 			});
 		}
