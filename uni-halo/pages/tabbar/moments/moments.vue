@@ -1,5 +1,5 @@
 <template>
-	<view class="theme-page-pages-tabbar-moments-moments app-page" :class="[skinClass, uniHaloPluginPageClass, { 'is-host-fixed': viewMode === 'store' }]">
+	<view class="theme-page-pages-tabbar-moments-moments app-page" :class="[skinRootClass, uniHaloPluginPageClass, { 'is-host-fixed': viewMode === 'store' }]">
 		<uh-page-header :title="viewMode === 'gallery' ? '图库' : viewMode === 'store' ? '小店' : '瞬间'"></uh-page-header>
 		<!--
 			瞬间本体：作为宿主页的第一个视图。切到图库/小店时用 v-show 隐藏而不是卸载，

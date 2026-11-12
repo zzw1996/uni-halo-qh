@@ -45,23 +45,38 @@ const PALETTE = {
 	accentAltPrev: '#247d6b',
 	accentWeakPrev: '#e7f0e9',
 
+	// 「汽水」改版（2026-11）前的「枫光」取值：旧编译产物/旧硬编码里仍可能出现，按同名 token 映射
+	ink1Maple: '#1a1a1f',
+	ink2Maple: '#45424b',
+	ink3Maple: '#6a6672',
+	ink4Maple: '#a8a3ad',
+	bgMaple: '#f6f3ee',
+	fillMaple: '#f1ece4',
+	lineMaple: '#ece6dd',
+	accentMaple: '#c2410c',
+	accentAltMaple: '#e2502a',
+	accentWeakMaple: '#fdebe3',
+	successWeakMaple: '#e3f3ea',
+	warningWeakMaple: '#fff4d6',
+	dangerWeakMaple: '#fbe1d8',
+
 	// 当前设计系统取值（与 uni.scss 的 $uh-* 一致）
-	ink1: '#1a1a1f',
-	ink2: '#45424b',
-	ink3: '#6a6672',
-	ink4: '#a8a3ad',
-	bg: '#f6f3ee',
+	ink1: '#16132d',
+	ink2: '#3a3657',
+	ink3: '#5e5a78',
+	ink4: '#a5a1bd',
+	bg: '#f4f2fd',
 	card: '#ffffff',
-	fill: '#f1ece4',
-	line: '#ece6dd',
-	accent: '#c2410c',
-	accentAlt: '#e2502a',
-	accentWeak: '#fdebe3',
+	fill: '#ece9fa',
+	line: '#e2def5',
+	accent: '#5b45ff',
+	accentAlt: '#6f5bff',
+	accentWeak: '#ece9ff',
 	// 设计系统里三类语义浅底（成功/警告/危险）。深色皮肤必须把它们也翻成暗色，
 	// 否则深色下的成功提示、告警标签会是一块刺眼的浅色（新加的底栏/徽标都用到它们）
-	successWeak: '#e3f3ea',
-	warningWeak: '#fff4d6',
-	dangerWeak: '#fbe1d8',
+	successWeak: '#d5f7ee',
+	warningWeak: '#fff6c2',
+	dangerWeak: '#ffe1ea',
 	/* ── 以下是各页面历史上直接写死的浅色（不在设计 Token 里）──
 	   深色模式下它们会留成白块（实测：我的页的快捷入口/签到卡/抽奖卡、文章页正文卡等）。
 	   登记进调色板后，只有下面的 ink 皮肤给它们映射，浅色皮肤（青瓷/晨光）完全不受影响。 */
@@ -247,6 +262,9 @@ for (const skin of Object.values(SKINS)) {
 		if (skin.map[token]) skin.map[token + 'Legacy'] = skin.map[token];
 		if (skin.map[token]) skin.map[token + 'Prev'] = skin.map[token];
 	}
+	for (const token of ['ink1', 'ink2', 'ink3', 'ink4', 'bg', 'fill', 'line', 'accent', 'accentAlt', 'accentWeak', 'successWeak', 'warningWeak', 'dangerWeak']) {
+		if (skin.map[token]) skin.map[token + 'Maple'] = skin.map[token];
+	}
 }
 
 function collectRules(acceptFile) {
@@ -349,7 +367,7 @@ function retint(prop, value, map, shadow, whiteAlpha) {
 	let changed = false;
 
 	for (const [token, hex] of Object.entries(PALETTE)) {
-		const baseToken = token.replace(/(Legacy|Prev)$/, '');
+		const baseToken = token.replace(/(Legacy|Prev|Maple)$/, '');
 		const to = /^background/.test(prop) && map[baseToken + 'Fill'] ? map[baseToken + 'Fill'] : map[token];
 		if (!to) continue;
 		// color: #ffffff 是「彩色底上的白字」，不能跟着卡片底色一起翻

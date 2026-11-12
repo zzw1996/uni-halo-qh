@@ -1,5 +1,5 @@
 <template>
-	<view class="article-card " :class="[skinClass, cardType]" @click="fnClickEvent('card')">
+	<view class="article-card " :class="[skinRootClass, cardType]" @click="fnClickEvent('card')">
 		<view class="left" v-if="calcShowArticleCover">
 			<cache-image class="thumbnail" radius="24rpx" :url="$utils.checkThumbnailUrl(article.spec.cover, false, 400)" :fileMd5="article.spec.cover" mode="aspectFill"></cache-image>
 			<!-- <image class="thumbnail" lazy-load :src="$utils.checkThumbnailUrl(article.spec.cover)" mode="aspectFill"></image> -->
@@ -452,4 +452,11 @@
 
 
 @import '@/common/themes/cards.scss';
+
+/* 「汽水」贴纸风：只在默认皮肤生效（skinRootClass = skin-soda） */
+.article-card.skin-soda { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; margin-bottom: 32rpx; }
+.article-card.skin-soda .title-text { font-weight: 800; }
+.article-card.skin-soda .article-category { color: $uh-accent; font-weight: 800; }
+.article-card.skin-soda .foot { border-top-color: $uh-line; color: $uh-ink-3; }
+.article-card.skin-soda .right .title .is-top { background: $uh-pink !important; background-image: none !important; color: $uh-ink-1 !important; border: $uh-stroke-thin; border-radius: 12rpx !important; font-weight: 800; }
 </style>

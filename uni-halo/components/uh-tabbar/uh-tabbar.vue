@@ -1,6 +1,6 @@
 <template>
 	<!-- 满宽纸面导航；后台与用户决定显示项，原生 tab 路由继续保留页面状态。 -->
-	<view :class="skinClass">
+	<view :class="skinRootClass">
 		<view v-if="items.length && mode !== 'static'" class="uh-tabbar_holder"></view>
 		<view v-if="items.length" class="uh-tabbar" :class="mode === 'static' ? 'is-static' : 'is-fixed'">
 			<view class="uh-tabbar_inner">

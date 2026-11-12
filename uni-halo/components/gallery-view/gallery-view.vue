@@ -6,7 +6,7 @@
 		点照片进自绘大图查看（带标题、描述、相册、日期，原生预览显示不了这些）。
 		数据只用图库插件已有字段：spec.displayName / description / url / cover / groupName + metadata.creationTimestamp。
 	-->
-	<view class="gallery-view" :class="uniHaloPluginPageClass">
+	<view class="gallery-view" :class="[uniHaloPluginPageClass, skinRootClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
@@ -700,4 +700,22 @@
 	.skin-ink .layout-switch_btn.is-on .layout-switch_text { color: #eaf3ff; }
 	.skin-ink .to-top { background: #56e3ef; }
 	.skin-ink .to-top_icon { color: #081528; }
+
+	/* ===== 「汽水」贴纸风（默认皮肤，根节点 skinRootClass = skin-soda） ===== */
+	.skin-soda .hero_card { box-sizing: border-box; border: $uh-stroke; box-shadow: $uh-hard-lg; overflow: hidden; }
+	.skin-soda .hero_tag { border: $uh-stroke-thin; background: $uh-reward; color: $uh-ink-1; font-weight: 800; }
+	.skin-soda .sec-title { font-weight: 900; }
+	.skin-soda .albums_cover { box-sizing: border-box; border: $uh-stroke; box-shadow: $uh-hard-sm; }
+	.skin-soda .albums_name { font-weight: 800; }
+	.skin-soda .chip { box-sizing: border-box; border: $uh-stroke-thin; background: $uh-card; }
+	.skin-soda .chip_text { color: $uh-ink-1; font-weight: 700; }
+	.skin-soda .chip.is-on { background: $uh-accent; }
+	.skin-soda .chip.is-on .chip_text { color: #ffffff; }
+	.skin-soda .layout-switch { box-sizing: border-box; border: $uh-stroke-thin; background: $uh-card; }
+	.skin-soda .layout-switch_btn.is-on { background: $uh-reward; }
+	.skin-soda .wf-item { box-sizing: border-box; border: $uh-stroke-thin; border-radius: 28rpx; overflow: hidden; }
+	.skin-soda .month-cell { box-sizing: border-box; border: $uh-stroke-thin; border-radius: 20rpx; overflow: hidden; }
+	.skin-soda .state-card { border: $uh-stroke; box-shadow: $uh-hard-md; }
+	.skin-soda .to-top { box-sizing: border-box; border: $uh-stroke; background: $uh-card; box-shadow: $uh-hard-sm; }
+	.skin-soda .to-top_icon { color: $uh-ink-1; }
 </style>

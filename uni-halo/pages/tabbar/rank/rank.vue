@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pages-tabbar-rank-rank app-page">
+	<view :class="skinRootClass" class="theme-page-pages-tabbar-rank-rank app-page">
 		<uh-page-header title="榜单"></uh-page-header>
 		<!-- 一级切换：文章榜 / 用户榜 / 动态 -->
 		<view v-if="boardTabs.length > 1" class="board-tabs">

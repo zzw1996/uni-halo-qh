@@ -27,14 +27,17 @@ import { THEMES } from '@/common/themes/index.js';
 export const SKINS = {
 	/** 默认：完全不覆盖，保持设计系统的原色 */
 	paper: {
-		label: '枫光',
-		desc: '默认配色，纸色底 + 白卡片 + 枫红强调',
+		label: '汽水',
+		desc: '默认配色，雾紫底 + 白卡片 + 电光紫强调，贴纸描边',
 		dark: false,
 		// 页面/窗口底色：page 元素不设静态底之后，下拉回弹与切页留白都靠它
-		bgColor: '#F6F3EE',
-		tabSelectedColor: '#C2410C',
+		bgColor: '#F4F2FD',
+		// 原生底栏（自绘底栏关闭时）：白底 + 电光紫选中
+		tabBg: '#ffffff',
+		tabColor: '#5E5A78',
+		tabSelectedColor: '#5B45FF',
 		tmColor: '',
-		swatch: '#C2410C'
+		swatch: '#5B45FF'
 	},
 	mint: {
 		label: '青瓷',
@@ -149,7 +152,7 @@ export const skinState = Vue.observable({ id: 'paper' });
  * 纯函数：不读存储、不看全局状态，因此可以在页面里就地推算，也便于以后加单测。
  */
 export const resolveSkinId = (skinId, mode, systemDark) => {
-	// 「枫光」改版后默认皮肤就是基础样式本身（paper，不挂皮肤类）；其余四套为可选主题
+	// 「枫光」→「汽水」改版后默认皮肤就是基础样式本身（paper，不挂皮肤类）；其余四套为可选主题
 	const base = isSkinId(skinId) ? String(skinId).trim() : 'paper';
 	const resolved = normalizeAppearanceMode(mode);
 	if (resolved === 'dark') {
@@ -157,6 +160,11 @@ export const resolveSkinId = (skinId, mode, systemDark) => {
 	}
 	const lightBase = base === DARK_SKIN_ID ? 'paper' : base;
 	if (resolved === 'light') {
+		return lightBase;
+	}
+	// 默认「汽水」没有自己的深色版：跟随系统时保持浅色，不自动换成极夜流光那套配色
+	// （两者风格差太远，用户会以为主题被换掉了）。想要深色仍可手动选「始终深色」或极夜主题。
+	if (lightBase === 'paper') {
 		return lightBase;
 	}
 	return systemDark ? DARK_SKIN_ID : lightBase;
@@ -288,6 +296,12 @@ export const watchSystemTheme = () => {
 	}
 };
 
+/**
+ * 默认皮肤（汽水）的根类名。贴纸风的描边 / 硬投影只对默认皮肤生效，
+ * 规则统一写成 `.skin-soda …`；其余皮肤的根类名仍是 skin-<id>，不会命中。
+ */
+export const SODA_ROOT_CLASS = 'skin-soda';
+
 /** 页面根节点要挂的类名；默认皮肤返回空串，不产生任何额外样式。 */
 export const skinClassOf = (id) => {
 	const skin = String(id || '').trim();
@@ -370,21 +384,21 @@ export const applyNativeChrome = (id) => {
 			});
 		} else {
 			uni.setNavigationBarColor({
-				backgroundColor: skin.bgColor || '#F6F3EE',
+				backgroundColor: skin.bgColor || '#F4F2FD',
 				frontColor: '#000000'
 			});
 			// 浅色皮肤各自的页面底色（青瓷/晨光与宣纸白不同）：窗口留白不再固定用宣纸白，
 			// 否则换皮肤后下拉回弹会露出一条不搭的底色
 			uni.setBackgroundColor({
-				backgroundColor: skin.bgColor || '#F6F3EE',
-				backgroundColorTop: skin.bgColor || '#F6F3EE',
-				backgroundColorBottom: skin.bgColor || '#F6F3EE'
+				backgroundColor: skin.bgColor || '#F4F2FD',
+				backgroundColorTop: skin.bgColor || '#F4F2FD',
+				backgroundColorBottom: skin.bgColor || '#F4F2FD'
 			});
 			// 浅色皮肤下 tabBar 恢复默认（选中色仍由主题色接管，见 themeSkin.js）
 			uni.setTabBarStyle({
 				backgroundColor: skin.tabBg || '#ffffff',
 				color: skin.tabColor || '#6A6672',
-				selectedColor: skin.tabSelectedColor || '#C2410C',
+				selectedColor: skin.tabSelectedColor || '#5B45FF',
 				borderStyle: 'white'
 			});
 		}

@@ -18,9 +18,12 @@ import { getAppConfigs, DefaultAppConfigs } from '@/config/index.js';
 /** 底栏内容高度（rpx）。取 100rpx = 50px，与微信原生底栏高度对齐，切换时页面不跳。 */
 export const TABBAR_BAR_HEIGHT_RPX = 100;
 
-/** 旧导出名保持兼容：纸面底栏满宽、零悬浮间距。 */
-export const TABBAR_GLASS_GAP_RPX = 0;
-export const TABBAR_GLASS_SIDE_RPX = 0;
+/**
+ * 悬浮底栏（默认「汽水」皮肤）离屏幕底边 / 两侧的间距，与 uh-tabbar.scss 的 .skin-soda 段对应。
+ * 其余皮肤仍是满宽贴底，多抬 24rpx 只会让悬浮按钮略高一点，不影响布局。
+ */
+export const TABBAR_GLASS_GAP_RPX = 24;
+export const TABBAR_GLASS_SIDE_RPX = 28;
 
 /**
  * 兜底底栏项：只在「后台已开启，但配置里没有 items」时用（例如服务端返回被截断、

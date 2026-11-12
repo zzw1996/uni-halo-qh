@@ -24,3 +24,14 @@
 .images .image-item { border-radius: 20rpx; }
 .skin-ink .feed-tab { background: #10213b; color: #9bafcc; }
 .skin-ink .feed-tab.is-active { background: #56e3ef; color: #081528; }
+
+/* ===================== 「汽水」贴纸风（2026-11） =====================
+   只在默认皮肤生效（根节点 skinRootClass = skin-soda）；选择器带上根类是为了压过上面枫光段的同名规则。 */
+$soda-mo: '.app-page.skin-soda';
+#{$soda-mo} .feed-tab { box-sizing: border-box; border: $uh-stroke-thin; background: $uh-card; color: $uh-ink-1; font-weight: 700; }
+#{$soda-mo} .feed-tab.is-active { background: $uh-reward; color: $uh-ink-1; font-weight: 900; box-shadow: $uh-hard-sm; }
+#{$soda-mo} .moment-card { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; margin-bottom: 32rpx; }
+#{$soda-mo} .moment-card__avatar { padding: 0; background: transparent; }
+#{$soda-mo} .moment-card__avatar-img { border: $uh-stroke-thin; }
+#{$soda-mo} .moment-card__name { font-weight: 800; }
+#{$soda-mo} .images .image-item { box-sizing: border-box; border: $uh-stroke-thin; border-radius: 24rpx; overflow: hidden; }

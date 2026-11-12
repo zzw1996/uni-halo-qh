@@ -58,3 +58,26 @@
 .skin-ink .board-tab { background: #10213b; color: #9bafcc; }
 .skin-ink .board-tab.is-active { background: #56e3ef; color: #081528; }
 .skin-ink .podium { background: #10213b; border: 1rpx solid #254465; }
+
+/* ===================== 「汽水」贴纸风（2026-11） =====================
+   只在默认皮肤生效（根节点 skinRootClass = skin-soda）；选择器带上根类是为了压过上面枫光段的同名规则。 */
+$soda-rk: '.app-page.skin-soda';
+#{$soda-rk} .board-tab { box-sizing: border-box; border: $uh-stroke-thin; background: $uh-card; color: $uh-ink-1; font-weight: 700; }
+#{$soda-rk} .board-tab.is-active { background: $uh-reward; color: $uh-ink-1; font-weight: 900; box-shadow: $uh-hard-sm; }
+/* 领奖台：电光紫底，第一名柠檬黄台阶，二三名白台阶 */
+#{$soda-rk} .podium { border: $uh-stroke; background: $uh-accent; box-shadow: $uh-hard-lg; margin-bottom: 40rpx; }
+#{$soda-rk} .podium-avatar { border: $uh-stroke; background: $uh-card; }
+#{$soda-rk} .podium-col--1 .podium-avatar, #{$soda-rk} .podium-col--3 .podium-avatar { border-color: $uh-ink-1; }
+#{$soda-rk} .podium-name { font-weight: 800; }
+#{$soda-rk} .podium-score { color: rgba(255, 255, 255, 0.86); }
+#{$soda-rk} .podium-col--1 .podium-score { color: $uh-reward; }
+#{$soda-rk} .podium-block { border: $uh-stroke; border-bottom: 0; background: $uh-card; }
+#{$soda-rk} .podium-col--1 .podium-block { background: $uh-reward; }
+#{$soda-rk} .podium-no { color: $uh-ink-1; font-weight: 900; font-style: italic; }
+#{$soda-rk} .rank-list { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; margin-bottom: 40rpx; overflow: hidden; }
+#{$soda-rk} .rank-no { font-weight: 900; font-style: italic; }
+#{$soda-rk} .rank-no.is-top { color: $uh-accent; }
+#{$soda-rk} .rank-feature__number { background: $uh-reward; color: $uh-ink-1; border: $uh-stroke-thin; }
+#{$soda-rk} .my-rank { border: $uh-stroke; border-radius: $uh-radius-pill; background: $uh-pink; box-shadow: $uh-hard-md; margin-bottom: 40rpx; }
+#{$soda-rk} .my-rank-text, #{$soda-rk} .my-rank-arrow { color: $uh-ink-1; font-weight: 900; }
+#{$soda-rk} .rule-card { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; }

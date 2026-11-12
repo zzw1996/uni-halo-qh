@@ -89,3 +89,39 @@
 .skin-ink .home-greet_chip-text { color: #eaf3ff; }
 .skin-ink .home-quick_icon--accent, .skin-ink .home-quick_icon--reward, .skin-ink .home-quick_icon--blue { background: #192d4a; }
 .skin-ink .ai-card { background: #10213b; border: 1rpx solid #254465; }
+
+/* ===================== 「汽水」贴纸风（2026-11） =====================
+   只在默认皮肤生效（根节点 skinRootClass = skin-soda），其余四套主题沿用各自样式。 */
+.skin-soda {
+	.home-greet { align-items: center; margin-bottom: 28rpx; }
+	.home-greet_title { font-size: 56rpx; font-weight: 900; letter-spacing: -1rpx; }
+	.home-greet_chip { height: 84rpx; padding: 0 28rpx; background: $uh-reward; border: $uh-stroke; box-shadow: $uh-hard-sm; }
+	.home-greet_chip--pressed { opacity: 1; transform: translateY(6rpx); box-shadow: none; }
+	.home-greet_chip-dot { background: $uh-ink-1; }
+	.home-greet_chip-text { font-weight: 800; }
+
+	.home-search-row .search-input { height: 92rpx; border: $uh-stroke; background: $uh-card; color: $uh-ink-3; }
+	.search-input_icon { color: $uh-ink-1; font-weight: 700; }
+	.logo { box-sizing: border-box; border: $uh-stroke; }
+
+	.banner { overflow: hidden; border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-lg; margin-bottom: 40rpx; }
+
+	.home-quick { margin-bottom: 44rpx; }
+	.home-quick_icon { width: 120rpx; height: 120rpx; box-sizing: border-box; border: $uh-stroke; border-radius: 40rpx; box-shadow: $uh-hard-sm; }
+	.home-quick_icon--night { background: $uh-lilac; }
+	.home-quick_icon--accent { background: $uh-pink; }
+	.home-quick_icon--reward { background: $uh-reward; }
+	.home-quick_icon--blue { background: $uh-mint; }
+	.home-quick_badge { top: -18rpx; right: -26rpx; padding: 2rpx 12rpx; border: $uh-stroke-thin; background: $uh-card; color: $uh-ink-1; font-size: 20rpx; font-weight: 800; transform: rotate(6deg); }
+	.home-quick_label { font-size: 26rpx; font-weight: 700; }
+
+	.page-item_title { font-size: 40rpx; font-weight: 900; }
+	.show-more { font-weight: 700; }
+
+	.home-fab { border: $uh-stroke; box-shadow: $uh-hard-md; }
+	.home-fab--pressed { opacity: 1; transform: translateY(8rpx); box-shadow: none; }
+	.home-fab--publish { background: $uh-pink; background-image: none; }
+	.home-fab--top { width: 80rpx; height: 80rpx; background: $uh-card; }
+	.home-fab_icon, .home-fab_label { color: $uh-ink-1; }
+	.home-fab_label { font-weight: 900; }
+}

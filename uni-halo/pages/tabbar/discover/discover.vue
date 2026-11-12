@@ -1,5 +1,5 @@
 <template>
-	<view :class="[skinClass, { 'discover-dark': activeTheme.dark }]" class="theme-page-pages-tabbar-discover-discover app-page">
+	<view :class="[skinRootClass, { 'discover-dark': activeTheme.dark }]" class="theme-page-pages-tabbar-discover-discover app-page">
 		<uh-page-header title="发现"></uh-page-header>
 		<view class="search-bar">
 			<view class="search-box">

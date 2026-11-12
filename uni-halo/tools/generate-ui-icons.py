@@ -7,7 +7,8 @@ out=root/'static/ui-icons'; out.mkdir(parents=True,exist_ok=True)
 codes=json.loads((source/'font/codepoints.json').read_text())
 font=ImageFont.truetype(str(source/'font/lucide.ttf'),80)
 icons={'sparkles':'green','play':'blue','crown':'amber','gift':'coral','user-round-plus':'green','message-circle':'blue','history':'amber','heart':'coral','file-pen-line':'green','receipt-text':'blue','book-open-check':'green','settings-2':'blue','chart-no-axes-combined':'blue','archive':'amber','link':'green','shield-check':'blue','headset':'green','message-square-text':'blue','info':'blue','house':'green','compass':'green','images':'green','user-round':'green','shopping-bag':'green','circle-check':'green'}
-light={'green':'#C2410C','blue':'#2453C9','amber':'#8A5A00','coral':'#C2410C','muted':'#706C76','active':'#C2410C'}
+# 「汽水」：图标一律墨色（压在彩色贴纸块 / 柠檬黄选中胶囊上）；未选中底栏图标是白色胶囊上的次级墨色
+light={'green':'#16132D','blue':'#16132D','amber':'#16132D','coral':'#16132D','muted':'#5E5A78','active':'#16132D'}
 dark={'green':'#91cdb8','blue':'#9ec2ed','amber':'#e2bd81','coral':'#eaa3a0','muted':'#9caaa4','active':'#9db0ff'}
 def draw(name,color,path):
     im=Image.new('RGBA',(96,96)); d=ImageDraw.Draw(im); c=chr(codes[name]); box=d.textbbox((0,0),c,font=font)
@@ -22,7 +23,10 @@ for key,name in nav.items():
             suffix=('--dark' if darkmode else '')+('--active' if active else '--muted')
             draw(name,colors['active' if active else 'muted'],out/(name+suffix+'.png'))
             if key == 'store': continue
-            shutil.copyfile(out/(name+suffix+'.png'),root/'static/tabbar'/f"{'ink' if darkmode else 'paper'}_{key}{'_active' if active else ''}.png")
+            target=root/'static/tabbar'/f"{'ink' if darkmode else 'paper'}_{key}{'_active' if active else ''}.png"
+            # 原生底栏没有选中胶囊，浅色（汽水）下选中图标用电光紫
+            if not darkmode and active: draw(name,'#5B45FF',target)
+            else: shutil.copyfile(out/(name+suffix+'.png'),target)
 shutil.copyfile(source/'LICENSE',out/'LICENSE.txt')
 (out/'README.md').write_text('Lucide 1.56.0，ISC 许可。只打包选用图标，PNG 96×96。\n生成命令：python3 tools/generate-ui-icons.py <lucide-static 包目录>\n')
 print(f'Generated {len(list(out.glob("*.png")))} theme-aware icons')

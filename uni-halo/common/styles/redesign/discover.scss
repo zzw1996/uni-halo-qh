@@ -107,3 +107,28 @@
 .app-page .cat-grid .cat-tile .tile-paused-flag, .app-page .cat-grid .cat-tile .tile-wall-flag { z-index: 3; }
 .app-page .rank-list .rank-no-1 { color: $uh-accent-bright; }
 .app-page .section-title { font-weight: 900; }
+
+/* ===================== 「汽水」贴纸风（2026-11） =====================
+   只在默认皮肤生效（根节点 skinRootClass = skin-soda）；选择器带上根类是为了压过上面枫光段的同名规则。 */
+$soda-dc: '.app-page.skin-soda';
+#{$soda-dc} .search-box { height: 92rpx; border: $uh-stroke; border-radius: $uh-radius-pill; background: $uh-card; }
+#{$soda-dc} .interest-bar { margin: 20rpx 32rpx 0; padding: 20rpx 24rpx; border: $uh-stroke; border-radius: $uh-radius-lg; background: $uh-reward-weak; }
+#{$soda-dc} .interest-bar-title, #{$soda-dc} .interest-bar-title.is-full { font-size: 24rpx; font-weight: 700; color: $uh-ink-1; }
+#{$soda-dc} .interest-bar-btn { padding: 10rpx 20rpx; border: $uh-stroke-thin; border-radius: $uh-radius-pill; background: $uh-card; color: $uh-ink-1; font-weight: 700; }
+#{$soda-dc} .interest-bar-btn.is-unlock { background: $uh-reward; }
+#{$soda-dc} .interest-bar-btn.is-danger { border: 0; background: transparent; color: $uh-ink-3; }
+#{$soda-dc} .section-title { font-size: 40rpx; font-weight: 900; }
+#{$soda-dc} .rank-list { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; }
+#{$soda-dc} .rank-list .rank-no { font-weight: 900; font-style: italic; }
+#{$soda-dc} .rank-list .rank-no-1 { color: $uh-accent; }
+#{$soda-dc} .filter-chip { box-sizing: border-box; border: $uh-stroke-thin; border-radius: $uh-radius-pill; background: $uh-card; color: $uh-ink-1; font-weight: 700; }
+#{$soda-dc} .filter-chip.is-on { background: $uh-accent; color: #ffffff; }
+#{$soda-dc} .cat-grid { gap: 24rpx; padding-bottom: 16rpx; }
+#{$soda-dc} .cat-grid .cat-tile, #{$soda-dc} .cat-grid .cat-tile.is-on { box-sizing: border-box; border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; overflow: hidden; }
+#{$soda-dc} .cat-grid .cat-tile .tile-btn { box-sizing: border-box; border: $uh-stroke-thin; background: $uh-card !important; }
+#{$soda-dc} .cat-grid .cat-tile .tile-btn .tile-btn-text { color: $uh-ink-1 !important; font-weight: 800; }
+#{$soda-dc} .cat-grid .cat-tile .tile-btn.is-on { background: $uh-reward !important; }
+#{$soda-dc} .cat-grid .cat-tile .tile-btn.is-on .tile-btn-text { color: $uh-ink-1 !important; }
+#{$soda-dc} .unlock-dialog { border: $uh-stroke; border-radius: $uh-radius-xl; }
+#{$soda-dc} .unlock-option { border: $uh-stroke; border-radius: $uh-radius-lg; box-shadow: $uh-hard-sm; }
+#{$soda-dc} .unlock-title { font-weight: 900; }

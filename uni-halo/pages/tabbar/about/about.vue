@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pages-tabbar-about-about profile-page">
+	<view :class="skinRootClass" class="theme-page-pages-tabbar-about-about profile-page">
 		<!-- ========== 1. 渐变头部 ========== -->
 		<view class="profile-header">
 			<view class="header-bg"></view>

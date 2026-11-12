@@ -76,10 +76,10 @@ $uni-color-paragraph: #3F536E; // 文章段落颜色
 $uni-font-size-paragraph:15px;
 
 /* ============================================================
- * 设计 Token ——「枫光」（2026-10 改版：纸色底 · 枫红强调 · 夜墨特色卡 · 日光黄奖励）
+ * 设计 Token ——「汽水」贴纸风（2026-11 改版：雾紫底 · 电光紫主色 · 柠檬黄奖励 · 墨色描边 + 硬投影）
  *
  * 本文件由 uni-app 自动注入每个 <style lang="scss"> 块，因此全项目
- * 直接使用 $uh-* 即可，无需 import。设计稿见 Claude 画布「宥枫璟小程序 UI 改版」。
+ * 直接使用 $uh-* 即可，无需 import。设计稿见 Claude 画布「宥枫璟小程序 UI 重设计 · 年轻活泼版」。
  *
  * 为什么是 SCSS 变量而不是 CSS 自定义属性：小程序端 WXSS 对
  * `page, :root { --x: y }` 这类规则的解析不可靠（:root 非 WXSS 选择器，
@@ -88,56 +88,69 @@ $uni-font-size-paragraph:15px;
  * 不依赖运行时能力，三端一致。
  *
  * 改了这里的取值，tools/gen-skins.cjs 的 PALETTE 要同步（皮肤是按取值反查替换的）。
+ * 上一版「枫光」的取值在 PALETTE 里以 *Maple 后缀保留作映射。
+ *
+ * 贴纸风的结构样式（描边 / 硬投影）只挂在默认皮肤上：页面根节点用 skinRootClass
+ * （默认皮肤时为 skin-soda），规则写成 `.skin-soda …`，其余四套可选主题不受影响。
  * ============================================================ */
 
-/* ===== 品牌强调色 · 枫红 ===== */
-/* 文字、按钮实底一律用 $uh-accent（与白底对比 5.2:1）；$uh-accent-bright 只做大色块/徽标/进度条 */
-$uh-accent: #C2410C;
-$uh-accent-strong: #9A3412;
-$uh-accent-bright: #E2502A;
+/* ===== 品牌强调色 · 电光紫 ===== */
+/* 文字、按钮实底一律用 $uh-accent（与白底对比 5.6:1，其上用白字）；$uh-accent-bright 只做大色块/进度条 */
+$uh-accent: #5B45FF;
+$uh-accent-strong: #3D2BD6;
+$uh-accent-bright: #6F5BFF;
 /* 强调色淡底：胶囊按钮、提示条、选中态背景 */
-$uh-accent-weak: #FDEBE3;
-$uh-grad-accent: linear-gradient(135deg, #C2410C 0%, #E2502A 100%);
+$uh-accent-weak: #ECE9FF;
+$uh-grad-accent: linear-gradient(135deg, #5B45FF 0%, #6F5BFF 100%);
 
-/* ===== 奖励色 · 日光黄（积分、签到、徽章；其上文字用 $uh-ink-1） ===== */
-$uh-reward: #FFC53D;
-$uh-reward-weak: #FFF4D6;
-$uh-reward-ink: #8A5A00;
+/* ===== 奖励色 · 柠檬黄（积分、签到、选中态；其上文字用 $uh-ink-1） ===== */
+$uh-reward: #FFD60A;
+$uh-reward-weak: #FFF6C2;
+$uh-reward-ink: #6B5600;
 
-/* ===== 夜墨 · 特色卡（AI 日报、会员卡、榜单头） ===== */
-$uh-night: #1E1B2E;
+/* ===== 贴纸色块（其上文字 / 图标一律用 $uh-ink-1，不放白字） ===== */
+$uh-pink: #FF7A9E;
+$uh-mint: #3DDBB4;
+$uh-sky: #6EC8FF;
+$uh-lilac: #E4E0FF;
+
+/* ===== 夜墨 · 特色卡（AI 日报、会员卡、榜单头、底栏） ===== */
+/* 与 $uh-ink-1 故意差一档：皮肤生成器按取值反查，两者同值会把深色卡底当成文字色翻掉 */
+$uh-night: #17142E;
 $uh-night-line: rgba(255, 255, 255, 0.14);
 $uh-night-fill: rgba(255, 255, 255, 0.12);
 $uh-night-text-2: rgba(255, 255, 255, 0.75);
+/* 夜墨底上的次要文字 / 未选中图标 */
+$uh-night-muted: #C9C5E8;
 
 /* ===== 辅助浅底（只做图标底） ===== */
-$uh-blue: #2453C9;
-$uh-blue-weak: #E6EEFE;
-$uh-green: #1D7A4C;
-$uh-green-weak: #E3F3EA;
+$uh-blue: #1E6FD9;
+$uh-blue-weak: #DDF1FF;
+$uh-green: #0E8F6E;
+$uh-green-weak: #D5F7EE;
 
 /* ===== 墨色文字四级 ===== */
-$uh-ink-1: #1A1A1F;
-$uh-ink-2: #45424B;
-$uh-ink-3: #6A6672;
+$uh-ink-1: #16132D;
+$uh-ink-2: #3A3657;
+$uh-ink-3: #5E5A78;
 /* 占位 / 禁用 */
-$uh-ink-4: #A8A3AD;
+$uh-ink-4: #A5A1BD;
 
-/* ===== 纸面层次 ===== */
-$uh-bg: #F6F3EE;
+/* ===== 页面层次 ===== */
+$uh-bg: #F4F2FD;
 $uh-card: #ffffff;
 /* 输入框、次级按钮等浅底（白卡片内部用） */
-$uh-fill: #F1ECE4;
-/* 分割线 / 描边 */
-$uh-line: #ECE6DD;
+$uh-fill: #ECE9FA;
+/* 分割线 / 细描边 */
+$uh-line: #E2DEF5;
 
 /* ===== 功能色（仅状态语义，不做装饰） ===== */
-$uh-success: #1D7A4C;
-$uh-success-weak: #E3F3EA;
-$uh-warning: #B26A00;
-$uh-warning-weak: #FFF4D6;
-$uh-danger: #C62F1F;
-$uh-danger-weak: #FBE1D8;
+$uh-success: #0E8F6E;
+$uh-success-weak: #D5F7EE;
+$uh-warning: #8A6A00;
+$uh-warning-weak: #FFF6C2;
+$uh-danger: #D92D5B;
+$uh-danger-weak: #FFE1EA;
 
 /* ===== 圆角 ===== */
 $uh-radius-sm: 16rpx;
@@ -146,10 +159,17 @@ $uh-radius-lg: 40rpx;
 $uh-radius-xl: 48rpx;
 $uh-radius-pill: 999rpx;
 
-/* ===== 阴影：只给悬浮按钮与浮层卡 ===== */
+/* ===== 贴纸描边与硬投影（只向下；按下时投影归零并下移同样距离） ===== */
+$uh-stroke: 4rpx solid $uh-ink-1;
+$uh-stroke-thin: 3rpx solid $uh-ink-1;
+$uh-hard-sm: 0 6rpx 0 $uh-ink-1;
+$uh-hard-md: 0 8rpx 0 $uh-ink-1;
+$uh-hard-lg: 0 10rpx 0 $uh-ink-1;
+
+/* ===== 柔和阴影：浮层、弹窗（非贴纸元素） ===== */
 $uh-shadow-sm: 0 2rpx 8rpx rgba(31, 31, 31, 0.04);
 $uh-shadow-md: 0 2rpx 8rpx rgba(31, 31, 31, 0.04), 0 12rpx 32rpx rgba(31, 31, 31, 0.06);
-$uh-shadow-accent: 0 16rpx 40rpx rgba(194, 65, 12, 0.32);
+$uh-shadow-accent: 0 8rpx 0 $uh-ink-1;
 
 /* ===== 字体 ===== */
 /* 衬线标题（文章详情），移动端按平台回落到系统宋体 */

@@ -355,11 +355,43 @@
 				</view>
 			</view>
 			<tm-flotbutton :width="80" :offset="[16, 110]" icon="icon-angle-up" color="bg-gradient-indigo-accent" @click="fnToTopPage()"></tm-flotbutton>
-			<view class="article-action-bar">
-				<view v-if="calcIsShowComment" class="article-action-input" @click="fnToComment"><text class="iconfont icon-edit"></text><text>{{ result.spec.allowComment ? '写下你的想法' : '评论已关闭' }}</text></view>
-				<view v-if="calcIsShowComment" class="article-action" @click="fnToComment"><text class="iconfont icon-comment-dots"></text><text>{{ result.stats.comment }}</text></view>
-				<view class="article-action" :class="{ 'is-active': isUpvoted }" @click="fnTryDoLikes"><text class="iconfont" :class="isUpvoted ? 'icon-heart-fill' : 'icon-like'"></text><text>{{ result.stats.upvote }}</text></view>
-				<view class="article-action" @click="fnShowShare"><text class="iconfont icon-share1"></text></view>
+			<!-- 评论输入中：点遮罩收起键盘（草稿保留） -->
+			<view v-if="commentBar.active" class="article-comment-mask" @click="fnCollapseCommentBar" @touchmove.stop.prevent="fnNoop"></view>
+			<view class="article-action-bar" :class="{ 'is-editing': commentBar.active }" :style="calcCommentBarStyle">
+				<block v-if="calcIsShowComment">
+					<!-- 输入态：底栏本身就是输入框，键盘顶起底栏，不再弹出上方输入区 -->
+					<view v-if="commentBar.active" class="article-action-input is-editing">
+						<textarea
+							class="article-comment-textarea"
+							v-model="commentBar.content"
+							:focus="commentBar.focus"
+							:placeholder="calcCommentBarPlaceholder"
+							placeholder-class="article-comment-placeholder"
+							:maxlength="500"
+							:auto-height="true"
+							:fixed="true"
+							:show-confirm-bar="false"
+							:adjust-position="false"
+							:hold-keyboard="true"
+							:disable-default-padding="true"
+							confirm-type="send"
+							@focus="fnOnCommentBarFocus"
+							@blur="fnOnCommentBarBlur"
+							@keyboardheightchange="fnOnCommentKeyboardChange"
+							@confirm="fnSubmitCommentBar"
+						></textarea>
+					</view>
+					<view v-else class="article-action-input" @click="fnToComment">
+						<text class="iconfont icon-edit"></text>
+						<text class="article-action-input__text">{{ result.spec.allowComment ? (commentBar.content ? '[草稿] ' + commentBar.content : '写下你的想法') : '评论已关闭' }}</text>
+					</view>
+					<view v-if="commentBar.active" class="article-comment-send" :class="{ 'is-disabled': !calcCommentCanSend }" @click="fnSubmitCommentBar">{{ commentBar.submitting ? '发送中' : '发送' }}</view>
+				</block>
+				<block v-if="!commentBar.active">
+					<view v-if="calcIsShowComment" class="article-action" @click="fnToComment"><text class="iconfont icon-comment-dots"></text><text>{{ result.stats.comment }}</text></view>
+					<view class="article-action" :class="{ 'is-active': isUpvoted }" @click="fnTryDoLikes"><text class="iconfont" :class="isUpvoted ? 'icon-heart-fill' : 'icon-like'"></text><text>{{ result.stats.upvote }}</text></view>
+					<view class="article-action" @click="fnShowShare"><text class="iconfont icon-share1"></text></view>
+				</block>
 			</view>
 		</block>
 
@@ -408,16 +440,6 @@
 		<!-- 分享海报：三套模板（夜墨封面 / 枫光纸笺 / 金句卡），绘制见 utils/posterRenderer.js -->
 		<uh-poster-sheet :show.sync="poster.show" :data="poster.data" @close="fnOnPosterClose"></uh-poster-sheet>
 
-		<!-- 评论弹窗 -->
-		<block v-if="calcIsShowComment">
-			<comment-modal
-				:show="commentModal.show"
-				:title="commentModal.title"
-				:postName="commentModal.postName"
-				:isComment="commentModal.isComment"
-				@on-close="fnOnCommentModalClose"
-			></comment-modal>
-		</block>
 
 		<!-- 微信登录弹窗（评论 / 海报 / 点赞 / 订阅墙登录引导） -->
 		<wx-login-dialog
@@ -449,7 +471,6 @@ import tmMore from '@/tm-vuetify/components/tm-more/tm-more.vue';
 import mpHtml from '@/components/mp-html/components/mp-html/mp-html.vue';
 import commentList from '@/pagesA/components/comment-list/comment-list.vue';
 import commentItem from '@/pagesA/components/comment-item/comment-item.vue';
-import commentModal from '@/pagesA/components/comment-modal/comment-modal.vue';
 import wxLoginDialog from '@/components/wx-login-dialog/wx-login-dialog.vue';
 import tmActionSheet from '@/tm-vuetify/components/tm-actionSheet/tm-actionSheet.vue';
 import PointsToast from '@/components/points-toast/points-toast.vue';
@@ -459,7 +480,7 @@ import contentReactionBar from '@/pagesA/components/content-reaction-bar/content
 import barrage from '@/pagesA/components/barrage/barrage.vue';
 import { checkHasWxLogin, getOpenid } from '@/utils/auth.js';
 import { fetchCategorySubscription, subscribeCategory, subscriptionLimit, isQuotaFull, quotaText } from '@/utils/categorySubscription.js';
-import { getCommentAuthorInfo } from '@/utils/comment.js';
+import { getCommentAuthorInfo, buildCommentPayload, canSubmitComment, isCommentSerializationError } from '@/utils/comment.js';
 import { isWxLoginRequired, tryAutoWxLogin } from '@/utils/wxLogin.js';
 import { upvote } from '@/utils/upvote.js';
 import { recordUserActivity, removeUserActivity, syncArticleUpvoteStatus, USER_ACTIVITY_TYPES } from '@/utils/userActivity.js';
@@ -487,7 +508,6 @@ export default {
 		commentList,
 		commentItem, 
 		barrage,
-		commentModal,
 		wxLoginDialog,
 		tmActionSheet,
 		PointsToast,
@@ -545,9 +565,15 @@ export default {
 			},
 
 			metas: [], // 自定义元数据
-			commentModal: {
-				show: false,
-				isComment: false,
+			/** 底栏内联评论输入（替代原 comment-modal 弹窗） */
+			commentBar: {
+				active: false,
+				focus: false,
+				submitting: false,
+				keyboardHeight: 0,
+				content: '',
+				/** 当前目标：isComment=true 为评论文章；false 为回复评论，postName 是被回复评论的 name */
+				isComment: true,
 				postName: '',
 				title: ''
 			},
@@ -628,6 +654,20 @@ export default {
 			return this.result?.metadata?.annotations?.unihalo_originalURL || '';
 		},
 
+		calcCommentBarStyle() {
+			const h = this.commentBar.keyboardHeight;
+			if (!this.commentBar.active || !h) return '';
+			// 键盘高度已包含底部安全区，去掉底栏自带的 safe-area 内边距
+			return `bottom: ${h}px; padding-bottom: 16rpx;`;
+		},
+		calcCommentBarPlaceholder() {
+			if (this.commentBar.isComment) return '写下你的想法...';
+			const name = (this.commentBar.title || '').replace(/^回复用户：/, '');
+			return name ? `回复 @${name}` : '回复评论...';
+		},
+		calcCommentCanSend() {
+			return !this.commentBar.submitting && !!(this.commentBar.content || '').trim();
+		},
 		calcIsShowComment() {
 			return this.postDetailConfig.showComment;
 		},
@@ -1127,17 +1167,116 @@ export default {
 			this.fnOpenCommentModal(payload);
 		},
 		fnOpenCommentModal(payload) {
-			this.commentModal.isComment = payload.isComment;
-			this.commentModal.postName = payload.postName;
-			this.commentModal.title = payload.title;
-			this.commentModal.show = true;
-
+			if (!canSubmitComment()) {
+				this.pendingPosterShare = false;
+				this.pendingCommentPayload = payload;
+				this.wxLoginDialogShow = true;
+				return;
+			}
+			const bar = this.commentBar;
+			// 换了回复对象就清掉上一条草稿，避免把 A 的回复发给 B
+			if (bar.isComment !== payload.isComment || bar.postName !== payload.postName) {
+				bar.content = '';
+			}
+			bar.isComment = payload.isComment;
+			bar.postName = payload.postName;
+			bar.title = payload.title;
+			bar.active = true;
+			bar.focus = false;
+			// 先渲染 textarea 再聚焦，直接置 true 在首次渲染时可能不弹键盘
+			this.$nextTick(() => {
+				setTimeout(() => {
+					if (this.commentBar.active) this.commentBar.focus = true;
+				}, 50);
+			});
+		},
+		fnNoop() {},
+		fnOnCommentBarFocus(e) {
+			this.commentBar.focus = true;
+			const h = e?.detail?.height;
+			if (h) this.commentBar.keyboardHeight = h;
+		},
+		fnOnCommentBarBlur() {
+			this.commentBar.focus = false;
+			this.commentBar.keyboardHeight = 0;
+			// 安卓返回键等系统方式收起键盘时也一并收起输入态
 			setTimeout(() => {
-				uni.pageScrollTo({
-					scrollTop: this.commentListScrollTop,
-					duration: 100
+				if (!this.commentBar.focus && !this.commentBar.submitting) {
+					this.fnCollapseCommentBar();
+				}
+			}, 80);
+		},
+		fnOnCommentKeyboardChange(e) {
+			const h = e?.detail?.height || 0;
+			this.commentBar.keyboardHeight = h;
+		},
+		fnCollapseCommentBar() {
+			const bar = this.commentBar;
+			bar.focus = false;
+			bar.active = false;
+			bar.keyboardHeight = 0;
+			uni.hideKeyboard();
+			// 没有草稿时回到「评论文章」默认目标；有草稿则保留，下次点开继续写
+			if (!(bar.content || '').trim()) {
+				bar.content = '';
+				bar.isComment = true;
+				bar.postName = this.result?.metadata?.name || '';
+				bar.title = '';
+			}
+		},
+		fnSubmitCommentBar() {
+			const bar = this.commentBar;
+			if (bar.submitting) return;
+			const content = (bar.content || '').trim();
+			if (!content) {
+				return uni.$tm.toast('请填写评论内容');
+			}
+			if (!canSubmitComment()) {
+				this.fnCollapseCommentBar();
+				this.pendingPosterShare = false;
+				this.pendingCommentPayload = { isComment: bar.isComment, postName: bar.postName, title: bar.title };
+				this.wxLoginDialogShow = true;
+				return;
+			}
+			bar.submitting = true;
+			uni.showLoading({ title: '正在发送...', mask: true });
+			const isComment = bar.isComment;
+			const targetName = bar.postName;
+			const request = isComment
+				? this.$httpApi.v2.addPostComment(buildCommentPayload({ content, postName: targetName, isReply: false }))
+				: this.$httpApi.v2.addPostCommentReply(
+					targetName,
+					buildCommentPayload({ content, postName: targetName, isReply: true, quoteReply: targetName })
+				);
+			const done = (msg) => {
+				uni.hideLoading();
+				bar.submitting = false;
+				uni.$tm.toast(msg);
+				bar.content = '';
+				this.fnCollapseCommentBar();
+				this.fnOnCommentSubmitted();
+			};
+			request
+				.then(() => done(isComment ? '评论成功，可能需要审核' : '回复成功，可能需要审核'))
+				.catch((err) => {
+					if (isCommentSerializationError(err)) {
+						return done('评论可能已提交，正在刷新列表');
+					}
+					uni.hideLoading();
+					bar.submitting = false;
+					const msg = err?.message || err?.error || err?.detail || (typeof err === 'string' ? err : '发送失败，请稍后重试');
+					uni.$tm.toast(msg);
 				});
-			}, 300);
+		},
+		fnOnCommentSubmitted() {
+			// 评论可见类限制阅读：评论后重新拉取正文
+			if (this.result?.metadata?.annotations?.restrictReadEnable === 'comment') {
+				this.fnGetData();
+			}
+			if (this.$refs.commentListRef) {
+				this.$refs.commentListRef.fnGetData();
+			}
+			this.fnRecordUserActivity(USER_ACTIVITY_TYPES.COMMENT);
 		},
 		fnOnWxLoginReady() {
 			// 微信登录已完成，绑定页展示中；待绑定完成后再执行 pending 操作
@@ -1179,33 +1318,6 @@ export default {
 			this.pendingLike = false;
 			this.pendingLockUnlock = false;
 			this.pendingSubscribeLogin = false;
-		},
-		fnOnCommentModalClose({ refresh, isSubmit, needLogin }) {
-			if (needLogin) {
-				this.commentModal.show = false;
-				this.pendingPosterShare = false;
-				this.pendingCommentPayload = {
-					isComment: this.commentModal.isComment,
-					postName: this.commentModal.postName,
-					title: this.commentModal.title
-				};
-				this.wxLoginDialogShow = true;
-				return;
-			}
-			// 评论后自动刷新
-			if (this.result?.metadata?.annotations?.restrictReadEnable === 'comment') {
-				this.fnGetData();
-			}
-			if (refresh && isSubmit && this.$refs.commentListRef) {
-				this.$refs.commentListRef.fnGetData();
-			}
-			if (isSubmit) {
-				this.fnRecordUserActivity(USER_ACTIVITY_TYPES.COMMENT);
-			}
-			this.commentModal.show = false;
-			this.commentModal.isComment = false;
-			this.commentModal.postName = '';
-			this.commentModal.title = '';
 		},
 		fnOnCommentCountChange(count) {
 			if (this.result?.stats && typeof count === 'number') {
@@ -2818,5 +2930,15 @@ export default {
 
 
 @import '@/common/styles/redesign/article.scss';
+/* 底栏内联评论输入 */
+.article-comment-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 989; background: rgba(0, 0, 0, 0.25); }
+.article-action-input__text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.article-action-input.is-editing { align-items: center; padding: 14rpx 24rpx; border-radius: 36rpx; }
+.article-comment-textarea { flex: 1; width: 100%; min-height: 44rpx; max-height: 220rpx; font-size: 28rpx; line-height: 44rpx; color: $uh-ink-1; }
+.article-comment-placeholder { color: $uh-ink-4; }
+.article-comment-send { flex-shrink: 0; display: flex; align-items: center; justify-content: center; min-width: 112rpx; height: 64rpx; padding: 0 24rpx; border-radius: $uh-radius-pill; background: $uh-accent; color: #ffffff; font-size: 26rpx; font-weight: 700; }
+.article-comment-send.is-disabled { opacity: 0.45; }
+.article-action-bar.is-editing { align-items: flex-end; }
+.app-page.skin-ink .article-comment-textarea { color: #e6edf7; }
 @import '@/common/styles/redesign/pagesA-article-detail-article-detail-themes.scss';
 </style>

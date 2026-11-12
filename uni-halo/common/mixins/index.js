@@ -12,7 +12,7 @@
 
 import { resolveTheme, themeVariables } from '@/common/themes/index.js';
 import { getDefaultAppSettings } from '@/utils/app.js'
-import { SKINS, skinState, skinClassOf, effectiveSkinId, syncNativeChrome } from '@/utils/skin.js'
+import { SKINS, skinState, skinClassOf, effectiveSkinId, syncNativeChrome, SODA_ROOT_CLASS } from '@/utils/skin.js'
 import { hideNativeTabBar } from '@/utils/tabbar.js'
 
 export default {
@@ -64,6 +64,13 @@ export default {
                     // 用「生效皮肤」而不是用户选的皮肤：外观模式（跟随系统/强制深色）
                     // 会影响实际配色，根类名必须跟着它走，否则切了模式要等重启才生效
                     return skinClassOf(effectiveSkinId());
+                },
+                /**
+                 * 同 skinClass，但默认皮肤时返回 skin-soda。
+                 * 改成贴纸风的页面 / 组件根节点用它，样式里用 `.skin-soda …` 限定只在默认皮肤生效。
+                 */
+                skinRootClass() {
+                    return skinClassOf(effectiveSkinId()) || SODA_ROOT_CLASS;
                 },
                 /** 当前皮肤信息（皮肤商店/身份中心展示用） */
                 calcSkin() {

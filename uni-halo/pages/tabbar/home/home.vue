@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pages-tabbar-home-home app-page">
+	<view :class="skinRootClass" class="theme-page-pages-tabbar-home-home app-page">
 		<uh-page-header :title="appInfo.name || 'Halo'" brand></uh-page-header>
 
 		<view class="home-search-row">
@@ -39,13 +39,8 @@
 					:dot-position="calcBannerDotPosition" @on-click="fnOnBannerClick" />
 			</view>
 
-			<!--
-				首页双卡并排：AI 定制内容 + 视频号。
-				两张都是「运营位」（站长可各自开关），并排省一半高度、首屏更快到文章列表；
-				只有一张可见时 flex:1 自然占满整行。
-				视觉分工：AI 卡浅底描边（轻），视频号卡品牌渐变（重），一深一浅有层次。
-			-->
-			<!-- 枫光改版：金刚区。AI / 视频号跟随原有开关，任务与邀请是常驻玩法入口 -->
+			<!-- 枫光改版：金刚区。AI / 视频号跟随原有开关，任务与邀请是常驻玩法入口。
+				原下方的「AI 定制内容 + 视频号」双卡与这里重复，已移除（2026-11），入口只保留金刚区 -->
 			<view class="home-quick">
 				<view v-if="aiCardVisible" class="home-quick_item" @click="fnOpenAiContent">
 					<view class="home-quick_icon home-quick_icon--night"><uh-icon name="sparkles" :size="44"></uh-icon></view>
@@ -67,60 +62,6 @@
 					<text class="home-quick_label">邀请有礼</text>
 				</view>
 			</view>
-			<view class="promo-row ml-24 mr-24 mt-16 mb-16" v-if="aiCardVisible || channelsConfig">
-				<!-- AI 定制内容：已开通显示徽章；未开通点进去是购买与积分兑换的引导页 -->
-				<view v-if="aiCardVisible" class="promo-card ai-card card-shadow"
-					:class="{ 'promo-card--wide': promoIsWide }"
-					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenAiContent">
-					<view class="promo-head flex items-center">
-						<view class="ai-card-icon">
-							<uh-icon name="sparkles" :size="40"></uh-icon>
-						</view>
-					</view>
-					<view class="promo-body">
-						<view class="promo-title-row">
-							<text class="promo-title promo-title--ai">{{ aiCardContent.title }}</text>
-							<text v-if="aiContentActive" class="ai-card-badge">已开通</text>
-						</view>
-						<text v-if="aiCardContent.desc" class="promo-desc promo-desc--ai">{{ aiCardContent.desc }}</text>
-					</view>
-					<view class="promo-action flex items-center">
-						<text class="promo-action_text promo-action_text--ai">{{ aiContentActive ? '去看看' : '立即体验' }}</text>
-						<text class="promo-action_arrow promo-action_arrow--ai">›</text>
-					</view>
-				</view>
-
-				<!--
-					视频号入口（原「每日一句」区块）
-					卡片内容全部来自后台「视频号」配置；没开启或没填视频号 ID 时整块不渲染——
-					点不动的卡片比没有卡片更糟。跳转与降级见 utils/channels.js。
-				-->
-				<view v-if="channelsConfig" class="promo-card channels-card card-shadow"
-					:class="{ 'promo-card--wide': promoIsWide }"
-					hover-class="promo-card--pressed" :hover-stay-time="60" @click="fnOpenChannels">
-					<view class="promo-head flex items-center">
-						<view class="channels-avatar">
-							<image v-if="channelsAvatar" class="channels-avatar_img" :src="channelsAvatar" mode="aspectFill"></image>
-							<text v-else class="channels-avatar_text">{{ channelsAvatarText }}</text>
-							<view class="channels-avatar_play">
-								<uh-icon name="play" :size="20"></uh-icon>
-							</view>
-						</view>
-					</view>
-					<view class="promo-body">
-						<view class="promo-title-row">
-							<text class="promo-title promo-title--channels">{{ channelsConfig.nickname }}</text>
-							<text class="channels-badge">视频号</text>
-						</view>
-						<text class="promo-desc promo-desc--channels">{{ channelsConfig.desc || channelsTip }}</text>
-					</view>
-					<view class="promo-action flex items-center">
-						<text class="promo-action_text promo-action_text--channels">{{ channelsButtonText }}</text>
-						<text class="promo-action_arrow promo-action_arrow--channels">›</text>
-					</view>
-				</view>
-			</view>
-
 			<!-- 最新文章 -->
 			<view class="home-section-head flex flex-between">
 				<view class="page-item_title text-weight-b">最新文章</view>

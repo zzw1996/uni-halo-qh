@@ -13,3 +13,19 @@
 
 .uh-tabbar_icon-wrap { width: 80rpx; height: 50rpx; display: flex; align-items: center; justify-content: center; border-radius: 22rpx; transition: background-color .18s ease; }
 .uh-tabbar_item.is-active .uh-tabbar_icon-wrap { background: $uh-accent-weak; }
+
+/* 「汽水」贴纸风（默认皮肤）：悬浮白色贴纸胶囊。
+   - 外层透明，内容从胶囊两侧和下方透出来，才有「悬浮」的感觉；
+   - 胶囊本身和页面里的卡片同一套语言：白底 + 墨色描边 + 硬投影（不用深色底，和浅色页面不搭）；
+   - 选中项是柠檬黄胶囊（图标 + 文字横排），未选中项只留图标；
+   - 胶囊离底 24rpx（= utils/tabbar.js 的 TABBAR_GLASS_GAP_RPX，含 8rpx 硬投影），占位块同步加高。 */
+.skin-soda .uh-tabbar_holder { height: 124rpx; }
+.skin-soda .uh-tabbar { background: transparent; border-top: 0; }
+.skin-soda .uh-tabbar_inner { height: 100rpx; margin: 0 28rpx 24rpx; padding: 0 10rpx; box-sizing: border-box; align-items: center; border: $uh-stroke; border-radius: $uh-radius-pill; background: $uh-card; box-shadow: $uh-hard-md; }
+.skin-soda .uh-tabbar_safe { background: transparent; }
+.skin-soda .uh-tabbar_item { flex: 1; flex-direction: row; gap: 10rpx; height: 72rpx; border-radius: $uh-radius-pill; color: $uh-ink-3; }
+.skin-soda .uh-tabbar_label { display: none; }
+.skin-soda .uh-tabbar_icon-wrap { width: 48rpx; height: 48rpx; border-radius: 0; background: transparent; }
+.skin-soda .uh-tabbar_item.is-active { flex: 1.7; box-sizing: border-box; border: $uh-stroke-thin; background: $uh-reward; color: $uh-ink-1; }
+.skin-soda .uh-tabbar_item.is-active .uh-tabbar_icon-wrap { background: transparent; }
+.skin-soda .uh-tabbar_item.is-active .uh-tabbar_label { display: block; font-size: 26rpx; font-weight: 900; }

@@ -116,3 +116,31 @@
 .profile-page.skin-sunrise .points-card { background: #fffaf0; }
 .profile-page.skin-ink .points-card { background: #10213b; }
 .profile-page.skin-sky .uc-avatar, .profile-page.skin-mint .uc-avatar, .profile-page.skin-sunrise .uc-avatar, .profile-page.skin-ink .uc-avatar { border-width: 1rpx; border-color: transparent; }
+
+/* ===================== 「汽水」贴纸风（2026-11） =====================
+   只在默认皮肤生效（根节点 skinRootClass = skin-soda）；选择器带上根类是为了压过上面枫光段的同名规则。 */
+$soda-me: '.profile-page.skin-soda';
+#{$soda-me} .uc-avatar { border: $uh-stroke; box-shadow: $uh-hard-sm; }
+#{$soda-me} .uc-name { font-size: 44rpx; font-weight: 900; }
+#{$soda-me} .uc-level { border-radius: $uh-radius-pill; }
+#{$soda-me} .quick-links { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; margin-bottom: 32rpx; }
+#{$soda-me} .quick-link + .quick-link { border-left: $uh-stroke; }
+#{$soda-me} .quick-link .ql-icon { box-sizing: border-box; border: $uh-stroke-thin; }
+#{$soda-me} .quick-link .ql-icon--crown { background: $uh-reward; }
+#{$soda-me} .quick-link .ql-icon--gift { background: $uh-pink; }
+#{$soda-me} .ql-title { font-weight: 800; }
+#{$soda-me} .section-card { border: $uh-stroke; border-radius: $uh-radius-xl; box-shadow: $uh-hard-md; margin-bottom: 32rpx; }
+#{$soda-me} .sc-title { font-weight: 900; }
+/* 积分 + 签到主卡：电光紫大色块，白字 + 柠檬黄按钮 */
+#{$soda-me} .points-card { background: $uh-accent; box-shadow: $uh-hard-lg; }
+#{$soda-me} .points-card .points-card-title, #{$soda-me} .points-card .profile-sign-caption { color: rgba(255, 255, 255, 0.86); }
+#{$soda-me} .points-card .points-card-balance { font-weight: 900; }
+#{$soda-me} .points-card .checkin-action { box-sizing: border-box; border: $uh-stroke-thin; font-weight: 800; }
+#{$soda-me} .points-card .checkin-action.is-done { border-color: rgba(255, 255, 255, 0.4); }
+#{$soda-me} .points-card .pa-card--task .pa-btn { border: $uh-stroke-thin; font-weight: 800; }
+#{$soda-me} .service-item .service-icon { box-sizing: border-box; border: $uh-stroke-thin; border-radius: 28rpx; }
+#{$soda-me} .service-item .service-icon--green { background: $uh-lilac; }
+#{$soda-me} .service-item .service-icon--blue { background: #C6E9FF; }
+#{$soda-me} .service-item .service-icon--amber { background: #FFE98A; }
+#{$soda-me} .service-item .service-icon--coral { background: #FFC2D3; }
+#{$soda-me} .service-label { font-weight: 700; }
