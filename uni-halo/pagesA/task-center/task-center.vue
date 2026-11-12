@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-task-center-task-center app-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-task-center-task-center app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后查看每日任务"></tm-empty>
@@ -405,4 +405,5 @@
 	}
 @import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-task-center-task-center-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

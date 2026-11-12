@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-my-articles-my-articles my-articles-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-my-articles-my-articles my-articles-page">
 		<view v-if="loading === 'loading' && !list.length" class="loading-wrap flex flex-center">
 			<tm-loadding color="indigo" :size="48"></tm-loadding>
 		</view>
@@ -721,4 +721,5 @@
 		text-align: center;
 	}
 @import '@/common/styles/redesign/pagesA-my-articles-my-articles-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

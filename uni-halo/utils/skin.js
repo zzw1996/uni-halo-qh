@@ -334,6 +334,30 @@ export const applySkin = (id) => {
 	return target;
 };
 
+const SODA_MIGRATION_KEY = 'unihalo_soda_migrated_v1';
+
+/**
+ * 「汽水」改版的一次性迁移：把本机残留的旧主题选择清回默认。
+ *
+ * <p>改版前选过极夜流光（或被强制深色）的设备，本地还存着 ui_theme=ink / appearance=dark / skin=ink，
+ * 表现为「每次重新编译、重开都落回极夜流光」。默认外观已经整体换掉，旧选择不再有延续的意义，
+ * 这里只清一次；之后用户再手动选什么主题都照常保存。必须在 restoreUiTheme / restoreAppearance 之前调用。</p>
+ *
+ * <p>账号上「穿戴中的主题装扮」不归这里管：那是服务端数据，进入「我的」时仍会按它应用。</p>
+ */
+export const migrateToSodaOnce = () => {
+	try {
+		if (uni.getStorageSync(SODA_MIGRATION_KEY)) return false;
+		uni.setStorageSync(SODA_MIGRATION_KEY, '1');
+		uni.removeStorageSync(UI_THEME_KEY);
+		uni.setStorageSync(STORAGE_KEY, 'paper');
+		uni.setStorageSync(APPEARANCE_KEY, 'light');
+		return true;
+	} catch (err) {
+		return false;
+	}
+};
+
 /** 从本地缓存恢复（App 启动时调用，避免首屏闪回默认外观）。 */
 export const restoreSkin = () => {
 	let stored = '';

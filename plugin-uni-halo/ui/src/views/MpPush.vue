@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page mp-push-root">
+  <div class="page uh-soda mp-push-root">
     <div class="page-head">
       <div class="page-title">
         <span class="title-emoji">📮</span>

@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-invite-invite app-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-invite-invite app-page">
 		<!-- 未登录 -->
 		<view v-if="!isLoggedIn" class="login-gate flex flex-center flex-col">
 			<tm-empty icon="icon-user" label="登录后生成邀请码"></tm-empty>
@@ -1104,4 +1104,5 @@
 	}
 @import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-invite-invite-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

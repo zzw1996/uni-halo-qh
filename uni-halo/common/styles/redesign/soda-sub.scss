@@ -1,0 +1,32 @@
+// 「汽水」贴纸风（2026-11）· 二级页面共用。
+// 只在页面自己的 scoped 样式里 @import（放在 maple-sub.scss 之后），并且只对默认皮肤生效：
+// 页面根节点用 skinRootClass（默认皮肤 = skin-soda）。选择器把根类写两遍是为了压过
+// maple-sub.scss 里 `.app-page .x { … !important }` 的同名规则，且不依赖根节点有没有 .app-page。
+$soda: '.skin-soda.skin-soda';
+
+/* 顶部「资产 / 身份 / 汇总 / 邀请」特色卡：电光紫大色块，白字 + 柠檬黄数字 */
+#{$soda} .asset-card, #{$soda} .identity-card, #{$soda} .summary-card, #{$soda} .invite-card { background: $uh-accent !important; background-image: none !important; border: $uh-stroke !important; border-radius: $uh-radius-xl !important; box-shadow: $uh-hard-lg !important; }
+#{$soda} .asset-label, #{$soda} .summary-label, #{$soda} .summary-label-secondary, #{$soda} .asset-note, #{$soda} .identity-progress-label, #{$soda} .summary-unit, #{$soda} .summary-meta, #{$soda} .summary-local, #{$soda} .identity-progress-percent { color: rgba(255, 255, 255, 0.86) !important; }
+#{$soda} .asset-value, #{$soda} .summary-value, #{$soda} .identity-nickname, #{$soda} .identity-level { color: #ffffff !important; font-weight: 900; }
+#{$soda} .asset-chip-value, #{$soda} .summary-balance { color: $uh-reward !important; font-weight: 900; }
+#{$soda} .asset-chip { background: rgba(255, 255, 255, 0.16) !important; border: 0 !important; }
+#{$soda} .asset-chip-label { color: rgba(255, 255, 255, 0.86) !important; }
+#{$soda} .level-track { background: rgba(255, 255, 255, 0.24) !important; }
+#{$soda} .level-fill { background: $uh-reward !important; background-image: none !important; }
+#{$soda} .invite-card .invite-code-box { border: $uh-stroke-thin !important; }
+
+/* 内容卡：白底 + 墨色描边 + 硬投影 */
+#{$soda} .section-card, #{$soda} .goods-card, #{$soda} .task-card, #{$soda} .poster-card, #{$soda} .tool-card, #{$soda} .inviter-card, #{$soda} .member-card, #{$soda} .exchange-card, #{$soda} .filter-card, #{$soda} .head-card, #{$soda} .hero-card, #{$soda} .stat-card, #{$soda} .advanced-card, #{$soda} .article-card, #{$soda} .theme-settings { box-sizing: border-box; border: $uh-stroke !important; border-radius: $uh-radius-xl !important; box-shadow: $uh-hard-md !important; }
+#{$soda} .goods-card--spotlight { box-shadow: $uh-hard-md !important; background: $uh-reward-weak !important; }
+/* 卡片里的行：只描细边，不再叠投影，免得一屏太吵 */
+#{$soda} .order-item, #{$soda} .article-item, #{$soda} .history-item, #{$soda} .title-item, #{$soda} .theme-option, #{$soda} .arch-item, #{$soda} .goods-item { box-sizing: border-box; border: $uh-stroke-thin !important; border-radius: $uh-radius-lg !important; box-shadow: none !important; }
+#{$soda} .section-title, #{$soda} .poster-title, #{$soda} .task-title, #{$soda} .goods-name, #{$soda} .order-name { font-weight: 800; }
+
+/* 按钮与小标签：细描边 + 加粗 */
+#{$soda} .goods-buy, #{$soda} .task-action, #{$soda} .poster-save, #{$soda} .redeem-btn, #{$soda} .goods-btn, #{$soda} .push-btn, #{$soda} .theme-save, #{$soda} .keyword-add, #{$soda} .order-action, #{$soda} .action-item.is-primary { box-sizing: border-box; border: $uh-stroke-thin !important; font-weight: 800; }
+#{$soda} .chip, #{$soda} .filter-tab, #{$soda} .state-chip, #{$soda} .mini-tag, #{$soda} .hero-pill, #{$soda} .goods-perk { box-sizing: border-box; border: $uh-stroke-thin; }
+#{$soda} .progress-track, #{$soda} .title-progress-track { box-sizing: border-box; border: $uh-stroke-thin; }
+#{$soda} .progress-fill, #{$soda} .title-progress-fill { background: $uh-accent !important; background-image: none !important; }
+#{$soda} .reward-text { color: $uh-accent !important; font-weight: 900; }
+#{$soda} .order-status--done { color: $uh-ink-1 !important; background: $uh-mint !important; }
+#{$soda} .order-status--pending { color: $uh-ink-1 !important; background: $uh-reward !important; }

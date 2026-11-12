@@ -1,5 +1,5 @@
 <template>
-	<view class="theme-page-pagesA-friend-links-friend-links app-page card-shadow" :class="[skinClass, uniHaloPluginPageClass]">
+	<view class="theme-page-pagesA-friend-links-friend-links app-page card-shadow" :class="[skinRootClass, uniHaloPluginPageClass]">
 		<PluginUnavailable v-if="!uniHaloPluginAvailable" :pluginId="uniHaloPluginId"
 			:error-text="uniHaloPluginAvailableError" />
 		<template v-else>
@@ -424,4 +424,5 @@
 		height: 300rpx;
 	}
 @import '@/common/styles/redesign/pagesA-friend-links-friend-links-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

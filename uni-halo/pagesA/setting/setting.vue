@@ -1,5 +1,5 @@
 <template>
-	<view class="theme-page-pagesA-setting-setting app-page" :class="[skinClass, { 'is-balck grey-darken-6': isBlackTheme }]">
+	<view class="theme-page-pagesA-setting-setting app-page" :class="[skinRootClass, { 'is-balck grey-darken-6': isBlackTheme }]">
 		<tm-form v-if="!loading" ref="formData">
             <view class="theme-settings" :style="themeInlineStyle">
                 <text class="theme-settings-title">选择主题</text>
@@ -720,4 +720,5 @@ import { chooseUiTheme, appearanceLabelOf as themeAppearanceLabel } from '@/util
 
 .theme-save{width:100%;padding:0;font-size:28rpx;line-height:78rpx;border-radius:12rpx;color:#fff!important;border:0;}.theme-save::after{border:0;}
 @import '@/common/styles/redesign/pagesA-setting-setting-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

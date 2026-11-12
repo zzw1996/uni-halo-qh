@@ -120,7 +120,7 @@ onMounted(() => loadUsers(0));
 </script>
 
 <template>
-  <div class="page">
+  <div class="page uh-soda">
     <div class="page-head">
       <div class="page-title">
         <span class="title-emoji">🧠</span>

@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-unlocked-articles-unlocked-articles app-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-unlocked-articles-unlocked-articles app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -285,4 +285,5 @@
 	}
 @import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-unlocked-articles-unlocked-articles-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

@@ -1,4 +1,6 @@
 import { definePlugin } from "@halo-dev/console-shared";
+// 「汽水」贴纸风：十个后台页面共用的外观覆盖，见文件头注释
+import "./styles/soda.css";
 import WxUsers from "./views/WxUsers.vue";
 import UserActivities from "./views/UserActivities.vue";
 import PointsRecords from "./views/PointsRecords.vue";

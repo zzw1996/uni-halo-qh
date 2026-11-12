@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page points-history-theme">
+	<view :class="skinRootClass" class="app-page points-history-theme">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -289,4 +289,5 @@
 		color: $uh-ink-3;
 	}
 @import '@/common/styles/redesign/points-history-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page toutiao-root">
+  <div class="page uh-soda toutiao-root">
     <div class="page-head">
       <div class="page-title">
         <span class="title-emoji">📰</span>

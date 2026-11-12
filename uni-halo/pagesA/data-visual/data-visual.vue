@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-data-visual-data-visual app-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-data-visual-data-visual app-page">
 		<!-- 高级版卡片 -->
 		<view class="advanced-card">
 			<view class="advanced-head">
@@ -388,4 +388,5 @@
 		}
 	}
 @import '@/common/styles/redesign/pagesA-data-visual-data-visual-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

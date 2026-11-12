@@ -1,0 +1,75 @@
+/*
+ * 「汽水」贴纸风（2026-11）· 插件后台统一视觉，与小程序端同一套取值：
+ * 雾紫底 #F4F2FD / 电光紫 #5B45FF / 柠檬黄 #FFD60A / 蜜桃粉 #FF7A9E / 薄荷绿 #3DDBB4 / 墨色 #16132D。
+ * 结构语言：2px 墨色描边 + 只向下的硬投影 + 大圆角。
+ *
+ * 写成全局样式而不是改各页面的 <style scoped>：
+ * - 十个页面共用同一套类名（page / stat-card / toolbar / table-card / tbl / btn-primary …），一处改全部生效；
+ * - 选择器统一以 `.page.uh-soda` 开头（各页面根节点都加了 uh-soda），既压得过各页 scoped 规则
+ *   和 `.mp-push-root …` 这类根类前缀规则，又不会漏到 Halo 控制台自己的页面上。
+ * 各页面原有样式都保留，这里只覆盖外观；要回到旧外观，去掉 index.ts 里对本文件的 import 即可。
+ */
+.page.uh-soda { background: #f4f2fd; color: #16132d; min-height: 100%; }
+
+/* 页头 */
+.page.uh-soda .page-title { gap: 16px; }
+.page.uh-soda .title-emoji { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 56px; height: 56px; box-sizing: border-box; font-size: 28px; border-radius: 18px; background: #ffd60a; border: 2px solid #16132d; box-shadow: 0 3px 0 #16132d; }
+.page.uh-soda .page-title h2 { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #16132d; font-size: 26px; font-weight: 900; letter-spacing: -0.3px; }
+.page.uh-soda .page-title p { color: #5e5a78; font-size: 13px; }
+
+/* 数据卡 */
+.page.uh-soda .stat-grid { gap: 16px; margin-bottom: 20px; }
+.page.uh-soda .stat-card { box-sizing: border-box; padding: 20px; border: 2px solid #16132d; border-radius: 24px; box-shadow: 0 4px 0 #16132d; background: #ffffff; color: #16132d; }
+.page.uh-soda .stat-a, .page.uh-soda .stat-0 { background: #5b45ff; color: #ffffff; }
+.page.uh-soda .stat-b, .page.uh-soda .stat-1 { background: #ffd60a; color: #16132d; }
+.page.uh-soda .stat-c, .page.uh-soda .stat-2 { background: #3ddbb4; color: #16132d; }
+.page.uh-soda .stat-d, .page.uh-soda .stat-3 { background: #ff7a9e; color: #16132d; }
+.page.uh-soda .stat-label { font-size: 13px; font-weight: 800; opacity: 1; }
+.page.uh-soda .stat-value { font-size: 34px; line-height: 1.15; font-weight: 900; letter-spacing: -0.5px; }
+.page.uh-soda .stat-sub { font-size: 12px; opacity: 1; }
+
+/* 白色内容卡 */
+.page.uh-soda .toolbar, .page.uh-soda .panel, .page.uh-soda .table-card, .page.uh-soda .preset-card { box-sizing: border-box; background: #ffffff; border: 2px solid #16132d; border-radius: 24px; box-shadow: 0 4px 0 #16132d; }
+.page.uh-soda .toolbar { padding: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.page.uh-soda .panel-head { font-weight: 900; color: #16132d; }
+.page.uh-soda .panel-sub, .page.uh-soda .muted, .page.uh-soda .empty, .page.uh-soda .pager, .page.uh-soda .time { color: #5e5a78; }
+
+/* 表单控件 */
+.page.uh-soda .toolbar input, .page.uh-soda .toolbar select, .page.uh-soda .input, .page.uh-soda .textarea, .page.uh-soda .model-input { box-sizing: border-box; min-height: 40px; border: 2px solid #16132d; border-radius: 14px; background: #ffffff; color: #16132d; }
+.page.uh-soda .toolbar input:focus, .page.uh-soda .toolbar select:focus, .page.uh-soda .input:focus, .page.uh-soda .textarea:focus, .page.uh-soda .model-input:focus { outline: 3px solid #ffd60a; outline-offset: 1px; }
+.page.uh-soda .field-label { color: #16132d; font-weight: 800; }
+
+/* 按钮 */
+.page.uh-soda .btn-primary, .page.uh-soda .btn-plain, .page.uh-soda .btn-ghost, .page.uh-soda .btn-danger { box-sizing: border-box; min-height: 40px; padding: 0 20px; border: 2px solid #16132d; border-radius: 22px; font-weight: 800; }
+.page.uh-soda .btn-primary { background: #5b45ff; color: #ffffff; box-shadow: 0 3px 0 #16132d; }
+.page.uh-soda .btn-primary:active { transform: translateY(3px); box-shadow: none; }
+.page.uh-soda .btn-plain, .page.uh-soda .btn-ghost { background: #ffffff; color: #16132d; }
+.page.uh-soda .btn-danger { background: #ff7a9e; color: #16132d; }
+.page.uh-soda .btn-link { color: #5b45ff; font-weight: 700; }
+
+/* 表格 */
+.page.uh-soda .table-card { overflow: hidden; overflow-x: auto; }
+.page.uh-soda .tbl th { background: #16132d; color: #ffffff; font-weight: 800; }
+.page.uh-soda .tbl td { border-bottom: 1px solid #ece9fa; }
+.page.uh-soda .tbl tbody tr:nth-child(even) { background: #f9f8fe; }
+.page.uh-soda .tbl tbody tr:hover { background: #f4f2fd; }
+.page.uh-soda .avatar { box-sizing: border-box; border: 2px solid #16132d; }
+.page.uh-soda .avatar-fallback { background: #3ddbb4; color: #16132d; font-weight: 900; }
+.page.uh-soda .user-name { font-weight: 800; }
+
+/* 标签 */
+.page.uh-soda .tag, .page.uh-soda .halo-tag { box-sizing: border-box; border: 2px solid #16132d; font-weight: 800; color: #16132d; }
+.page.uh-soda .tag-ok, .page.uh-soda .tag-on { background: #3ddbb4; color: #16132d; }
+.page.uh-soda .tag-wait, .page.uh-soda .tag-mid { background: #ffd60a; color: #16132d; }
+.page.uh-soda .tag-off { background: #ece9fa; color: #16132d; }
+.page.uh-soda .halo-tag { background: #e4e0ff; }
+
+/* 提示条 */
+.page.uh-soda .error-banner, .page.uh-soda .warn-banner, .page.uh-soda .notice-banner { box-sizing: border-box; border: 2px solid #16132d; border-radius: 16px; font-weight: 700; }
+.page.uh-soda .error-banner { background: #ffe1ea; color: #8c1239; }
+.page.uh-soda .warn-banner { background: #fff6c2; color: #16132d; }
+.page.uh-soda .notice-banner { background: #e4e0ff; color: #16132d; }
+
+/* 页签（商业化配置） */
+.page.uh-soda .tab { box-sizing: border-box; border: 2px solid #16132d; border-radius: 20px; background: #ffffff; color: #16132d; font-weight: 800; }
+.page.uh-soda .tab.tab-active { background: #16132d; color: #ffd60a; }

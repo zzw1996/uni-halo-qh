@@ -410,6 +410,9 @@ P0 体积 / P1 运行时性能 / P2 图片与网络 / P3 架构（事件总线�
 - **底栏**：悬浮白色贴纸胶囊（白底 + 墨色描边 + 硬投影），选中项是柠檬黄胶囊（图标 + 文字横排），未选中只留图标。试过夜墨深色底，和浅色页面不搭，已否决。离底 24rpx 记在 `TABBAR_GLASS_GAP_RPX`，占位块 `.uh-tabbar_holder` 同步加高；其余皮肤仍满宽贴底。
 - **默认主题不跟随系统深色**：`resolveSkinId` 在「跟随系统」且基础皮肤是 `paper` 时保持浅色，不再自动换成极夜流光（汽水没有自己的深色版，自动切过去像是主题被换掉）。手动选「始终深色」或极夜主题仍然生效；另外四套主题跟随系统的行为不变。汽水深色版要走皮肤生成器，且会明显增大主包，暂缓。
 - **图标**：`static/ui-icons/*.png`（无皮肤后缀）一律墨色，`--muted` 是次级墨色 `#5E5A78`；`static/tabbar/paper_*` 未选中 `#5E5A78`、选中电光紫（原生底栏没有选中胶囊）。这次是按 alpha 重新着色的位图，`generate-ui-icons.py` 的 `light` 色表已同步，下次可从矢量重生成。
+- **二级页面**：「我的」下 16 个二级页共用 `common/styles/redesign/soda-sub.scss`（各页 scoped 样式里 `@import`，根节点用 `skinRootClass`）。
+- **本机旧主题清理**：`skin.js` 的 `migrateToSodaOnce()` 在启动时只执行一次，把本机残留的极夜 / 强制深色清回默认；账号上穿戴的主题装扮不归它管。
+- **插件后台（1.0.223）**：十个后台页面根节点加 `uh-soda`，外观统一由 `plugin-uni-halo/ui/src/styles/soda.css` 覆盖（`index.ts` 里 import）；各页原有样式保留，去掉这行 import 即回到旧外观。只改了前端，Java 代码没动。前端 `pnpm build` 已通过；**jar 需在本机打**：`cd plugin-uni-halo && ./gradlew clean build -x test`（JDK 17），产物在 `build/libs/`。注意控制台 `style.css` 有一年强缓存且 URL 不随版本变，升级后要强制刷新浏览器才看得到新外观。
 - **未验证**：全部改动没有经过 HBuilderX 编译和真机验收；`test-skin-generator.cjs` 通过，`test-ui-themes.cjs` 未跑。
 
 ### 4.6 架构演进

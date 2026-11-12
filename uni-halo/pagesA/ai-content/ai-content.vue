@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="app-page ai-content-theme">
+	<view :class="skinRootClass" class="app-page ai-content-theme">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -2596,4 +2596,5 @@
 		color: #a1a6b8;
 	}
 @import '@/common/styles/redesign/ai-content-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>

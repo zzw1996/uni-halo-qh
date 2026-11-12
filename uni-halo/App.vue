@@ -4,7 +4,7 @@ import v2Api from '@/api/v2/all.api.js';
 import { syncPointsAfterLogin, resetPointsSession } from '@/utils/points.js';
 import { checkHasWxLogin } from '@/utils/auth.js';
 import { restoreThemeSkin } from '@/utils/themeSkin.js';
-import { restoreUiTheme, restoreAppearance, watchSystemTheme, refreshSystemTheme } from '@/utils/skin.js';
+import { restoreUiTheme, migrateToSodaOnce, restoreAppearance, watchSystemTheme, refreshSystemTheme } from '@/utils/skin.js';
 import { pullAppSettings } from '@/utils/appSettingsSync.js';
 import { refreshAppConfigs } from '@/utils/configRefresh.js';
 
@@ -31,6 +31,8 @@ export default {
 
         // 先用本地缓存恢复主题，避免首屏闪回默认配色；
         // 服务端 activeTheme 才是权威来源，进入「我的」/「身份中心」时会据此纠正。
+        // 「汽水」改版：本机残留的旧主题选择（极夜 / 强制深色）只清一次，见 skin.js
+        migrateToSodaOnce();
         restoreUiTheme();
         restoreThemeSkin();
 

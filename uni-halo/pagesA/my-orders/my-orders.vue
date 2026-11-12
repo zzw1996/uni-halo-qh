@@ -1,5 +1,5 @@
 <template>
-	<view :class="skinClass" class="theme-page-pagesA-my-orders-my-orders app-page">
+	<view :class="skinRootClass" class="theme-page-pagesA-my-orders-my-orders app-page">
 		<view v-if="loading !== 'success'" class="loading-wrap">
 			<tm-skeleton model="listAvatr"></tm-skeleton>
 			<tm-skeleton model="listAvatr"></tm-skeleton>
@@ -415,4 +415,5 @@
 	}
 @import '@/common/styles/redesign/maple-sub.scss';
 @import '@/common/styles/redesign/pagesA-my-orders-my-orders-themes.scss';
+@import '@/common/styles/redesign/soda-sub.scss';
 </style>
